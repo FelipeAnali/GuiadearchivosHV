@@ -7,9 +7,40 @@
    Después de cambiar este archivo hay que compilarlo para que llegue a index.html:
        npm install        (solo la primera vez)
        npm run compilar
+   Guía paso a paso: GUIA.md. Cómo funciona por dentro: COMO_FUNCIONA.md.
+
+   QUÉ USA
+     React 18 (pantallas), JSZip (arma el ZIP) y pdf.js (lee los PDF). Se cargan
+     desde internet en index.html; aquí se usan como React, JSZip y pdfjsLib.
+     No hay servidor: todo pasa en el navegador del candidato.
+
+   MAPA DE ESTE ARCHIVO (en este orden)
+     1. GUARDADO LOCAL       Guardar / leer / borrar el avance en el navegador (IndexedDB).
+     2. FUNCIONES DE APOYO   Lógica sin pantallas:
+          2.1 Textos y formatos
+          2.2 Cargos y documentos que aplican a cada candidato
+          2.3 Revisión de los PDF
+          2.4 Revisión de la foto 3×4
+          2.5 Armado del ZIP y descargas
+     3. DATOS DE PRUEBA      Modo ?prueba=1.
+     4. INACTIVIDAD          Borrado automático en dispositivos prestados.
+     5. PANTALLAS            Lo que ve el candidato:
+          5.1 Piezas comunes (encabezado, avisos, paneles de PC)
+          5.2 Pantallas 1 a 4 (Inicio → Datos → Documentos → Envío)
+          5.3 Tutoriales y ventanas emergentes
+          5.4 Pantalla final
+     6. APP PRINCIPAL        Decide qué pantalla mostrar, guarda cada cambio y arranca la app.
+
+   PALABRAS QUE SE REPITEN
+     sesion   Todo el avance del candidato: { datos, archivos, expira, ... } (ver sesionNueva).
+     doc      Un documento de la CONFIGURACIÓN (ej. la cédula), con sus reglas de revisión.
+     item     Un archivo ya aceptado: { nombre, blob, huella, revisado, ... }.
+     puesto   Una fila de la lista de cargos: { cargo, seccion, manipulacion }.
    ============================================================================ */
 const { useState, useEffect, useRef, useMemo } = React;
+/** Configuración editable (bloque CONFIGURACIÓN de index.html). */
 const CONFIG = window.CONFIG;
+/** Logo de Cañaveral en texto (base64), también definido en index.html. */
 const LOGO = window.LOGO_CANAVERAL;
 
 /* ============================================================================
@@ -55,6 +86,10 @@ const BD = {
    2. FUNCIONES DE APOYO (no dibujan nada en pantalla)
    ============================================================================ */
 
+/* ---------------------------------------------------------------------------
+   2.1 TEXTOS Y FORMATOS
+   --------------------------------------------------------------------------- */
+
 const MS_POR_DIA = 24 * 60 * 60 * 1000;
 
 /** "1 documento" / "3 documentos". */
@@ -95,6 +130,12 @@ function normalizar(texto) {
   return (texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
 }
 
+/* ---------------------------------------------------------------------------
+   2.2 CARGOS Y DOCUMENTOS QUE APLICAN A CADA CANDIDATO
+   La lista de cargos viene de CONFIG.cargosTexto (pegada desde Excel). Según el
+   cargo, la sección y si es su primer empleo, cambia la lista de documentos.
+   --------------------------------------------------------------------------- */
+
 /**
  * Convierte el texto pegado desde Excel (CARGO, SECCIÓN, MANIPULACIÓN separados por
  * tabulación o por ;) en una lista de puestos: [{ cargo, seccion, manipulacion }].
@@ -113,7 +154,9 @@ function leerPuestos(texto) {
     }));
 }
 
+/** Todos los puestos (cargo + sección) de la CONFIGURACIÓN. */
 const PUESTOS = leerPuestos(CONFIG.cargosTexto);
+/** Nombres de cargo sin repetir y en orden alfabético (para el buscador). */
 const CARGOS_UNICOS = [...new Set(PUESTOS.map((p) => p.cargo))].sort((a, b) => a.localeCompare(b, 'es'));
 
 /** Secciones donde existe un cargo. */
@@ -163,6 +206,12 @@ function ayudaDelDocumento(doc, datos) {
   if (doc.ayudaDecreto1500 && puesto && puesto.manipulacion === 'decreto1500') return doc.ayudaDecreto1500;
   return doc.ayuda;
 }
+
+/* ---------------------------------------------------------------------------
+   2.3 REVISIÓN DE LOS PDF
+   Flujo: revisarArchivo() → (huellaDelArchivo, leerPdf) → acepta o devuelve un mensaje.
+   Si el PDF tiene texto se revisa el contenido; si es escaneado, el nombre del archivo.
+   --------------------------------------------------------------------------- */
 
 // pdf.js trabaja con un "ayudante" en segundo plano (worker) que se carga del mismo sitio.
 if (window.pdfjsLib) {
@@ -375,7 +424,8 @@ async function revisarArchivo(archivo, doc, cedula, archivosActuales) {
 }
 
 /* ---------------------------------------------------------------------------
-   IMÁGENES: la foto 3×4 (único documento que se sube como imagen)
+   2.4 REVISIÓN DE LA FOTO 3×4 (único documento que se sube como imagen)
+   Flujo: revisarImagen() → (esJpgOPng, abrirImagen, analizarFondo) → comprimirImagen()
    --------------------------------------------------------------------------- */
 
 /** ¿Es una imagen JPG o PNG de verdad? Se mira la "firma" de los primeros bytes. */
@@ -514,6 +564,11 @@ async function revisarImagen(archivo, doc, archivosActuales) {
     },
   };
 }
+
+/* ---------------------------------------------------------------------------
+   2.5 ARMADO DEL ZIP Y DESCARGAS
+   Nombres estándar, datos_candidato.json, 00_LEEME_REVISION.txt y descarga.
+   --------------------------------------------------------------------------- */
 
 /**
  * Nombre estándar de cada archivo dentro del ZIP:
@@ -742,8 +797,18 @@ function useInactividad(activo, minutos, alVencer) {
 }
 
 /* ============================================================================
-   5. COMPONENTES DE PANTALLA (estilo iPhone)
+   5. PANTALLAS (estilo iPhone)
+   ----------------------------------------------------------------------------
+   Cada pantalla es un componente de React: recibe datos ("props") y funciones
+   que empiezan por "al..." (alGuardar, alAgregar...) para avisarle a App() lo
+   que hizo el candidato. Las pantallas no guardan nada: eso lo hace App().
    ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   5.1 PIEZAS COMUNES
+   Íconos, avisos, enlace al manual, paneles de PC y encabezado.
+   --------------------------------------------------------------------------- */
+
 
 /** Palomita (✓) dibujada, igual a la de iOS. */
 function Palomita({ tamano = 17 }) {
@@ -771,9 +836,12 @@ function navegadorDentroDeApp() {
   const encontrada = apps.find(([patron]) => patron.test(ua));
   return encontrada ? encontrada[1] : null;
 }
+/** Nombre de la app donde se abrió la página (ej. "Instagram"), o null si es un navegador normal. */
 const APP_ACTUAL = navegadorDentroDeApp();
+/** Tipo de celular, para decir "Safari" o "Chrome" en el aviso. */
 const ES_IPHONE = /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
 const ES_ANDROID = /Android/i.test(navigator.userAgent || '');
+/** Dirección de esta página, sin "?prueba=1" ni nada extra (para copiarla). */
 const ENLACE_PAGINA = location.origin + location.pathname;
 
 /** Aviso para abrir la página en Chrome o Safari. Solo aparece dentro de apps. */
@@ -840,8 +908,13 @@ function AyudaMovil() {
   );
 }
 
-/** Pasos (solo se ve en computador). */
+/** Nombres de los 4 pasos, en orden (panel izquierdo en PC). */
 const PASOS = ['Preguntas iniciales', 'Tus datos y cargo', 'Sube tus documentos', 'Descarga y envía'];
+
+/**
+ * Panel izquierdo en PC con el avance: los pasos anteriores van con ✓ y el actual resaltado.
+ * paso: número del paso actual (1 a 4), o undefined en la pantalla final (todos con ✓).
+ */
 function PanelPasos({ paso }) {
   return (
     <aside className="lateral" aria-label="Pasos">
@@ -912,6 +985,11 @@ function Encabezado({ paso, completos, total }) {
     </header>
   );
 }
+
+/* ---------------------------------------------------------------------------
+   5.2 PANTALLAS 1 A 4
+   Inicio → Datos → Documentos (con una TarjetaDocumento por documento) → Envío.
+   --------------------------------------------------------------------------- */
 
 /** Pantalla 1: bienvenida, ¿dispositivo propio? y autorización de datos. */
 function PantallaInicio({ alComenzar, guardadoDisponible, avisoInicial }) {
@@ -1523,8 +1601,8 @@ function PantallaEnvio({ sesion, alVolver, alTerminar }) {
   );
 }
 
-/* ============================================================================
-   TUTORIALES ("¿Cómo lo saco?")
+/* ---------------------------------------------------------------------------
+   5.3 TUTORIALES ("¿Cómo lo saco?") Y VENTANAS EMERGENTES
    ----------------------------------------------------------------------------
    Hoja que sale desde abajo con el paso a paso para sacar un certificado.
    El contenido (pasos, enlaces) está en la CONFIGURACIÓN, campo "tutorial"
@@ -1663,6 +1741,11 @@ const TUTORIAL_COMPRIMIR = {
   nota: 'Es una página externa y gratuita (no es de Cañaveral). Si prefieres no usarla, escanea el documento otra vez en menor calidad o en blanco y negro.',
 };
 
+/**
+ * Ventana con un paso a paso (sale desde abajo, como en el iPhone).
+ * doc: documento cuyo campo "tutorial" tiene { titulo, intro, pasos, enlaces, nota }.
+ * Se usa para "¿Cómo lo saco?" (ADRES, pensión) y para "Cómo comprimir tu PDF".
+ */
 function HojaTutorial({ doc, alCerrar }) {
   const tutorial = doc.tutorial;
   const hoja = useRef(null);
@@ -1752,7 +1835,11 @@ function HojaConfirmacion({ mensaje, textoAccion, peligro, soloAviso, alConfirma
   );
 }
 
-/** Pantalla 5: cierre. */
+/* ---------------------------------------------------------------------------
+   5.4 PANTALLA FINAL
+   --------------------------------------------------------------------------- */
+
+/** Pantalla 5: cierre. Ya se borraron los datos; solo recuerda borrar el ZIP si el equipo no es suyo. */
 function PantallaFinal({ nombreZip, alReiniciar }) {
   return (
     <main className="contenido final">
@@ -1774,6 +1861,16 @@ function PantallaFinal({ nombreZip, alReiniciar }) {
 /* ============================================================================
    6. APP PRINCIPAL: decide qué pantalla mostrar y guarda los cambios
    ============================================================================ */
+
+/**
+ * Componente principal. Aquí vive TODO el estado de la app:
+ *   pantalla      Qué pantalla se ve: 'inicio' | 'datos' | 'documentos' | 'envio' | 'final'.
+ *   sesion        El avance del candidato (datos y archivos). Cada vez que cambia se guarda
+ *                 en el navegador si el dispositivo es propio (ver el efecto "Cada cambio se guarda").
+ *   confirmacion  Ventana de "¿Seguro?" abierta, o null.
+ * Las pantallas reciben funciones como comenzar, guardarDatos, agregarArchivos... y las
+ * llaman cuando el candidato hace algo. Solo esas funciones cambian la sesión.
+ */
 function App() {
   const [cargando, setCargando] = useState(true);
   const [sesion, setSesion] = useState(null);

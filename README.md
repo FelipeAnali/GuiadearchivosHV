@@ -10,6 +10,8 @@ Página para que los candidatos de **Supertiendas Cañaveral S.A.S.** preparen y
 | [`manual/Manual_candidato_Documentos_de_ingreso.pdf`](manual/Manual_candidato_Documentos_de_ingreso.pdf) | Manual del candidato, paso a paso con imágenes. |
 | [`src/app.jsx`](src/app.jsx) | Código fuente de la app (se compila dentro de `index.html`). |
 | [`herramientas/compilar.js`](herramientas/compilar.js) | Compila `src/app.jsx` y lo pone en `index.html`. |
+| [`GUIA.md`](GUIA.md) | **Cómo hacer los cambios más comunes**, paso a paso y sin programar. |
+| [`COMO_FUNCIONA.md`](COMO_FUNCIONA.md) | Cómo funciona por dentro (para programadores). |
 | [`PRUEBAS.md`](PRUEBAS.md) | Lista para probar la página en celulares reales antes de enviarla. |
 
 ## Cómo funciona
