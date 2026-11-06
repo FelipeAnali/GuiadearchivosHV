@@ -938,7 +938,8 @@ VERIFICADOR	LOGISTICA	NO
       revision: {
         nombreArchivo: ['REFERENCIA', 'LABORAL', 'TRABAJO', 'EXPERIENCIA'], ejemploNombre: 'referencia_laboral.pdf',
         paginasMax: 3, palabras: ['CERTIFIC', 'LABOR', 'TRABAJ', 'REFERENCIA', 'CARGO', 'EMPRESA'],
-        distintivas: ['LABORO', 'LABORANDO', 'REFERENCIA LABORAL', 'CERTIFICACION LABORAL', 'CONSTANCIA LABORAL', 'DESEMPEN', 'SALARIO', 'CONTRATO'] } },
+        distintivas: ['LABORO', 'LABORANDO', 'REFERENCIA LABORAL', 'CERTIFICACION LABORAL', 'CONSTANCIA LABORAL', 'DESEMPEN', 'SALARIO', 'CONTRATO',
+                      'TRABAJO', 'TRABAJA', 'PRESTO SUS SERVICIOS', 'VINCULAD', 'HACE CONSTAR', 'NUESTRA EMPRESA', 'CON NOSOTROS'] } },
 
     // Solo para quien dice que es su primer empleo (reemplaza la referencia laboral)
     { id: 'referencia_personal', codigo: '05', nombre: 'Referencias personales',
@@ -1348,7 +1349,11 @@ function pareceOtroDocumento(texto, doc) {
     const p = puntaje(otro);
     if (p > mejorPuntaje) { mejor = otro; mejorPuntaje = p; }
   }
-  return mejorPuntaje > propio ? mejor : null;
+  // Solo se rechaza si es claro: el PDF no trae NINGUNA palabra propia de este documento,
+  // o trae al menos 2 palabras más del otro. Así no se rechazan documentos buenos que
+  // mencionan de pasada otro tema (ej. una referencia laboral que dice "afiliado a pensión").
+  const claro = mejorPuntaje > propio && (propio === 0 || mejorPuntaje >= propio + 2);
+  return claro ? mejor : null;
 }
 
 /**
