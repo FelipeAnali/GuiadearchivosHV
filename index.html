@@ -449,6 +449,37 @@
     * { transition: none !important; }
   }
 
+  /* --- Pantalla de carga (antes de que abra la app) --- */
+  .carga-inicial {
+    min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 24px; text-align: center; max-width: 420px; margin: 0 auto;
+  }
+  .carga-logo { height: 40px; width: auto; }
+  @media (prefers-color-scheme: dark) { .carga-logo { filter: brightness(0) invert(1); } }
+  .carga-rueda {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 3px solid var(--relleno); border-top-color: var(--lima);
+    animation: girar 0.9s linear infinite;
+  }
+  @keyframes girar { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .carga-rueda { animation-duration: 2.5s; } }
+  .carga-texto { font-size: 17px; font-weight: 600; margin: 0; }
+  .carga-detalle { font-size: 15px; color: var(--texto-2); margin: 0; }
+  .carga-detalle:empty { display: none; }
+  .carga-boton { max-width: 260px; }
+
+  /* --- Aviso: la página está abierta dentro de Instagram, Facebook, TikTok… --- */
+  .aviso-app { background: var(--alerta-fondo); color: var(--alerta-texto); border-radius: var(--radio); padding: 14px 16px; margin-bottom: 20px; font-size: 15px; }
+  .aviso-app strong { display: block; font-size: 16px; margin-bottom: 4px; }
+  .aviso-app ol { margin: 8px 0 0; padding-left: 20px; }
+  .aviso-app .enlace-pagina {
+    display: block; margin: 10px 0; padding: 8px 10px; border-radius: 8px;
+    background: var(--celda); color: var(--texto); font-weight: 600; overflow-wrap: anywhere;
+    user-select: all; -webkit-user-select: all;
+  }
+  .aviso-app .doc-acciones { margin-top: 4px; }
+  .error-acciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+
   /* ==========================================================================
      COMPUTADOR (pantallas anchas): columna central + pasos a la izquierda
      + ayuda a la derecha. En celular estos paneles no se muestran.
@@ -501,8 +532,9 @@ window.CONFIG = {
   // ⚠️ OBLIGATORIO: mientras esté vacío ('') el candidato no podrá terminar el envío.
   linkSubida: 'https://stcanaveral-my.sharepoint.com/:f:/p/felipe_vanegas/IgDOP-LDqSRcRIW4XQrNdHk5AXjvjq0iI8cNlUb5NQK_TqQ',
 
-  // Link a la política de tratamiento de datos de Cañaveral (opcional).
-  enlacePoliticaDatos: '',
+  // Link a la política de tratamiento de datos de Cañaveral (Ley 1581 de 2012).
+  // Es el manual registrado ante la SIC. Si la empresa publica una versión más nueva, cambiar aquí.
+  enlacePoliticaDatos: 'https://rnbd.sic.gov.co/sisi/consultaTitulares/archivo/F8315A36D21F3ADBE0553EB92B2D21CD',
 
   // Días que se guarda el avance en el celular del candidato (máximo recomendado: 7).
   diasConservacion: 7,
@@ -510,13 +542,20 @@ window.CONFIG = {
   // Minutos sin uso para limpiar la página en dispositivos prestados o públicos.
   minutosInactividad: 10,
 
-  // Peso máximo de cada PDF, en megas (MB).
+  // Peso máximo de cada PDF, en megas (MB). Si se pasa, la página le muestra al candidato
+  // cómo comprimirlo gratis (ver enlaceComprimir).
   tamanoMaximoMB: 5,
+
+  // Página gratuita para comprimir PDF que se le recomienda al candidato si su archivo pesa mucho.
+  enlaceComprimir: 'https://www.ilovepdf.com/es/comprimir_pdf',
 
   // Reglas de la foto 3×4 (se sube como imagen JPG/PNG):
   //   anchoMinimo / altoMinimo → tamaño mínimo en píxeles.
   //   brilloMinimoFondo        → qué tan claro debe ser el fondo (0 = negro, 255 = blanco).
-  foto: { anchoMinimo: 300, altoMinimo: 400, brilloMinimoFondo: 170 },
+  //                              Se acepta una pared blanca con poca luz (se ve gris) y la página
+  //                              la aclara sola al guardar la foto.
+  //   colorMaximoFondo         → qué tanto color puede tener el fondo (0 = gris/blanco, 1 = color puro).
+  foto: { anchoMinimo: 300, altoMinimo: 400, brilloMinimoFondo: 105, colorMaximoFondo: 0.35 },
 
   // Texto de la autorización de tratamiento de datos (Ley 1581 de 2012).
   // ⚠️ Pedir a Jurídica que valide este texto antes de publicar.
@@ -856,9 +895,10 @@ VERIFICADOR	LOGISTICA	NO
   //       paginasMax → máximo de páginas que puede tener el PDF.
   //       palabras   → si el PDF tiene texto, debe contener AL MENOS UNA de estas
   //                    palabras (sin tildes, en mayúscula). Ej. un certificado de ADRES dice "ADRES".
-  //       imagen     → true: el PDF debe traer una imagen (foto o escaneo), no solo texto.
-  //       nombreArchivo → el NOMBRE del archivo debe tener al menos una de estas palabras
-  //                    (ej. "acta_bachiller.pdf" para diplomas). Se muestra el ejemploNombre.
+  //       distintivas → palabras que SOLO trae este documento. Si un PDF trae más palabras
+  //                    distintivas de OTRO documento que de este, se rechaza ("parece ser X").
+  //       nombreArchivo → solo para PDF escaneados o con clave (no se puede leer su texto):
+  //                    el NOMBRE del archivo debe decir qué documento es (ej. "acta_bachiller.pdf").
   //     Si el PDF es escaneado (sin texto) no se pueden buscar palabras: basta con que
   //     traiga imagen y queda marcado "para revisión" de Gestión Humana.
   //     Un PDF sin texto y sin imagen (en blanco) siempre se rechaza.
@@ -872,7 +912,8 @@ VERIFICADOR	LOGISTICA	NO
       ayuda: 'Por ambas caras, en un solo PDF.', requerido: true,
       revision: {
         nombreArchivo: ['CEDULA', 'CC', 'DOCUMENTO', 'IDENTIDAD', 'IDENTIFICACION'], ejemploNombre: 'cedula.pdf',
-        paginasMax: 2, palabras: ['COLOMBIA', 'IDENTIFICACION', 'CEDULA', 'REGISTRADUR', 'NUIP'] } },
+        paginasMax: 2, palabras: ['COLOMBIA', 'IDENTIFICACION', 'CEDULA', 'REGISTRADUR', 'NUIP'],
+        distintivas: ['REGISTRADUR', 'NUIP', 'CEDULA DE CIUDADANIA', 'IDENTIFICACION PERSONAL', 'ESTATURA', 'INDICE DERECHO', 'LUGAR DE NACIMIENTO'] } },
 
     { id: 'diplomas', codigo: '03', nombre: 'Diplomas de estudios',
       ayuda: 'Bachiller, técnico, tecnólogo, etc. Puedes subir un PDF por cada diploma.',
@@ -880,7 +921,8 @@ VERIFICADOR	LOGISTICA	NO
       revision: {
         nombreArchivo: ['DIPLOMA', 'ACTA', 'BACHILLER', 'TITULO', 'GRADO', 'TECNIC', 'TECNOLOG', 'PROFESIONAL', 'ESTUDIO'], ejemploNombre: 'acta_bachiller.pdf',
         paginasMax: 4,
-        palabras: ['DIPLOMA', 'BACHILLER', 'TECNIC', 'TECNOLOG', 'PROFESIONAL', 'TITULO', 'GRADO', 'ACTA', 'OTORGA', 'CERTIFICA'] } },
+        palabras: ['DIPLOMA', 'BACHILLER', 'TECNIC', 'TECNOLOG', 'PROFESIONAL', 'TITULO', 'GRADO', 'ACTA', 'OTORGA', 'CERTIFICA'],
+        distintivas: ['DIPLOMA', 'BACHILLER', 'ACTA DE GRADO', 'TITULO DE', 'OTORGA', 'CONFIERE', 'GRADUAD'] } },
 
     { id: 'manipulacion', codigo: '04', nombre: 'Certificado de manipulación de alimentos',
       ayuda: 'Vigente y con mínimo 10 horas de formación.',
@@ -888,13 +930,15 @@ VERIFICADOR	LOGISTICA	NO
       requerido: 'segunCargo',
       revision: {
         nombreArchivo: ['MANIPULA', 'ALIMENTO', 'INOCUIDAD'], ejemploNombre: 'manipulacion_alimentos.pdf',
-        paginasMax: 3, palabras: ['MANIPULA', 'ALIMENTO', 'INOCUIDAD'] } },
+        paginasMax: 3, palabras: ['MANIPULA', 'ALIMENTO', 'INOCUIDAD'],
+        distintivas: ['MANIPULA', 'INOCUIDAD', 'BUENAS PRACTICAS DE MANUFACTURA'] } },
 
     { id: 'referencia', codigo: '05', nombre: 'Última referencia laboral',
       ayuda: 'Con membrete de la empresa y firma.', requerido: true, omitirSiPrimerEmpleo: true,
       revision: {
         nombreArchivo: ['REFERENCIA', 'LABORAL', 'TRABAJO', 'EXPERIENCIA'], ejemploNombre: 'referencia_laboral.pdf',
-        paginasMax: 3, palabras: ['CERTIFIC', 'LABOR', 'TRABAJ', 'REFERENCIA', 'CARGO', 'EMPRESA'] } },
+        paginasMax: 3, palabras: ['CERTIFIC', 'LABOR', 'TRABAJ', 'REFERENCIA', 'CARGO', 'EMPRESA'],
+        distintivas: ['LABORO', 'LABORANDO', 'REFERENCIA LABORAL', 'CERTIFICACION LABORAL', 'CONSTANCIA LABORAL', 'DESEMPEN', 'SALARIO', 'CONTRATO'] } },
 
     // Solo para quien dice que es su primer empleo (reemplaza la referencia laboral)
     { id: 'referencia_personal', codigo: '05', nombre: 'Referencias personales',
@@ -902,7 +946,8 @@ VERIFICADOR	LOGISTICA	NO
       requerido: true, soloSiPrimerEmpleo: true, variosArchivos: true,
       revision: {
         nombreArchivo: ['REFERENCIA', 'PERSONAL', 'RECOMENDACION', 'CARTA'], ejemploNombre: 'referencia_personal.pdf',
-        paginasMax: 2, palabras: ['REFERENCIA', 'RECOMIENDO', 'RECOMENDACION', 'CONOZCO', 'PERSONAL', 'CERTIFIC'] } },
+        paginasMax: 2, palabras: ['REFERENCIA', 'RECOMIENDO', 'RECOMENDACION', 'CONOZCO', 'PERSONAL', 'CERTIFIC'],
+        distintivas: ['REFERENCIA PERSONAL', 'RECOMIENDO', 'CONOZCO', 'RECOMENDACION PERSONAL'] } },
 
     { id: 'adres', codigo: '06', nombre: 'Certificado de afiliación a EPS (ADRES)',
       ayuda: 'Lo descargas gratis en la página de ADRES con tu número de documento.',
@@ -924,7 +969,8 @@ VERIFICADOR	LOGISTICA	NO
       requerido: true,
       revision: {
         nombreArchivo: ['ADRES', 'EPS', 'SALUD', 'BDUA', 'AFILIACION'], ejemploNombre: 'certificado_eps.pdf',
-        paginasMax: 3, palabras: ['ADRES', 'BDUA', 'AFILIA'] } },
+        paginasMax: 3, palabras: ['ADRES', 'BDUA', 'AFILIA'],
+        distintivas: ['ADRES', 'BDUA', 'BASE DE DATOS UNICA DE AFILIADOS', 'REGIMEN CONTRIBUTIVO', 'REGIMEN SUBSIDIADO'] } },
 
     { id: 'pension', codigo: '07', nombre: 'Certificado del fondo de pensión',
       ayuda: 'Si no recuerdas a qué fondo estás afiliado, consúltalo en el RUAF.',
@@ -957,7 +1003,8 @@ VERIFICADOR	LOGISTICA	NO
       revision: {
         nombreArchivo: ['PENSION', 'FONDO', 'RUAF', 'COLPENSIONES', 'PORVENIR', 'PROTECCION', 'COLFONDOS', 'SKANDIA'], ejemploNombre: 'certificado_pension.pdf',
         paginasMax: 4,
-        palabras: ['PENSION', 'RUAF', 'COLPENSIONES', 'PORVENIR', 'PROTECCION', 'COLFONDOS', 'SKANDIA'] } },
+        palabras: ['PENSION', 'RUAF', 'COLPENSIONES', 'PORVENIR', 'PROTECCION', 'COLFONDOS', 'SKANDIA'],
+        distintivas: ['PENSION', 'COLPENSIONES', 'PORVENIR', 'COLFONDOS', 'SKANDIA', 'CESANTIAS', 'RUAF'] } },
   ],
 };
 </script>
@@ -966,15 +1013,67 @@ VERIFICADOR	LOGISTICA	NO
 <!-- Logo oficial de Supertiendas Cañaveral (PNG con fondo transparente, incrustado para no depender de otro archivo) -->
 <script>window.LOGO_CANAVERAL = 'data:image/png;base64,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';</script>
 
-<div id="raiz"></div>
+<!-- Mensaje de carga: se ve mientras llegan las librerías. React lo reemplaza al abrir la app.
+     Si algo no carga, aquí mismo se muestra qué hacer. -->
+<div id="raiz">
+  <div class="carga-inicial" id="carga-inicial" role="status" aria-live="polite">
+    <img class="carga-logo" id="carga-logo" alt="Supertiendas Cañaveral" />
+    <div class="carga-rueda" id="carga-rueda" aria-hidden="true"></div>
+    <p class="carga-texto" id="carga-texto">Cargando…</p>
+    <p class="carga-detalle" id="carga-detalle"></p>
+    <button type="button" class="boton boton-principal carga-boton" id="carga-reintentar" hidden onclick="location.reload()">Reintentar</button>
+  </div>
+</div>
+<script>
+  // Escrito en JavaScript sencillo para que funcione hasta en celulares viejos.
+  (function () {
+    var logo = document.getElementById('carga-logo');
+    if (logo && window.LOGO_CANAVERAL) logo.src = window.LOGO_CANAVERAL;
+
+    /** Cambia el mensaje de carga (solo si la app todavía no ha abierto). */
+    window.mostrarProblemaCarga = function (titulo, detalle, esError) {
+      if (!document.getElementById('carga-inicial')) return; // la app ya abrió
+      document.getElementById('carga-texto').textContent = titulo;
+      document.getElementById('carga-detalle').textContent = detalle;
+      document.getElementById('carga-reintentar').hidden = false;
+      if (esError) document.getElementById('carga-rueda').style.display = 'none';
+    };
+    // Si en 15 segundos no ha abierto, se avisa (la conexión puede estar muy lenta).
+    setTimeout(function () {
+      window.mostrarProblemaCarga('Está tardando más de lo normal…',
+        'Tu conexión parece lenta. Espera un momento más o toca Reintentar. Si sigue igual, conéctate a otra red wifi o usa tus datos móviles.', false);
+    }, 15000);
+  })();
+</script>
 
 <!-- Librerías: React (interfaz), Babel (traduce el código JSX en el navegador) y JSZip (arma el ZIP) -->
+<!-- Cada librería se pide primero a cdnjs; si no llega (red bloqueada o caída), se pide a jsDelivr. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script>window.React || document.write('<script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"><\/script>')</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script>window.ReactDOM || document.write('<script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"><\/script>')</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script>window.Babel || document.write('<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.5/babel.min.js"><\/script>')</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>window.JSZip || document.write('<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"><\/script>')</script>
 <!-- pdf.js (de Mozilla): lee las páginas y el texto de los PDF para revisar que sean el documento correcto -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  if (!window.pdfjsLib) {
+    window.PDF_DESDE_RESPALDO = true; // el "ayudante" de pdf.js también se pide a jsDelivr
+    document.write('<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"><\/script>');
+  }
+</script>
+<script>
+  // ¿Llegó todo lo indispensable? (pdf.js no lo es: sin él la página funciona, solo revisa menos)
+  (function () {
+    var faltan = ['React', 'ReactDOM', 'Babel', 'JSZip'].filter(function (n) { return !window[n]; });
+    if (faltan.length) {
+      window.mostrarProblemaCarga('No se pudo cargar la página',
+        'Revisa tu conexión a internet y toca Reintentar. Si estás en el wifi de una empresa o un lugar público, prueba con tus datos móviles.', true);
+    }
+  })();
+</script>
 
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useMemo } = React;
@@ -1135,16 +1234,18 @@ function ayudaDelDocumento(doc, datos) {
 
 // pdf.js trabaja con un "ayudante" en segundo plano (worker) que se carga del mismo sitio.
 if (window.pdfjsLib) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = window.PDF_DESDE_RESPALDO
+    ? 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'
+    : 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
 
 /**
  * Huella digital del archivo (SHA-256): dos archivos idénticos tienen la misma huella.
  * Sirve para detectar que suban el mismo PDF en dos documentos distintos.
  */
-async function huellaDelArchivo(archivo) {
+async function huellaDelArchivo(archivo, bytesYaLeidos) {
   try {
-    const bytes = await archivo.arrayBuffer();
+    const bytes = bytesYaLeidos || await archivo.arrayBuffer();
     const resumen = await crypto.subtle.digest('SHA-256', bytes);
     return Array.from(new Uint8Array(resumen)).map((b) => b.toString(16).padStart(2, '0')).join('');
   } catch {
@@ -1162,11 +1263,16 @@ async function huellaDelArchivo(archivo) {
  * o { error } si está dañado.
  * Si pdf.js no cargó (sin internet), devuelve { paginas: null } y no bloquea.
  */
-async function leerPdf(archivo, cedula) {
+async function leerPdf(bytes, cedula) {
   if (!window.pdfjsLib) return { paginas: null, texto: '', tieneImagen: null };
 
-  /** Intenta abrir el PDF, sin clave o con la clave dada. Cada intento necesita su propia copia de los datos. */
-  const abrir = async (clave) => pdfjsLib.getDocument({ data: await archivo.arrayBuffer(), password: clave }).promise;
+  // Cada intento recibe su propia copia de los bytes (pdf.js se queda con la que recibe).
+  let tarea = null;
+  const abrir = (clave) => {
+    if (tarea) tarea.destroy();
+    tarea = pdfjsLib.getDocument({ data: new Uint8Array(bytes.slice(0)), password: clave });
+    return tarea.promise;
+  };
 
   try {
     let pdf;
@@ -1178,19 +1284,27 @@ async function leerPdf(archivo, cedula) {
       pdf = await abrir(cedula); // segundo intento: la cédula como contraseña
       claveEsCedula = true;
     }
-    // Instrucciones de dibujo que significan "aquí va una imagen"
-    const OPS = pdfjsLib.OPS;
-    const dibujosDeImagen = [OPS.paintImageXObject, OPS.paintInlineImageXObject,
-                             OPS.paintImageMaskXObject, OPS.paintJpegXObject].filter(Boolean);
+    // 1) Texto de las primeras 3 páginas (es lo rápido)
+    const paginasARevisar = Math.min(pdf.numPages, 3);
     let texto = '';
-    let tieneImagen = false;
-    for (let n = 1; n <= Math.min(pdf.numPages, 3); n++) {
+    for (let n = 1; n <= paginasARevisar; n++) {
       const pagina = await pdf.getPage(n);
       const contenido = await pagina.getTextContent();
       texto += ' ' + contenido.items.map((item) => item.str).join(' ');
-      if (!tieneImagen) {
+      pagina.cleanup();
+    }
+    // 2) Buscar imágenes es lento: solo se hace si casi no hay texto (escaneo o PDF en blanco)
+    let tieneImagen = null;
+    if (texto.replace(/[^A-Za-z0-9]/g, '').length < 30) {
+      const OPS = pdfjsLib.OPS;
+      const dibujosDeImagen = [OPS.paintImageXObject, OPS.paintInlineImageXObject,
+                               OPS.paintImageMaskXObject, OPS.paintJpegXObject].filter(Boolean);
+      tieneImagen = false;
+      for (let n = 1; n <= paginasARevisar && !tieneImagen; n++) {
+        const pagina = await pdf.getPage(n);
         const operaciones = await pagina.getOperatorList();
         tieneImagen = operaciones.fnArray.some((op) => dibujosDeImagen.includes(op));
+        pagina.cleanup();
       }
     }
     return { paginas: pdf.numPages, texto, tieneImagen, claveEsCedula };
@@ -1202,6 +1316,9 @@ async function leerPdf(archivo, cedula) {
       return { error: 'El PDF está dañado y no se puede abrir. Vuelve a generarlo.' };
     }
     return { paginas: null, texto: '', tieneImagen: null }; // otro problema técnico: no bloqueamos al candidato
+  } finally {
+    // Libera la memoria del PDF (importante en celulares con poca memoria)
+    if (tarea) tarea.destroy();
   }
 }
 
@@ -1217,26 +1334,44 @@ function nombreIdentificaDocumento(nombreArchivo, palabrasClave) {
 }
 
 /**
+ * ¿El texto del PDF se parece más a OTRO documento que a este?
+ * Cuenta las palabras "distintivas" de cada documento que aparecen en el texto.
+ * Devuelve el documento al que más se parece (si gana claramente), o null.
+ */
+function pareceOtroDocumento(texto, doc) {
+  const puntaje = (d) => ((d.revision && d.revision.distintivas) || []).filter((p) => texto.includes(p)).length;
+  const propio = puntaje(doc);
+  let mejor = null;
+  let mejorPuntaje = 0;
+  for (const otro of CONFIG.documentos) {
+    if (otro.id === doc.id || otro.tipo === 'imagen') continue;
+    const p = puntaje(otro);
+    if (p > mejorPuntaje) { mejor = otro; mejorPuntaje = p; }
+  }
+  return mejorPuntaje > propio ? mejor : null;
+}
+
+/**
  * Revisa un archivo antes de aceptarlo para un documento:
- *   0. Que el nombre del archivo identifique el documento (ej. "acta_bachiller.pdf").
  *   1. Que sea un PDF real, no vacío y no muy pesado.
  *   2. Que no sea el mismo archivo ya subido en otro documento.
  *   3. Que no tenga más páginas de las esperadas.
  *   4. Que no esté en blanco: debe traer texto o una imagen (foto/escaneo).
- *   5. Que sea alusivo al documento: si trae texto, que tenga alguna palabra clave;
- *      si el documento lo pide (ej. la foto), que traiga una imagen.
+ *   5. Si el PDF tiene texto: que tenga alguna palabra clave del documento y que no
+ *      se parezca más a otro documento (ej. el certificado de pensión subido como EPS).
+ *   6. Si el PDF es escaneado o tiene clave (no se puede leer): el NOMBRE del archivo
+ *      debe decir qué documento es (ej. "acta_bachiller.pdf"). Queda para revisión de GH.
  * Devuelve { error } si no se acepta, o { item } con el archivo listo para guardar.
  */
 async function revisarArchivo(archivo, doc, cedula, archivosActuales) {
   if (!archivo) return { error: 'No se seleccionó ningún archivo.' };
-  const reglasNombre = doc.revision || {};
-  if (!nombreIdentificaDocumento(archivo.name, reglasNombre.nombreArchivo)) {
-    return { error: `El nombre del archivo debe decir qué documento es. Cámbiale el nombre, por ejemplo: "${reglasNombre.ejemploNombre}".` };
-  }
   if (archivo.size === 0) return { error: 'El archivo está vacío. Vuelve a generarlo e inténtalo otra vez.' };
   const maximo = CONFIG.tamanoMaximoMB * 1024 * 1024;
   if (archivo.size > maximo) {
-    return { error: `Pesa ${pesoLegible(archivo.size)} y el máximo es ${CONFIG.tamanoMaximoMB} MB. Comprímelo o escanéalo en menor calidad.` };
+    return {
+      error: `Pesa ${pesoLegible(archivo.size)} y el máximo es ${CONFIG.tamanoMaximoMB} MB. Comprímelo gratis y vuelve a subirlo.`,
+      comprimir: true,
+    };
   }
   // Todo PDF real tiene la marca "%PDF-" al inicio (no basta con que el nombre termine en .pdf)
   const inicio = await archivo.slice(0, 1024).text();
@@ -1244,8 +1379,11 @@ async function revisarArchivo(archivo, doc, cedula, archivosActuales) {
     return { error: 'Ese archivo no es un PDF. Si tienes una foto, conviértela a PDF antes de subirla.' };
   }
 
+  // El archivo se lee UNA sola vez y esos bytes se usan para la huella y para pdf.js
+  const bytes = await archivo.arrayBuffer();
+
   // ¿Ya subió este mismo archivo en otro documento (o en este)?
-  const huella = await huellaDelArchivo(archivo);
+  const huella = await huellaDelArchivo(archivo, bytes);
   for (const otro of CONFIG.documentos) {
     if ((archivosActuales[otro.id] || []).some((item) => item.huella === huella)) {
       return { error: otro.id === doc.id
@@ -1255,7 +1393,7 @@ async function revisarArchivo(archivo, doc, cedula, archivosActuales) {
   }
 
   const reglas = doc.revision || {};
-  const lectura = await leerPdf(archivo, cedula);
+  const lectura = await leerPdf(bytes, cedula);
   if (lectura.error) return { error: lectura.error };
 
   if (reglas.paginasMax && lectura.paginas && lectura.paginas > reglas.paginasMax) {
@@ -1270,11 +1408,20 @@ async function revisarArchivo(archivo, doc, cedula, archivosActuales) {
   if (leido && !tieneTexto && !lectura.tieneImagen) {
     return { error: 'El PDF está en blanco: no tiene texto ni imagen. Revisa que sea el archivo correcto.' };
   }
-  if (leido && reglas.imagen && !lectura.tieneImagen) {
-    return { error: `"${doc.nombre}" debe ser una foto o un escaneo guardado como PDF.` };
-  }
-  if (tieneTexto && reglas.palabras && !reglas.palabras.some((p) => texto.includes(p))) {
-    return { error: `Este archivo no parece ser "${doc.nombre}". Revisa que estés subiendo el documento correcto.` };
+
+  if (tieneTexto) {
+    // Se puede leer: se revisa el CONTENIDO (el nombre del archivo da igual)
+    if (reglas.palabras && !reglas.palabras.some((p) => texto.includes(p))) {
+      return { error: `Este archivo no parece ser "${doc.nombre}". Revisa que estés subiendo el documento correcto.` };
+    }
+    const otro = pareceOtroDocumento(texto, doc);
+    if (otro) {
+      return { error: `Este archivo parece ser "${otro.nombre}", no "${doc.nombre}". Revisa que lo estés subiendo en el lugar correcto.` };
+    }
+  } else if (!nombreIdentificaDocumento(archivo.name, reglas.nombreArchivo)) {
+    // No se puede leer (escaneado o con clave): el nombre del archivo es la única pista
+    const motivo = lectura.protegido ? 'tiene contraseña' : 'es escaneado (una foto del documento)';
+    return { error: `Este PDF ${motivo}, así que no podemos leer qué documento es. Cámbiale el nombre para que lo diga, por ejemplo: "${reglas.ejemploNombre}".` };
   }
 
   return {
@@ -1318,7 +1465,7 @@ async function abrirImagen(archivo) {
  * Achica la imagen (lado más largo = maximo px) y la guarda como JPG.
  * Una foto de celular de 4 MB queda en unos 200–400 KB.
  */
-function comprimirImagen(imagen, maximo, calidad) {
+function comprimirImagen(imagen, maximo, calidad, fondo) {
   const escala = Math.min(1, maximo / Math.max(imagen.width, imagen.height));
   const lienzo = document.createElement('canvas');
   lienzo.width = Math.round(imagen.width * escala);
@@ -1327,34 +1474,55 @@ function comprimirImagen(imagen, maximo, calidad) {
   ctx.fillStyle = '#FFFFFF'; // por si la imagen PNG trae partes transparentes
   ctx.fillRect(0, 0, lienzo.width, lienzo.height);
   ctx.drawImage(imagen, 0, 0, lienzo.width, lienzo.height);
+  if (fondo) aclararFondo(ctx, lienzo.width, lienzo.height, fondo);
   return new Promise((resolver) => lienzo.toBlob((blob) => resolver({ blob, ancho: lienzo.width, alto: lienzo.height }), 'image/jpeg', calidad));
 }
 
 /**
- * ¿El fondo es claro? Mira una franja delgada en los bordes de la foto (donde
- * debería verse el fondo) y calcula qué tan clara y qué tan "sin color" es.
+ * Mira el fondo de la foto: una franja delgada en los bordes (laterales y arriba; abajo
+ * suele ir la ropa). Devuelve su color promedio, qué tan claro es y qué tanto color tiene.
  */
-function fondoEsClaro(imagen) {
+function analizarFondo(imagen) {
   const lienzo = document.createElement('canvas');
   lienzo.width = 60; lienzo.height = 80;
   const ctx = lienzo.getContext('2d');
   ctx.drawImage(imagen, 0, 0, 60, 80);
   const { data } = ctx.getImageData(0, 0, 60, 80);
-  let suma = 0, color = 0, cuenta = 0;
+  let r = 0, g = 0, b = 0, cuenta = 0;
   for (let y = 0; y < 80; y++) {
     for (let x = 0; x < 60; x++) {
-      const enBorde = x < 4 || x >= 56 || y < 4; // laterales y parte de arriba (abajo suele ir la ropa)
-      if (!enBorde) continue;
+      if (!(x < 4 || x >= 56 || y < 4)) continue;
       const i = (y * 60 + x) * 4;
-      const r = data[i], g = data[i + 1], b = data[i + 2];
-      suma += (r + g + b) / 3;
-      color += Math.max(r, g, b) - Math.min(r, g, b);
-      cuenta++;
+      r += data[i]; g += data[i + 1]; b += data[i + 2]; cuenta++;
     }
   }
-  const brillo = suma / cuenta;   // 0 = negro, 255 = blanco
-  const saturacion = color / cuenta; // 0 = gris/blanco, alto = colorido
-  return brillo >= CONFIG.foto.brilloMinimoFondo && saturacion <= 45;
+  r /= cuenta; g /= cuenta; b /= cuenta;
+  const maximo = Math.max(r, g, b);
+  return {
+    r, g, b,
+    brillo: (r + g + b) / 3,                               // 0 = negro, 255 = blanco
+    color: maximo > 0 ? (maximo - Math.min(r, g, b)) / maximo : 0, // 0 = gris/blanco, 1 = color puro
+  };
+}
+
+/**
+ * Aclara la foto para que el fondo quede blanco: si la pared salió gris (poca luz)
+ * o amarillenta (bombillo cálido), sube cada color lo justo para que el fondo quede
+ * casi blanco. Trabaja sobre el lienzo ya achicado.
+ */
+function aclararFondo(ctx, ancho, alto, fondo) {
+  const objetivo = 245;
+  const ganancia = (c) => Math.min(2.2, Math.max(1, objetivo / Math.max(c, 1)));
+  const gr = ganancia(fondo.r), gg = ganancia(fondo.g), gb = ganancia(fondo.b);
+  if (gr < 1.03 && gg < 1.03 && gb < 1.03) return; // ya está bien
+  const datos = ctx.getImageData(0, 0, ancho, alto);
+  const d = datos.data;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i] = Math.min(255, d[i] * gr);
+    d[i + 1] = Math.min(255, d[i + 1] * gg);
+    d[i + 2] = Math.min(255, d[i + 2] * gb);
+  }
+  ctx.putImageData(datos, 0, 0);
 }
 
 /**
@@ -1389,11 +1557,16 @@ async function revisarImagen(archivo, doc, archivosActuales) {
   if (imagen.width > imagen.height) {
     return { error: 'La foto debe ser vertical (más alta que ancha), como una foto tipo documento.' };
   }
-  if (!fondoEsClaro(imagen)) {
-    return { error: 'La foto debe tener el fondo blanco o muy claro. Tómala frente a una pared blanca.' };
+  const fondo = analizarFondo(imagen);
+  if (fondo.color > CONFIG.foto.colorMaximoFondo) {
+    return { error: 'El fondo de la foto tiene color. Debe ser blanco: tómala frente a una pared blanca.' };
+  }
+  if (fondo.brillo < CONFIG.foto.brilloMinimoFondo) {
+    return { error: 'La foto está muy oscura. Tómala de día cerca de una ventana o con la luz encendida, frente a una pared blanca.' };
   }
 
-  const { blob } = await comprimirImagen(imagen, 1200, 0.88);
+  // Si el fondo salió gris o amarillento por la luz, se aclara solo para que quede blanco
+  const { blob } = await comprimirImagen(imagen, 1200, 0.88, fondo);
   return {
     item: {
       nombre: archivo.name, tamano: blob.size, blob, fecha: Date.now(), huella,
@@ -1592,6 +1765,74 @@ function Palomita({ tamano = 17 }) {
   );
 }
 
+/**
+ * ¿La página se abrió dentro de una app (Instagram, Facebook, TikTok…)? Ahí la descarga
+ * del ZIP suele fallar. Devuelve el nombre de la app, o null si es un navegador normal.
+ * En modo prueba se puede simular con ?prueba=1&app=1.
+ */
+function navegadorDentroDeApp() {
+  if (MODO_PRUEBA && new URLSearchParams(location.search).has('app')) return 'Instagram';
+  const ua = navigator.userAgent || '';
+  const apps = [
+    [/Instagram/i, 'Instagram'], [/FBAN|FBAV|FB_IAB|FBIOS|FB4A/i, 'Facebook'], [/Messenger/i, 'Messenger'],
+    [/musical_ly|TikTok|BytedanceWebview|trill/i, 'TikTok'], [/Snapchat/i, 'Snapchat'],
+    [/LinkedInApp/i, 'LinkedIn'], [/Twitter/i, 'X (Twitter)'], [/Line\//i, 'LINE'], [/Pinterest/i, 'Pinterest'],
+  ];
+  const encontrada = apps.find(([patron]) => patron.test(ua));
+  return encontrada ? encontrada[1] : null;
+}
+const APP_ACTUAL = navegadorDentroDeApp();
+const ES_IPHONE = /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+const ES_ANDROID = /Android/i.test(navigator.userAgent || '');
+const ENLACE_PAGINA = location.origin + location.pathname;
+
+/** Aviso para abrir la página en Chrome o Safari. Solo aparece dentro de apps. */
+function AvisoNavegadorApp() {
+  const [copiado, setCopiado] = useState(false);
+  if (!APP_ACTUAL) return null;
+  const navegador = ES_IPHONE ? 'Safari' : 'Chrome';
+
+  async function copiar() {
+    try {
+      await navigator.clipboard.writeText(ENLACE_PAGINA);
+    } catch {
+      // Respaldo para navegadores que no dejan usar el portapapeles
+      const campo = document.createElement('textarea');
+      campo.value = ENLACE_PAGINA;
+      document.body.appendChild(campo);
+      campo.select();
+      try { document.execCommand('copy'); } catch { /* no se pudo */ }
+      campo.remove();
+    }
+    setCopiado(true);
+  }
+
+  // En Android se puede pedir directamente que se abra en Chrome
+  const abrirEnChrome = `intent://${ENLACE_PAGINA.replace(/^https?:\/\//, '')}#Intent;scheme=https;package=com.android.chrome;end`;
+
+  return (
+    <div className="aviso-app" role="alert">
+      <strong>Abre esta página en {navegador}</strong>
+      Estás dentro de {APP_ACTUAL} y ahí la descarga de tus documentos puede fallar. Ábrela en {navegador}:
+      <span className="enlace-pagina">{ENLACE_PAGINA}</span>
+      <ol>
+        {ES_IPHONE ? (
+          <li>Toca los tres puntos (<b>⋯</b>) arriba o abajo a la derecha y elige <b>Abrir en el navegador</b> o <b>Abrir en Safari</b>.</li>
+        ) : (
+          <li>Toca los tres puntos (<b>⋮</b>) arriba a la derecha y elige <b>Abrir en Chrome</b> o <b>Abrir en el navegador</b>.</li>
+        )}
+        <li>Si no aparece esa opción, copia el enlace, abre {navegador} y pégalo en la barra de direcciones.</li>
+      </ol>
+      <div className="doc-acciones">
+        {ES_ANDROID && <a className="boton boton-principal boton-chico" href={abrirEnChrome}>Abrir en Chrome</a>}
+        <button type="button" className="boton boton-tintado boton-chico" onClick={copiar}>
+          {copiado ? 'Enlace copiado ✓' : 'Copiar enlace'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Pasos (solo se ve en computador). */
 const PASOS = ['Preguntas iniciales', 'Tus datos y cargo', 'Sube tus documentos', 'Descarga y envía'];
 function PanelPasos({ paso }) {
@@ -1684,7 +1925,7 @@ function PantallaInicio({ alComenzar, guardadoDisponible, avisoInicial }) {
     {
       valor: 'prestado',
       titulo: 'No, es prestado o público',
-      detalle: `No guardamos nada. Si la dejas ${CONFIG.minutosInactividad} minutos sin usar, se borra sola.`,
+      detalle: `Ten todos tus documentos listos antes de empezar: no guardamos nada y si la dejas ${CONFIG.minutosInactividad} minutos sin usar, se borra sola.`,
     },
   ];
 
@@ -1692,6 +1933,7 @@ function PantallaInicio({ alComenzar, guardadoDisponible, avisoInicial }) {
     <>
       <main className="contenido">
         {avisoInicial && <div className="aviso aviso-alerta" role="status">{avisoInicial}</div>}
+        <AvisoNavegadorApp />
 
         {/* Portada con la identidad de Cañaveral */}
         <div className="portada">
@@ -1978,6 +2220,7 @@ function TarjetaDocumento({ doc, posicion, ayuda, archivos, cedula, todosLosArch
   const tieneArchivos = archivos.length > 0;
   const esImagen = doc.tipo === 'imagen';
   const [tutorialAbierto, setTutorialAbierto] = useState(false); // hoja "¿Cómo lo saco?" abierta
+  const [comoComprimir, setComoComprimir] = useState(false);     // hoja "Cómo comprimir un PDF" abierta
 
   /** Revisa cada archivo elegido y agrega los que pasan. */
   async function procesar(elegidos) {
@@ -1992,14 +2235,14 @@ function TarjetaDocumento({ doc, posicion, ayuda, archivos, cedula, todosLosArch
         const resultado = esImagen
           ? await revisarImagen(archivo, doc, actuales)
           : await revisarArchivo(archivo, doc, cedula, actuales);
-        if (resultado.error) { setError(`${archivo.name}: ${resultado.error}`); continue; }
+        if (resultado.error) { setError({ texto: `${archivo.name}: ${resultado.error}`, comprimir: !!resultado.comprimir }); continue; }
         validos.push(resultado.item);
         // Para que dos archivos iguales elegidos a la vez también se detecten
         actuales[doc.id] = [...(actuales[doc.id] || []), resultado.item];
       }
     } catch {
       // Error inesperado leyendo el archivo (ej. se movió o borró mientras se revisaba)
-      setError('No pudimos leer el archivo. Vuelve a elegirlo.');
+      setError({ texto: 'No pudimos leer el archivo. Vuelve a elegirlo.' });
     } finally {
       setRevisando(false); // el botón nunca se queda en "Revisando…"
     }
@@ -2043,7 +2286,7 @@ function TarjetaDocumento({ doc, posicion, ayuda, archivos, cedula, todosLosArch
             </button>
           )}
           {doc.revision?.ejemploNombre && (
-            <div>Nombre del archivo, por ejemplo: <strong>{doc.revision.ejemploNombre}</strong></div>
+            <div>Si es escaneado, el nombre del archivo debe decir qué es, por ejemplo: <strong>{doc.revision.ejemploNombre}</strong></div>
           )}
         </div>
 
@@ -2063,8 +2306,22 @@ function TarjetaDocumento({ doc, posicion, ayuda, archivos, cedula, todosLosArch
           );
         })}
 
-        {error && <p className="doc-error" role="alert">{error}</p>}
+        {error && (
+          <div role="alert">
+            <p className="doc-error">{error.texto}</p>
+            {error.comprimir && (
+              <div className="error-acciones">
+                <a className="boton boton-tintado boton-chico" href={CONFIG.enlaceComprimir}
+                   target="_blank" rel="noopener noreferrer">Comprimir gratis</a>
+                <button type="button" className="boton-como" onClick={() => setComoComprimir(true)}>¿Cómo lo hago?</button>
+              </div>
+            )}
+          </div>
+        )}
         {tutorialAbierto && <HojaTutorial doc={doc} alCerrar={() => setTutorialAbierto(false)} />}
+        {comoComprimir && (
+          <HojaTutorial doc={{ ...doc, tutorial: TUTORIAL_COMPRIMIR }} alCerrar={() => setComoComprimir(false)} />
+        )}
 
         <div className="doc-acciones">
           {/* Selectores de archivo ocultos: los abren los botones de abajo */}
@@ -2188,6 +2445,7 @@ function PantallaEnvio({ sesion, alVolver, alTerminar }) {
       <main className="contenido">
         <h1>Revisa y envía</h1>
         <p className="bajada">Tienes todos los documentos. Solo faltan dos pasos.</p>
+        <AvisoNavegadorApp />
 
         {error && <div className="aviso aviso-error" role="alert">{error}</div>}
 
@@ -2379,6 +2637,21 @@ const ILUSTRACIONES = {
  * Hoja del tutorial: título, pasos numerados con su ilustración y enlaces.
  * Se cierra tocando fuera, con "Entendido" o con la tecla Escape.
  */
+/** Paso a paso para comprimir un PDF que pesa mucho (se abre desde el error de tamaño). */
+const TUTORIAL_COMPRIMIR = {
+  titulo: 'Cómo comprimir tu PDF',
+  intro: 'Es gratis, no necesitas crear usuario y toma 1 minuto. Funciona en celular y en computador.',
+  pasos: [
+    { texto: 'Abre la página para comprimir PDF y toca "Seleccionar archivo PDF". Elige el archivo que pesa mucho.',
+      enlace: { texto: 'Abrir página para comprimir', url: CONFIG.enlaceComprimir } },
+    { texto: 'Deja marcada la opción "Compresión recomendada" y toca "Comprimir PDF". Espera unos segundos.' },
+    { texto: 'Toca "Descargar PDF comprimido". El archivo nuevo queda en tu carpeta de Descargas.' },
+    { ilustracion: 'renombrar',
+      texto: 'Vuelve a esta página y sube el archivo comprimido en el mismo documento.' },
+  ],
+  nota: 'Es una página externa y gratuita (no es de Cañaveral). Si prefieres no usarla, escanea el documento otra vez en menor calidad o en blanco y negro.',
+};
+
 function HojaTutorial({ doc, alCerrar }) {
   const tutorial = doc.tutorial;
   const hoja = useRef(null);
@@ -2566,7 +2839,14 @@ function App() {
 
   /** Guarda nombre, cédula, cargo, sección y primer empleo, y pasa a los documentos. */
   function guardarDatos(datos) {
-    setSesion((s) => ({ ...s, datos }));
+    // Si cambió el cargo o "primer empleo", los documentos que ya no aplican se descartan
+    // (no van en el ZIP y así no aparecen avisos de "archivo repetido" con documentos ocultos).
+    const aplican = new Set(documentosQueAplican(datos).map((d) => d.id));
+    setSesion((s) => ({
+      ...s,
+      datos,
+      archivos: Object.fromEntries(Object.entries(s.archivos || {}).filter(([id]) => aplican.has(id))),
+    }));
     setPantalla('documentos');
   }
 

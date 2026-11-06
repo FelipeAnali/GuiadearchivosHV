@@ -30,8 +30,15 @@ Si el dispositivo es propio, el avance se guarda unos días en el navegador; si 
    y el manual en:
    `https://felipeanali.github.io/GuiadearchivosHV/manual/Manual_candidato_Documentos_de_ingreso.pdf`
 
+## Revisión automática de documentos
+
+- **PDF con texto** (descargados de una página, como ADRES o el fondo de pensión): la página lee el contenido y rechaza el archivo si no corresponde o si se parece más a otro documento. El nombre del archivo no importa.
+- **PDF escaneados o con contraseña** (no se puede leer el texto): el nombre del archivo debe decir qué documento es (por ejemplo `cedula.pdf`). Quedan marcados para revisión de Gestión Humana en `datos_candidato.json`.
+- **Foto 3×4**: se rechaza si el fondo tiene color o está muy oscuro. Si la pared blanca salió gris o amarillenta por la luz, la página la aclara sola.
+- **PDF de más de 5 MB**: se le muestra al candidato un paso a paso para comprimirlo gratis.
+
 ## Editar
 
-Solo hace falta tocar el bloque **CONFIGURACIÓN** dentro de `index.html` (cargos, documentos, textos y link de subida a OneDrive). El resto es el código de la app.
+Solo hace falta tocar el bloque **CONFIGURACIÓN** dentro de `index.html` (cargos, documentos, textos, link de subida a OneDrive, link de la política de datos y página para comprimir PDF). El resto es el código de la app.
 
-**Modo prueba:** abre la página con `?prueba=1` al final de la dirección para llenarla con datos de prueba (no guarda nada).
+**Modo prueba:** abre la página con `?prueba=1` al final de la dirección para llenarla con datos de prueba (no guarda nada). Con `?prueba=1&app=1` se ve el aviso que sale cuando la página se abre dentro de Instagram o Facebook.
