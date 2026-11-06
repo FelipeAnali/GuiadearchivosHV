@@ -164,7 +164,7 @@
     border-bottom: 0.5px solid var(--separador);
     padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;
   }
-  .barra-nav-interna { max-width: var(--ancho-contenido); margin: 0 auto; }
+  .barra-nav-interna { max-width: calc(var(--ancho-contenido) - 32px); margin: 0 auto; }
   .nav-fila { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
   /* Logo de Cañaveral (verde). En modo oscuro se vuelve blanco con un filtro. */
   .logo { display: block; width: auto; }
@@ -318,7 +318,9 @@
     transition: opacity 120ms ease-out;
   }
   .boton:active:not(:disabled) { opacity: 0.6; }      /* iOS atenúa al tocar */
-  .boton:disabled, .boton[aria-disabled="true"] { opacity: 0.35; cursor: not-allowed; }
+  .boton:disabled, .boton[aria-disabled="true"] { cursor: not-allowed; }
+  .boton-principal:disabled { background: var(--relleno); color: var(--texto-2); }
+  .boton-tintado:disabled, .boton-chico:disabled { opacity: 0.45; }
   .boton-principal { width: 100%; background: var(--tinte); color: var(--texto-sobre-tinte); }
   .boton-tintado { background: var(--tinte-suave); color: var(--tinte); }
   .boton-chico { min-height: 34px; padding: 0 14px; border-radius: 999px; font-size: 15px; }
@@ -344,7 +346,7 @@
     border-top: 0.5px solid var(--separador);
     padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
   }
-  .barra-accion-interna { max-width: var(--ancho-contenido); margin: 0 auto; }
+  .barra-accion-interna { max-width: calc(var(--ancho-contenido) - 32px); margin: 0 auto; }
   .barra-accion .nota { text-align: center; font-size: 13px; margin: 7px 0 0; color: var(--texto-2); }
 
   /* --- Avisos --- */
@@ -445,6 +447,40 @@
   @media (prefers-reduced-motion: reduce) {
     .hoja-fondo, .hoja { animation: none; }
     * { transition: none !important; }
+  }
+
+  /* ==========================================================================
+     COMPUTADOR (pantallas anchas): columna central + pasos a la izquierda
+     + ayuda a la derecha. En celular estos paneles no se muestran.
+     ========================================================================== */
+  .lateral { display: none; }
+  .escritorio { flex: 1; display: flex; flex-direction: column; }
+  .columna-central { display: contents; }
+  @media (min-width: 1100px) {
+    :root { --ancho-lateral: 250px; --ancho-escritorio: 1180px; }
+    .barra-nav-interna { max-width: calc(var(--ancho-escritorio) - 32px); }
+    .escritorio {
+      flex: 1; width: 100%; max-width: var(--ancho-escritorio); margin: 0 auto;
+      display: grid; grid-template-columns: var(--ancho-lateral) minmax(0, 1fr) var(--ancho-lateral);
+      gap: 32px; padding: 0 16px; align-items: start;
+    }
+    .columna-central { display: flex; flex-direction: column; min-height: calc(100dvh - 60px); }
+    .columna-central .contenido { padding: 24px 0 28px; max-width: none; }
+    .columna-central .barra-accion { padding-left: 0; padding-right: 0; background: var(--fondo); }
+    .columna-central .barra-accion-interna { max-width: none; }
+    .portada .logo { display: none; }   /* el logo ya está en la barra de arriba */
+    .portada { padding: 30px 28px 28px; }
+    .lateral { display: block; position: sticky; top: 84px; padding-top: 24px; }
+    .lateral-titulo { font-size: 13px; color: var(--texto-2); margin: 0 0 10px 4px; font-weight: 400; }
+    .pasos-lista { list-style: none; margin: 0; padding: 0; }
+    .paso-item { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 12px; color: var(--texto-2); font-size: 15px; }
+    .paso-item .circulo { margin-top: 0; }
+    .paso-item.actual { background: var(--celda); color: var(--texto); font-weight: 600; }
+    .paso-item.hecho { color: var(--texto); }
+    .tarjeta-ayuda { background: var(--celda); border-radius: var(--radio); padding: 16px; margin-bottom: 14px; font-size: 15px; }
+    .tarjeta-ayuda h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+    .tarjeta-ayuda p { color: var(--texto-2); line-height: 1.45; }
+    .tarjeta-ayuda .boton { width: 100%; margin-top: 12px; min-height: 40px; font-size: 15px; }
   }
 </style>
 </head>
@@ -1556,6 +1592,51 @@ function Palomita({ tamano = 17 }) {
   );
 }
 
+/** Pasos (solo se ve en computador). */
+const PASOS = ['Preguntas iniciales', 'Tus datos y cargo', 'Sube tus documentos', 'Descarga y envía'];
+function PanelPasos({ paso }) {
+  return (
+    <aside className="lateral" aria-label="Pasos">
+      <h2 className="lateral-titulo">Tu avance</h2>
+      <ol className="pasos-lista">
+        {PASOS.map((t, i) => {
+          const n = i + 1, estado = !paso ? 'hecho' : n < paso ? 'hecho' : n === paso ? 'actual' : '';
+          return (
+            <li key={t} className={`paso-item ${estado}`} aria-current={estado === 'actual' ? 'step' : undefined}>
+              <span className={`circulo ${estado === 'hecho' ? 'hecho' : estado === 'actual' ? 'activo' : ''}`}>
+                {estado === 'hecho' ? '✓' : n}
+              </span>
+              {t}
+            </li>
+          );
+        })}
+      </ol>
+    </aside>
+  );
+}
+/** Ayuda (solo se ve en computador). */
+function PanelAyuda() {
+  return (
+    <aside className="lateral" aria-label="Ayuda">
+      <h2 className="lateral-titulo">Ayuda</h2>
+      <div className="tarjeta-ayuda">
+        <h3>¿Primera vez?</h3>
+        <p>El manual te muestra cada paso con imágenes de la página.</p>
+        <a className="boton boton-tintado" href="manual/Manual_candidato_Documentos_de_ingreso.pdf"
+           target="_blank" rel="noopener noreferrer">Ver manual (PDF)</a>
+      </div>
+      <div className="tarjeta-ayuda">
+        <h3>Tus archivos son privados</h3>
+        <p>No se suben a internet desde esta página. Solo tú envías el paquete final a Gestión Humana.</p>
+      </div>
+      <div className="tarjeta-ayuda">
+        <h3>Formatos</h3>
+        <p>La foto 3×4 va como imagen (JPG o PNG). Todo lo demás, en PDF.</p>
+      </div>
+    </aside>
+  );
+}
+
 /** Barra de navegación translúcida con el paso actual y la barra de avance en forma de caña. */
 function Encabezado({ paso, completos, total }) {
   return (
@@ -2548,6 +2629,9 @@ function App() {
       <Encabezado paso={{ inicio: 1, datos: 2, documentos: 3, envio: 4 }[pantalla]}
                   completos={completos} total={mostrarAvance ? docsAplicables.length : 0} />
 
+      <div className="escritorio">
+      <PanelPasos paso={{ inicio: 1, datos: 2, documentos: 3, envio: 4 }[pantalla]} />
+      <div className="columna-central">
       {pantalla === 'inicio' && (
         <PantallaInicio alComenzar={comenzar} guardadoDisponible={guardadoDisponible} avisoInicial={avisoInicial} />
       )}
@@ -2567,6 +2651,9 @@ function App() {
       {pantalla === 'final' && (
         <PantallaFinal nombreZip={zipFinal} alReiniciar={() => { setAvisoInicial(null); setPantalla('inicio'); }} />
       )}
+      </div>
+      <PanelAyuda />
+      </div>
 
       {confirmacion && (
         <HojaConfirmacion {...confirmacion}
