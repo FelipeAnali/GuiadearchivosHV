@@ -1,0 +1,11 @@
+{
+  "name": "guia-documentos-ingreso",
+  "private": true,
+  "description": "Página de documentos de ingreso de Supertiendas Cañaveral",
+  "scripts": {
+    "compilar": "node herramientas/compilar.js"
+  },
+  "devDependencies": {
+    "@babel/standalone": "7.23.5"
+  }
+}

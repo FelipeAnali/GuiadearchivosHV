@@ -8,6 +8,9 @@ Página para que los candidatos de **Supertiendas Cañaveral S.A.S.** preparen y
 |---|---|
 | [`index.html`](index.html) | La página de documentos de ingreso (todo en un solo archivo). |
 | [`manual/Manual_candidato_Documentos_de_ingreso.pdf`](manual/Manual_candidato_Documentos_de_ingreso.pdf) | Manual del candidato, paso a paso con imágenes. |
+| [`src/app.jsx`](src/app.jsx) | Código fuente de la app (se compila dentro de `index.html`). |
+| [`herramientas/compilar.js`](herramientas/compilar.js) | Compila `src/app.jsx` y lo pone en `index.html`. |
+| [`PRUEBAS.md`](PRUEBAS.md) | Lista para probar la página en celulares reales antes de enviarla. |
 
 ## Cómo funciona
 
@@ -39,6 +42,28 @@ Si el dispositivo es propio, el avance se guarda unos días en el navegador; si 
 
 ## Editar
 
+### Configuración (sin programar)
+
 Solo hace falta tocar el bloque **CONFIGURACIÓN** dentro de `index.html` (cargos, documentos, textos, link de subida a OneDrive, link de la política de datos y página para comprimir PDF). El resto es el código de la app.
 
 **Modo prueba:** abre la página con `?prueba=1` al final de la dirección para llenarla con datos de prueba (no guarda nada). Con `?prueba=1&app=1` se ve el aviso que sale cuando la página se abre dentro de Instagram o Facebook.
+
+### Código de la app (programadores)
+El código de la app está en `src/app.jsx`. No se edita dentro de `index.html`: ahí está ya compilado, para que el
+celular del candidato no tenga que descargar Babel (unos 3 MB) cada vez que abre la página.
+Después de cambiar `src/app.jsx`:
+
+```bash
+npm install
+```
+
+```bash
+npm run compilar
+```
+
+Eso actualiza el bloque "CÓDIGO DE LA APP" dentro de `index.html`. Luego se sube `index.html` junto con `src/app.jsx`.
+
+## Revisión en Gestión Humana
+Cada ZIP trae `00_LEEME_REVISION.txt`, con lo que revisó la página en cada archivo y cuáles hay que mirar a mano
+(escaneados, con contraseña, o certificados de EPS / pensión / cédula que no traen el número de documento del candidato).
+
