@@ -28,7 +28,8 @@
        si fue un error: "Recuperar" lo devuelve a Candidatos tal como estaba;
        "Eliminar ya" lo borra. Cumplido el plazo, se eliminan solos la próxima vez
        que alguien abra el panel. No hay historial más largo que eso.
-    8. AJUSTES: cualquiera que use el panel puede cambiar el checklist de GH, los
+    8. AJUSTES: cualquiera que use el panel puede cambiar el checklist de GH (con la
+       página de cada plataforma, que sale en la ficha como "Abrir página"), los
        motivos rápidos de rechazo, los días de alerta, los días de la Papelera, el
        peso máximo de los archivos de GH y el link de la app del candidato. Se
        guardan en "ajustes.json" dentro de la carpeta: todo el equipo usa los mismos.
@@ -567,6 +568,9 @@
   .ajuste-item.sin-tipo { grid-template-columns: minmax(0, 1fr) auto; }
   .campo-ajuste { width: 100%; min-width: 0; height: 38px; padding: 0 12px; border-radius: 10px; border: 0; background: var(--relleno); font-size: 16px; color: var(--texto); }
   .campo-ajuste.numero { max-width: 120px; font-variant-numeric: tabular-nums; }
+  .campo-ajuste.enlace { grid-column: 1 / 3; height: 34px; font-size: 14px; }
+  .enlace-pagina { color: var(--tinte); font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .casilla .enlace-pagina { margin-left: 8px; }
   .ajuste-item .selector { width: 100%; }
   .botones-item { display: flex; gap: 2px; align-items: center; }
   .botones-item .boton-texto { padding: 0 8px; min-height: 34px; }
@@ -576,6 +580,7 @@
   @media (max-width: 600px) {
     .ajuste-item { grid-template-columns: minmax(0, 1fr) auto; }
     .ajuste-item .selector { grid-column: 1 / -1; grid-row: 2; }
+    .campo-ajuste.enlace { grid-column: 1 / -1; grid-row: 3; }
   }
 
   /* Hoja "Pedir correcciones": otra hoja de iOS encima de la ficha */
@@ -649,7 +654,8 @@ window.CONFIG_PANEL = {
   //       'induccion' → documento del paquete de inducción (un PDF o separados)
   //       'apto'      → Apto / No apto
   //       'chequeo'   → casilla hecho / no hecho
-  // En la parte 5 esta lista se podrá editar desde Ajustes.
+  // enlace (opcional): página de la plataforma (ARL, SAGRILAFT, ERP…). En la ficha sale
+  // el botón "Abrir página". Esta lista (con sus enlaces) se edita desde Ajustes en el panel.
   checklistGH: [
     { id: 'sagrilaft',     nombre: 'Consulta SAGRILAFT',             tipo: 'archivo' },
     { id: 'arl',           nombre: 'Afiliación ARL',                 tipo: 'archivo' },
@@ -1129,6 +1135,20 @@ const TIPOS_CHECKLIST = [
   ['chequeo', 'Casilla “hecho”'],
 ];
 
+/**
+ * Revisa la página de una plataforma: si escriben "www.positiva.gov.co" le agrega "https://".
+ * Devuelve la dirección lista o '' si no parece una dirección web.
+ */
+function enlaceValido(texto) {
+  let t = String(texto || '').trim();
+  if (!t) return '';
+  if (!/^https?:\/\//i.test(t)) t = `https://${t}`;
+  try {
+    const url = new URL(t);
+    return url.hostname.includes('.') ? url.href : '';
+  } catch (e) { return ''; }
+}
+
 /** Copia de los valores ajustables que está usando el panel ahora mismo. */
 function ajustesActuales() {
   return JSON.parse(JSON.stringify(Object.fromEntries(CAMPOS_AJUSTABLES.map((k) => [k, CONFIG[k]]))));
@@ -1153,7 +1173,10 @@ function validarAjustes(v) {
       const base = id;
       for (let n = 2; usados.has(id); n++) id = `${base}_${n}`;
       usados.add(id);
-      return { id, nombre: String(i.nombre).trim().slice(0, 80), tipo: TIPOS_CHECKLIST.some((t) => t[0] === i.tipo) ? i.tipo : 'archivo' };
+      const item = { id, nombre: String(i.nombre).trim().slice(0, 80), tipo: TIPOS_CHECKLIST.some((t) => t[0] === i.tipo) ? i.tipo : 'archivo' };
+      const enlace = enlaceValido(i.enlace);
+      if (enlace) item.enlace = enlace;
+      return item;
     });
   const motivos = (Array.isArray(v.motivosRapidos) ? v.motivosRapidos : CONFIG_FABRICA.motivosRapidos)
     .map((m) => String(m || '').trim().slice(0, 160)).filter(Boolean);
@@ -2424,7 +2447,15 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
   const modoInduccion = (gh._induccion || {}).modo || 'unico';
   const av = avanceDe(exp);
 
-  /** Fila de un ítem con archivo: nombre, estado, y botones Subir / Ver / Quitar. */
+  /** "Abrir página ↗": la plataforma del ítem (si en Ajustes le pusieron página), en otra pestaña. */
+  const EnlacePagina = ({ itemId, clase = 'enlace-pagina' }) => {
+    const enlace = (ITEMS_GH[itemId] || {}).enlace;
+    if (!enlace) return null;
+    return <a className={clase} href={enlace} target="_blank" rel="noopener noreferrer"
+              title={enlace} onClick={(e) => e.stopPropagation()}>Abrir página ↗</a>;
+  };
+
+  /** Fila de un ítem con archivo: nombre, estado, y botones Abrir página / Ver / Quitar / Subir. */
   const FilaArchivo = ({ itemId, titulo, pista, children }) => {
     const archivos = (gh[itemId] || {}).archivos || [];
     const tiene = archivos.length > 0;
@@ -2437,6 +2468,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
           {children}
         </div>
         <div className="item-botones">
+          <EnlacePagina itemId={itemId} clase="boton boton-texto" />
           {tiene && <button className="boton boton-texto" disabled={!archivosGH[archivos[0]]} onClick={() => abrirArchivo(archivosGH[archivos[0]])}>Ver</button>}
           {tiene && <button className="boton boton-texto" disabled={guardando} onClick={() => quitarArchivo(itemId)}>Quitar</button>}
           <button className={`boton ${tiene ? 'boton-secundario' : 'boton-suave'}`} disabled={guardando} onClick={() => elegirArchivo(itemId)}>
@@ -2448,11 +2480,12 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
   };
 
   /** Casilla de chequeo (hecho / no hecho). */
-  const Casilla = ({ itemId, texto }) => {
+  // conEnlace=false cuando la casilla va dentro de una FilaArchivo (que ya muestra "Abrir página")
+  const Casilla = ({ itemId, texto, conEnlace = true }) => {
     const hecho = !!(gh[itemId] || {}).hecho;
     return (
       <label className="casilla">
-        <span>{texto || ITEMS_GH[itemId].nombre}
+        <span>{texto || ITEMS_GH[itemId].nombre}{conEnlace && <EnlacePagina itemId={itemId} />}
           {hecho && gh[itemId].por && <small>{gh[itemId].por}, {fechaCorta(gh[itemId].fecha)}</small>}</span>
         {/* Interruptor de iOS (es una casilla de chequeo con otro aspecto) */}
         <input type="checkbox" role="switch" className="interruptor" checked={hecho} disabled={guardando}
@@ -2594,7 +2627,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
                 <FilaArchivo itemId="pension" pista="Primer empleo: sube la afiliación al fondo de pensión" />
               ) : (
                 <FilaArchivo itemId="pension" titulo="Pensión" pista="Ya trabajó antes: marca si ya está afiliado (subir el certificado es opcional)">
-                  <Casilla itemId="pension" texto="Ya está afiliado a un fondo de pensión" />
+                  <Casilla itemId="pension" texto="Ya está afiliado a un fondo de pensión" conEnlace={false} />
                 </FilaArchivo>
               )}
             </div>
@@ -2615,7 +2648,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
                   </div>
                 </FilaArchivo>
               ) : CONFIG.checklistGH.filter((i) => i.tipo === 'induccion').map((i) => (
-                <FilaArchivo key={i.id} itemId={i.id}><Casilla itemId={i.id} texto="Revisado" /></FilaArchivo>
+                <FilaArchivo key={i.id} itemId={i.id}><Casilla itemId={i.id} texto="Revisado" conEnlace={false} /></FilaArchivo>
               ))}
             </div>
           </section>
@@ -2629,7 +2662,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
                 return (
                   <div key={i.id} className="item-ficha">
                     <span className={`punto ${valor === 'apto' ? 'hecho' : valor === 'no_apto' ? 'malo' : ''}`} aria-hidden="true">{valor === 'apto' && <Icono nombre="listo" tamano={13} />}</span>
-                    <div className="fila-texto"><span className="item-titulo">{i.nombre}</span>
+                    <div className="fila-texto"><span className="item-titulo">{i.nombre} <EnlacePagina itemId={i.id} /></span>
                       {valor && <span className="nombre-archivo">{gh[i.id].por}, {fechaCorta(gh[i.id].fecha)}</span>}</div>
                     <div className="segmento" role="group" aria-label={i.nombre}>
                       <button aria-pressed={valor === 'apto'} disabled={guardando} onClick={() => marcar(i.id, 'valor', valor === 'apto' ? '' : 'apto', `${i.nombre}: ${valor === 'apto' ? 'sin dato' : 'apto'}`)}>Apto</button>
@@ -2893,11 +2926,13 @@ function Ajustes({ info, onGuardar, onRecargar, cargando }) {
                 <button className="boton boton-texto" disabled={i === items.length - 1} aria-label="Bajar" onClick={() => moverItem(i, 1)}>↓</button>
                 <button className="boton boton-texto peligro" onClick={() => quitarItem(i)}>Quitar</button>
               </div>
+              <input className="campo-ajuste enlace" type="url" value={item.enlace || ''} placeholder="Página de la plataforma (opcional), ej. https://www.positiva.gov.co"
+                     aria-label={`Página de ${item.nombre || `el ítem ${i + 1}`}`} onChange={(e) => cambiarItem(i, { enlace: e.target.value })} />
             </div>
           ))}
           <div className="ajuste-item sin-tipo"><button className="boton boton-suave" onClick={agregarItem}>Agregar ítem</button></div>
         </div>
-        <p className="grupo-pie">Si quitas un ítem, lo que ya se había hecho en cada candidato no se borra: solo deja de mostrarse. Los ítems sin nombre no se guardan.</p>
+        <p className="grupo-pie">Si le pones la página a un ítem, en la ficha de cada candidato sale el botón “Abrir página” para ir directo a esa plataforma. Si quitas un ítem, lo que ya se había hecho en cada candidato no se borra: solo deja de mostrarse. Los ítems sin nombre no se guardan.</p>
       </section>
 
       <section className="grupo">
