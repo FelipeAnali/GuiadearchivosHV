@@ -28,6 +28,11 @@
        si fue un error: "Recuperar" lo devuelve a Candidatos tal como estaba;
        "Eliminar ya" lo borra. Cumplido el plazo, se eliminan solos la próxima vez
        que alguien abra el panel. No hay historial más largo que eso.
+    8. AJUSTES: cualquiera que use el panel puede cambiar el checklist de GH, los
+       motivos rápidos de rechazo, los días de alerta, los días de la Papelera, el
+       peso máximo de los archivos de GH y el link de la app del candidato. Se
+       guardan en "ajustes.json" dentro de la carpeta: todo el equipo usa los mismos.
+       Lo que no esté en ajustes.json sale de CONFIG_PANEL (valores de fábrica).
     5. FICHA: aprobar o rechazar (con motivo) cada documento del candidato,
        subir los archivos de GH (SAGRILAFT, ARL, EPS, caja, pensión, paquete
        de inducción), marcar los chequeos (examen médico, ERP, Cronoseg) y
@@ -46,7 +51,6 @@
 
   LO QUE LLEGA EN LAS SIGUIENTES PARTES:
     4. Entrega final en un solo PDF (el ZIP ya está: "Descargar ZIP" en la ficha).
-    5. Ajustes.
 
   PRIVACIDAD:
     - Esta página NO tiene servidor. Lee y escribe solo en la carpeta que la
@@ -71,13 +75,14 @@
     4. EXPEDIENTE      Leer y guardar expediente.json (con aviso de choques).
     4B. PAPELERA       Mover un no contratado a la Papelera, recuperarlo y
                        eliminar lo que ya cumplió los 7 días.
+    4C. AJUSTES        Leer, revisar y guardar ajustes.json (valores del equipo).
     5. BANDEJA         Buscar los ZIP en Recibidos y revisarlos.
     6. PROCESAR        Pasar un ZIP a la carpeta del candidato (envío normal).
     6B. CORRECCIONES   Contrato con la app del candidato (link y ZIP), armar el
                        link y el mensaje, y procesar los ZIP de corrección.
     7. CANDIDATOS      Leer el listado y calcular el avance.
     8. EJEMPLO         Carpeta falsa en memoria con datos de prueba.
-    9. PANTALLAS       Inicio, Bandeja, Candidatos (en proceso), Listos, Papelera, Ficha
+    9. PANTALLAS       Inicio, Bandeja, Candidatos (en proceso), Listos, Papelera, Ajustes, Ficha
                        del candidato (con "Descargar ZIP") y la hoja "Pedir correcciones".
    10. APP PRINCIPAL   Decide qué pantalla mostrar.
   ============================================================================
@@ -556,6 +561,23 @@
     .item-ficha > .segmento, .item-ficha > .item-botones { grid-column: 2; justify-content: flex-start; justify-self: start; }
   }
 
+  /* Pantalla Ajustes: filas de edición (nombre + tipo + botones) */
+  .ajuste-item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 260px) auto; gap: 8px; align-items: center; padding: 8px 16px; }
+  .ajuste-item + .ajuste-item::before { content: ''; position: absolute; top: 0; right: 0; left: 16px; height: 0.5px; background: var(--separador); }
+  .ajuste-item.sin-tipo { grid-template-columns: minmax(0, 1fr) auto; }
+  .campo-ajuste { width: 100%; min-width: 0; height: 38px; padding: 0 12px; border-radius: 10px; border: 0; background: var(--relleno); font-size: 16px; color: var(--texto); }
+  .campo-ajuste.numero { max-width: 120px; font-variant-numeric: tabular-nums; }
+  .ajuste-item .selector { width: 100%; }
+  .botones-item { display: flex; gap: 2px; align-items: center; }
+  .botones-item .boton-texto { padding: 0 8px; min-height: 34px; }
+  .fila-numero { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; }
+  .fila-numero + .fila-numero::before { content: ''; position: absolute; top: 0; right: 0; left: 16px; height: 0.5px; background: var(--separador); }
+  .fila-numero small { display: block; color: var(--texto-2); font-size: 13px; }
+  @media (max-width: 600px) {
+    .ajuste-item { grid-template-columns: minmax(0, 1fr) auto; }
+    .ajuste-item .selector { grid-column: 1 / -1; grid-row: 2; }
+  }
+
   /* Hoja "Pedir correcciones": otra hoja de iOS encima de la ficha */
   .velo.encima { z-index: 45; }
   .detalle.hoja-encima { z-index: 46; height: auto; max-height: calc(100vh - 56px); }
@@ -614,6 +636,10 @@ window.CONFIG_PANEL = {
   diasAlerta: 5,
   // Días que un no contratado queda en la Papelera antes de eliminarse del todo
   diasPapelera: 7,
+  // Motivos de rechazo rápidos que salen como botones al rechazar un documento
+  motivosRapidos: ['No se lee bien', 'No es el documento pedido', 'Está incompleto', 'Está vencido'],
+  // Todo lo anterior (y el checklistGH) se puede cambiar desde el panel, en Ajustes:
+  // esos cambios quedan en "ajustes.json" dentro de la carpeta y mandan sobre estos valores.
   // Peso máximo de los archivos que sube Gestión Humana (MB)
   tamanoMaximoGHMB: 15,
 
@@ -741,8 +767,13 @@ function marcaDeTiempo(fecha = new Date()) {
   return `${fecha.getFullYear()}-${d(fecha.getMonth() + 1)}-${d(fecha.getDate())}_${d(fecha.getHours())}${d(fecha.getMinutes())}`;
 }
 
-// Ítems del checklist por id (incluye el PDF único del paquete de inducción)
-const ITEMS_GH = Object.fromEntries([...CONFIG.checklistGH, { id: 'paquete_induccion', nombre: 'Paquete de inducción (PDF)', tipo: 'archivo-induccion' }].map((i) => [i.id, i]));
+// Ítems del checklist por id (incluye el PDF único del paquete de inducción).
+// Se recalcula cuando cambian los Ajustes (el checklist se puede editar).
+let ITEMS_GH = {};
+function recalcularItemsGH() {
+  ITEMS_GH = Object.fromEntries([...CONFIG.checklistGH, { id: 'paquete_induccion', nombre: 'Paquete de inducción (PDF)', tipo: 'archivo-induccion' }].map((i) => [i.id, i]));
+}
+recalcularItemsGH();
 const nombreDocumento = (id) => (CONFIG.documentos.find((d) => d.id === id) || {}).nombre || id;
 const nombreEstado = (id) => (CONFIG.estados.find((e) => e.id === id) || {}).nombre || id;
 
@@ -1076,6 +1107,96 @@ async function recuperarDePapelera(raiz, item, usuario) {
 async function eliminarDePapelera(raiz, item) {
   const papelera = await abrirPapelera(raiz);
   await papelera.removeEntry(item.nombreCarpeta, { recursive: true });
+}
+
+/* ==========================================================================
+   4C. AJUSTES (ajustes.json en la carpeta "Hojas de vida")
+   Los valores de CONFIG_PANEL son los "de fábrica". Si existe ajustes.json, sus
+   valores mandan. Se aplican cambiando CONFIG directamente, así todo el panel
+   los usa sin más cambios.
+   ========================================================================== */
+const ARCHIVO_AJUSTES = 'ajustes.json';
+/** Lo que se puede cambiar desde la pantalla Ajustes. */
+const CAMPOS_AJUSTABLES = ['checklistGH', 'motivosRapidos', 'diasAlerta', 'diasPapelera', 'tamanoMaximoGHMB', 'enlaceAppCandidato'];
+/** Copia de los valores de fábrica (para "Restaurar valores de fábrica"). */
+const CONFIG_FABRICA = JSON.parse(JSON.stringify(Object.fromEntries(CAMPOS_AJUSTABLES.map((k) => [k, CONFIG[k]]))));
+/** Tipos de ítem del checklist, con su explicación para la pantalla Ajustes. */
+const TIPOS_CHECKLIST = [
+  ['archivo', 'Subir un archivo'],
+  ['pension', 'Pensión (archivo, o “ya afiliado”)'],
+  ['induccion', 'Parte del paquete de inducción'],
+  ['apto', 'Apto / No apto'],
+  ['chequeo', 'Casilla “hecho”'],
+];
+
+/** Copia de los valores ajustables que está usando el panel ahora mismo. */
+function ajustesActuales() {
+  return JSON.parse(JSON.stringify(Object.fromEntries(CAMPOS_AJUSTABLES.map((k) => [k, CONFIG[k]]))));
+}
+
+/**
+ * Revisa y limpia unos ajustes: números dentro de rangos razonables, ítems del checklist
+ * con nombre y tipo válidos (y un id único), motivos sin vacíos. Lo que falte o esté mal
+ * vuelve al valor de fábrica.
+ */
+function validarAjustes(v) {
+  const entero = (x, min, max, def) => {
+    const n = Math.round(Number(x));
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+  };
+  const usados = new Set(['paquete_induccion', '_induccion']);  // ids que usa el panel por dentro
+  const checklist = (Array.isArray(v.checklistGH) ? v.checklistGH : CONFIG_FABRICA.checklistGH)
+    .filter((i) => i && String(i.nombre || '').trim())
+    .map((i) => {
+      // Un ítem que ya existía conserva su id (los expedientes lo usan); uno nuevo lo saca del nombre
+      let id = String(i.id || '').trim() || textoParaArchivo(i.nombre, 30).toLowerCase() || 'item';
+      const base = id;
+      for (let n = 2; usados.has(id); n++) id = `${base}_${n}`;
+      usados.add(id);
+      return { id, nombre: String(i.nombre).trim().slice(0, 80), tipo: TIPOS_CHECKLIST.some((t) => t[0] === i.tipo) ? i.tipo : 'archivo' };
+    });
+  const motivos = (Array.isArray(v.motivosRapidos) ? v.motivosRapidos : CONFIG_FABRICA.motivosRapidos)
+    .map((m) => String(m || '').trim().slice(0, 160)).filter(Boolean);
+  return {
+    checklistGH: checklist,
+    motivosRapidos: motivos,
+    diasAlerta: entero(v.diasAlerta, 1, 90, CONFIG_FABRICA.diasAlerta),
+    diasPapelera: entero(v.diasPapelera, 1, 90, CONFIG_FABRICA.diasPapelera),
+    tamanoMaximoGHMB: entero(v.tamanoMaximoGHMB, 1, 100, CONFIG_FABRICA.tamanoMaximoGHMB),
+    enlaceAppCandidato: String(v.enlaceAppCandidato || '').trim() || CONFIG_FABRICA.enlaceAppCandidato,
+  };
+}
+
+/** Pone en CONFIG los valores de fábrica más los del archivo (null = solo los de fábrica). */
+function aplicarAjustes(valores) {
+  Object.assign(CONFIG, validarAjustes({ ...CONFIG_FABRICA, ...(valores || {}) }));
+  recalcularItemsGH();
+}
+
+/** Lee ajustes.json: { version, actualizado, por, valores } o null si no existe o está dañado. */
+async function leerAjustes(raiz) {
+  try {
+    if (!(await existe(raiz, ARCHIVO_AJUSTES))) return null;
+    const handle = await raiz.getFileHandle(ARCHIVO_AJUSTES);
+    return JSON.parse(await (await handle.getFile()).text());
+  } catch (e) {
+    console.warn('ajustes.json está dañado: se usan los valores de fábrica', e);
+    return null;
+  }
+}
+
+/**
+ * Guarda los ajustes. Si alguien los cambió desde que se leyeron (otro "actualizado"),
+ * NO guarda y avisa, para no borrar los cambios de la otra persona.
+ */
+async function guardarAjustes(raiz, valores, usuario, leidos) {
+  const actual = await leerAjustes(raiz);
+  if (((actual && actual.actualizado) || null) !== ((leidos && leidos.actualizado) || null)) {
+    throw new ErrorChoque(`${(actual && actual.por) || 'Otra persona'} cambió los ajustes hace un momento. Toca Actualizar para ver sus cambios.`);
+  }
+  const archivo = { version: 1, actualizado: new Date().toISOString(), por: usuario, valores: validarAjustes(valores) };
+  await escribir(raiz, ARCHIVO_AJUSTES, JSON.stringify(archivo, null, 2));
+  return archivo;
 }
 
 /** Agrega una línea a la bitácora del expediente. */
@@ -1897,7 +2018,7 @@ function BarraLateral({ vista, setVista, pendientes, totalCandidatos, enPapelera
       <Item id="candidatos" icono="personas" texto="Candidatos" cifra={0} />
       <Item id="listos" icono="listo" texto="Listos" cifra={0} />
       <Item id="papelera" icono="papelera" texto="Papelera" cifra={enPapelera} />
-      <Item id="ajustes" icono="ajustes" texto="Ajustes" pronto="Parte 5" />
+      <Item id="ajustes" icono="ajustes" texto="Ajustes" cifra={0} />
       <div className="lateral-pie">
         <span>Trabajando como</span>
         <strong>{usuario}</strong>
@@ -2130,8 +2251,6 @@ async function tipoDeArchivo(archivo) {
   return null;
 }
 
-/** Motivos de rechazo rápidos (se puede escribir otro). */
-const MOTIVOS_RAPIDOS = ['No se lee bien', 'No es el documento pedido', 'Está incompleto', 'Está vencido'];
 
 function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
   // onNoContratado: lo llama el selector de estado al elegir "No contratado" (App pide confirmar y borra)
@@ -2442,7 +2561,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
                     {rechazando && rechazando.id === id && (
                       <div className="caja-motivo">
                         <div className="chips">
-                          {MOTIVOS_RAPIDOS.map((m) => <button key={m} className="chip" onClick={() => setRechazando({ id, motivo: m })}>{m}</button>)}
+                          {CONFIG.motivosRapidos.map((m) => <button key={m} className="chip" onClick={() => setRechazando({ id, motivo: m })}>{m}</button>)}
                         </div>
                         <input autoFocus value={rechazando.motivo} maxLength={160} placeholder="¿Por qué se rechaza? El candidato lo verá"
                                onChange={(e) => setRechazando({ id, motivo: e.target.value })}
@@ -2715,6 +2834,120 @@ function Papelera({ lista, cargando, onRecuperar, onEliminar, onRecargar, ocupad
   );
 }
 
+/* ---------- Ajustes: valores que comparte todo el equipo ---------- */
+
+/**
+ * Edita una copia ("borrador") de los ajustes y la guarda con onGuardar(valores).
+ * info: lo que se leyó de ajustes.json (quién y cuándo los cambió), o null si son los de fábrica.
+ */
+function Ajustes({ info, onGuardar, onRecargar, cargando }) {
+  const [borrador, setBorrador] = useState(ajustesActuales);
+  const [guardando, setGuardando] = useState(false);
+  useEffect(() => { setBorrador(ajustesActuales()); }, [info]);   // si otra persona los cambió y se actualizó
+  const cambiado = JSON.stringify(borrador) !== JSON.stringify(ajustesActuales());
+  const poner = (campo, valor) => setBorrador({ ...borrador, [campo]: valor });
+
+  // Checklist: cambiar, mover, quitar y agregar ítems
+  const items = borrador.checklistGH;
+  const cambiarItem = (i, cambios) => poner('checklistGH', items.map((x, j) => (j === i ? { ...x, ...cambios } : x)));
+  const moverItem = (i, d) => { const l = [...items]; const [x] = l.splice(i, 1); l.splice(i + d, 0, x); poner('checklistGH', l); };
+  const quitarItem = (i) => poner('checklistGH', items.filter((_, j) => j !== i));
+  const agregarItem = () => poner('checklistGH', [...items, { id: '', nombre: '', tipo: 'archivo' }]);
+  // Motivos rápidos
+  const motivos = borrador.motivosRapidos;
+  const cambiarMotivo = (i, texto) => poner('motivosRapidos', motivos.map((m, j) => (j === i ? texto : m)));
+
+  async function guardar() {
+    setGuardando(true);
+    await onGuardar(borrador);
+    setGuardando(false);
+  }
+
+  return (
+    <>
+      <header className="encabezado">
+        <div>
+          <h1>Ajustes</h1>
+          <p>{info ? `Últimos cambios: ${info.por || '—'}, ${fechaCorta(info.actualizado)} — todo el equipo usa estos valores.`
+                   : 'Se están usando los valores de fábrica. Lo que guardes aquí lo usará todo el equipo.'}</p>
+        </div>
+        <div className="acciones">
+          <button className="boton boton-secundario" onClick={onRecargar} disabled={cargando || guardando}><Icono nombre="recargar" tamano={18} /> Actualizar</button>
+          <button className="boton boton-secundario" disabled={!cambiado || guardando} onClick={() => setBorrador(ajustesActuales())}>Descartar cambios</button>
+          <button className="boton boton-principal" disabled={!cambiado || guardando} onClick={guardar}>{guardando ? 'Guardando…' : 'Guardar ajustes'}</button>
+        </div>
+      </header>
+
+      <section className="grupo">
+        <h3 className="grupo-titulo">Checklist de Gestión Humana (lo que se completa en cada ficha)</h3>
+        <div className="tarjeta">
+          {items.map((item, i) => (
+            <div className="ajuste-item" key={i}>
+              <input className="campo-ajuste" value={item.nombre} maxLength={80} placeholder="Nombre del ítem, ej. Afiliación ARL"
+                     aria-label={`Nombre del ítem ${i + 1}`} onChange={(e) => cambiarItem(i, { nombre: e.target.value })} />
+              <select className="selector" value={item.tipo} aria-label={`Tipo del ítem ${i + 1}`} onChange={(e) => cambiarItem(i, { tipo: e.target.value })}>
+                {TIPOS_CHECKLIST.map(([id, texto]) => <option key={id} value={id}>{texto}</option>)}
+              </select>
+              <div className="botones-item">
+                <button className="boton boton-texto" disabled={i === 0} aria-label="Subir" onClick={() => moverItem(i, -1)}>↑</button>
+                <button className="boton boton-texto" disabled={i === items.length - 1} aria-label="Bajar" onClick={() => moverItem(i, 1)}>↓</button>
+                <button className="boton boton-texto peligro" onClick={() => quitarItem(i)}>Quitar</button>
+              </div>
+            </div>
+          ))}
+          <div className="ajuste-item sin-tipo"><button className="boton boton-suave" onClick={agregarItem}>Agregar ítem</button></div>
+        </div>
+        <p className="grupo-pie">Si quitas un ítem, lo que ya se había hecho en cada candidato no se borra: solo deja de mostrarse. Los ítems sin nombre no se guardan.</p>
+      </section>
+
+      <section className="grupo">
+        <h3 className="grupo-titulo">Motivos rápidos de rechazo (botones al rechazar un documento)</h3>
+        <div className="tarjeta">
+          {motivos.map((m, i) => (
+            <div className="ajuste-item sin-tipo" key={i}>
+              <input className="campo-ajuste" value={m} maxLength={160} aria-label={`Motivo ${i + 1}`} onChange={(e) => cambiarMotivo(i, e.target.value)} />
+              <button className="boton boton-texto peligro" onClick={() => poner('motivosRapidos', motivos.filter((_, j) => j !== i))}>Quitar</button>
+            </div>
+          ))}
+          <div className="ajuste-item sin-tipo"><button className="boton boton-suave" onClick={() => poner('motivosRapidos', [...motivos, ''])}>Agregar motivo</button></div>
+        </div>
+      </section>
+
+      <section className="grupo">
+        <h3 className="grupo-titulo">Tiempos y límites</h3>
+        <div className="tarjeta">
+          {[
+            ['diasAlerta', 'Días de alerta', 'Desde cuántos días esperando el número se pone en rojo'],
+            ['diasPapelera', 'Días en la Papelera', 'Cuánto tiempo se guarda un no contratado antes de eliminarse'],
+            ['tamanoMaximoGHMB', 'Peso máximo de los archivos de GH (MB)', 'Lo más que puede pesar un archivo que sube Gestión Humana'],
+          ].map(([campo, titulo, pista]) => (
+            <label className="fila-numero" key={campo}>
+              <span>{titulo}<small>{pista}</small></span>
+              <input className="campo-ajuste numero" type="number" min="1" max={campo === 'tamanoMaximoGHMB' ? 100 : 90}
+                     value={borrador[campo]} onChange={(e) => poner(campo, e.target.value === '' ? '' : Number(e.target.value))} />
+            </label>
+          ))}
+        </div>
+      </section>
+
+      <section className="grupo">
+        <h3 className="grupo-titulo">App del candidato</h3>
+        <div className="tarjeta fila-campo">
+          <label htmlFor="enlace-app">Dirección de la app (va en los mensajes de corrección)</label>
+          <input id="enlace-app" type="url" value={borrador.enlaceAppCandidato} onChange={(e) => poner('enlaceAppCandidato', e.target.value)} />
+        </div>
+      </section>
+
+      <div style={{ textAlign: 'center' }}>
+        <button className="boton boton-texto peligro" onClick={() => setBorrador(JSON.parse(JSON.stringify(CONFIG_FABRICA)))}>
+          Poner los valores de fábrica
+        </button>
+        <p className="nota">Esto solo cambia lo que ves aquí: para que quede, toca “Guardar ajustes”.</p>
+      </div>
+    </>
+  );
+}
+
 /* ---------- Diálogo de confirmación (alerta de iOS con botón rojo) ---------- */
 
 /**
@@ -2784,6 +3017,7 @@ function App() {
   const [confirmar, setConfirmar] = useState(null);   // diálogo de confirmación abierto (props de DialogoConfirmar)
   const [papelera, setPapelera] = useState([]);       // no contratados en la Papelera
   const [ocupado, setOcupado] = useState(false);      // moviendo carpetas (Papelera)
+  const [ajustesInfo, setAjustesInfo] = useState(null); // lo leído de ajustes.json (o null = valores de fábrica)
   const temporizador = useRef(null);
 
   /** Muestra un aviso abajo por unos segundos. */
@@ -2808,7 +3042,11 @@ function App() {
     if (!carpeta) return;
     setCargando(true);
     try {
-      // Primero se elimina de la Papelera lo que ya cumplió el plazo
+      // Primero los ajustes del equipo (cambian el checklist, los días de la Papelera…)
+      const ajustes = await leerAjustes(carpeta);
+      aplicarAjustes(ajustes && ajustes.valores);
+      setAjustesInfo(ajustes);
+      // Luego se elimina de la Papelera lo que ya cumplió el plazo
       const eliminados = await limpiarPapelera(carpeta);
       if (eliminados) avisar(eliminados === 1
         ? `Se eliminó 1 no contratado que ya cumplió ${plural(CONFIG.diasPapelera, 'día', 'días')} en la Papelera`
@@ -2870,6 +3108,7 @@ function App() {
 
   async function abrirEjemplo(nombreUsuario, modo = 'normal') {
     setFase('cargando');
+    aplicarAjustes(null); // el ejemplo empieza con los valores de fábrica
     const carpeta = await crearCarpetaDeEjemplo(modo);
     await entrar(carpeta, nombreUsuario, modo);
   }
@@ -2980,6 +3219,20 @@ function App() {
     });
   }
 
+  /** Guarda los ajustes del equipo (pantalla Ajustes). */
+  async function guardarAjustesDelEquipo(valores) {
+    try {
+      const archivo = await guardarAjustes(raiz, valores, usuario, ajustesInfo);
+      aplicarAjustes(archivo.valores);
+      setAjustesInfo(archivo);
+      avisar('Ajustes guardados: todo el equipo usará estos valores');
+      await recargarCandidatos();
+    } catch (e) {
+      if (!(e instanceof ErrorChoque)) console.error(e); // el choque es un aviso normal, no un error
+      avisar(e instanceof ErrorChoque ? e.message : `No se pudieron guardar los ajustes: ${e.message}`, 'error');
+    }
+  }
+
   async function guardarNombre(nombre) {
     setUsuario(nombre); setEditarNombre(false);
     if (!modoEjemplo) await recordar('usuario', nombre);
@@ -2987,6 +3240,7 @@ function App() {
 
   function salir() {
     setRaiz(null); setBandeja([]); setCandidatos([]); setPapelera([]); setAbierto(null);
+    aplicarAjustes(null); setAjustesInfo(null);
     if (!modoEjemplo) setRecordada(null);
     setModoEjemplo(null); setFase('arranque');
   }
@@ -3009,6 +3263,9 @@ function App() {
         {vista === 'bandeja' && (
           <Bandeja items={bandeja} cargando={cargando} onRecargar={() => recargar()} onProcesar={(i) => procesar(i)}
                    onProcesarTodos={procesarTodos} procesando={procesando} lote={lote} onAgregar={agregarArchivos} />
+        )}
+        {vista === 'ajustes' && (
+          <Ajustes info={ajustesInfo} cargando={cargando} onRecargar={() => recargar()} onGuardar={guardarAjustesDelEquipo} />
         )}
         {vista === 'papelera' && (
           <Papelera lista={papelera} cargando={cargando} ocupado={ocupado} onRecargar={() => recargar()}
