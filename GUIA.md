@@ -56,11 +56,14 @@ con las 3 columnas separadas por **;** (ej. `CAJERO;CAJAS Y SERVICIO AL CLIENTE;
 
 ## 3. Cambiar el texto o la ayuda de un documento
 
-Busca `documentos:`. Cada documento tiene:
+Los documentos están en el archivo **`documentos.js`** (no en `index.html`). Ese archivo lo usan **las dos apps**:
+la del candidato y el panel de Gestión Humana, así que un cambio ahí sirve para las dos. Se edita igual que `index.html`
+(abrir el archivo en GitHub → lápiz → cambiar → Commit changes). Cada documento tiene:
 
 | Campo | Para qué sirve |
 |---|---|
 | `nombre` | Lo que ve el candidato (ej. "Cédula ampliada al 150 %"). |
+| `nombreCorto` | Cómo lo muestra el panel de Gestión Humana (ej. "Cédula"). |
 | `ayuda` | La explicación corta debajo del nombre. |
 | `enlaceAyuda` | Un link opcional (ej. "Consultar en ADRES"). |
 | `tutorial` | El paso a paso de "¿Cómo lo saco?". |
@@ -69,10 +72,10 @@ Cambia solo el texto entre comillas. **No cambies `id` ni `codigo`**: son los qu
 
 ## 4. Agregar un documento nuevo
 
-Copia un documento parecido completo (desde `{ id:` hasta su `} },`), pégalo debajo y cambia:
+En **`documentos.js`**, copia un documento parecido completo (desde `{ id:` hasta su `} },`), pégalo debajo y cambia:
 - `id`: una palabra nueva, sin espacios ni tildes (ej. `'antecedentes'`).
 - `codigo`: el siguiente número libre (ej. `'08'`).
-- `nombre`, `ayuda`.
+- `nombre`, `nombreCorto` (para el panel), `ayuda`.
 - `revision`: las reglas para reconocerlo (ver el punto 5). Si no sabes qué poner, deja solo
   `paginasMax` y `palabras` con 2 o 3 palabras que siempre traiga el documento, en MAYÚSCULA y sin tildes.
 
@@ -81,7 +84,7 @@ Para que solo se pida a algunos: `requerido: 'segunCargo'` (según la columna MA
 
 ## 5. Ajustar cómo se reconoce cada documento
 
-Dentro de `revision` de cada documento (todo en MAYÚSCULA y sin tildes):
+En **`documentos.js`**, dentro de `revision` de cada documento (todo en MAYÚSCULA y sin tildes):
 
 | Campo | Qué hace |
 |---|---|

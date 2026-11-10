@@ -16,6 +16,7 @@ Para cambios de configuración (links, cargos, textos) ver [GUIA.md](GUIA.md).
 | Archivo | Qué es |
 |---|---|
 | `index.html` | La página publicada: estilos, **CONFIGURACIÓN**, logo, pantalla de carga, librerías y el código de la app **ya compilado**. |
+| `documentos.js` | **Lista de documentos** que se piden (con sus reglas de revisión). La usan la app y el panel. |
 | `src/app.jsx` | **Fuente** del código de la app (React con JSX). Se edita aquí. |
 | `herramientas/compilar.js` | Compila `src/app.jsx` con Babel y lo pone dentro de `index.html` (`npm run compilar`). |
 | `manual/` | Manual del candidato (PDF). |

@@ -2689,6 +2689,18 @@ function AppCorreccion({ correccion }) {
   );
 }
 
+/** documentos.js no cargó: mensaje en vez de una app sin documentos. */
+function ListaNoCargo() {
+  return (
+    <div className="carga-inicial" role="alert">
+      <img className="carga-logo" src={LOGO} alt="Supertiendas Cañaveral" />
+      <p className="carga-texto">No se pudo cargar la lista de documentos</p>
+      <p className="carga-detalle">Revisa tu conexión y recarga la página.</p>
+      <button type="button" className="boton boton-principal carga-boton" onClick={() => location.reload()}>Recargar</button>
+    </div>
+  );
+}
+
 /* ============================================================================
    8. ARRANQUE
    ----------------------------------------------------------------------------
@@ -2696,6 +2708,8 @@ function AppCorreccion({ correccion }) {
    Con ?c= dañado → solo el mensaje "Este enlace de corrección está incompleto".
    ============================================================================ */
 function Arranque() {
+  // Sin la lista de documentos (documentos.js no cargó) no se abre: el candidato podría mandar un paquete vacío
+  if (!CONFIG.documentos || CONFIG.documentos.length === 0) return <ListaNoCargo />;
   if (CODIGO_CORRECCION === null) return <App />;
   if (!CORRECCION) return <EnlaceCorreccionDanado />;
   return <AppCorreccion correccion={CORRECCION} />;

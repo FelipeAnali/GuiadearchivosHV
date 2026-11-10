@@ -75,7 +75,8 @@
 
   MAPA DEL CÓDIGO (en este orden dentro del archivo):
     ESTILO             Estilo iPhone/iPad (iOS), colores de la marca, modo oscuro.
-    CONFIGURACIÓN      Nombres de carpetas, documentos, checklist de GH y estados.
+    CONFIGURACIÓN      Nombres de carpetas, checklist de GH y estados. Los documentos
+                       del candidato vienen de documentos.js (compartido con la app).
     LOGO               Logo de Cañaveral incrustado (imagen en texto base64).
     1. UTILIDADES      Textos, fechas, plurales.
     2. RECORDAR        Guarda en el navegador cuál carpeta y quién la usa.
@@ -639,6 +640,8 @@
      Nombres de carpetas, documentos y estados. Los documentos deben coincidir
      con los de la app del candidato (mismo "id").
      ========================================================================= -->
+<!-- Lista de documentos compartida con la app del candidato -->
+<script src="documentos.js"></script>
 <script>
 window.CONFIG_PANEL = {
   // Dirección pública de la app del candidato en GitHub Pages. Los links de
@@ -689,17 +692,10 @@ window.CONFIG_PANEL = {
     { id: 'cronoseg',      nombre: 'Creado en Cronoseg',             tipo: 'chequeo' },
   ],
 
-  // Documentos que manda el candidato (id = el de la app del candidato)
-  documentos: [
-    { id: 'foto',                nombre: 'Foto 3×4' },
-    { id: 'cedula',              nombre: 'Cédula' },
-    { id: 'diplomas',            nombre: 'Diplomas' },
-    { id: 'manipulacion',        nombre: 'Manipulación de alimentos' },
-    { id: 'referencia',          nombre: 'Referencia laboral' },
-    { id: 'referencia_personal', nombre: 'Referencias personales' },
-    { id: 'adres',               nombre: 'Certificado de EPS (ADRES)' },
-    { id: 'pension',             nombre: 'Certificado de pensión' },
-  ],
+  // Documentos que manda el candidato: salen de "documentos.js", el MISMO archivo que usa
+  // la app del candidato (así las dos apps tienen siempre la misma lista). Aquí solo se
+  // toma el id, el código y el nombre corto. Los documentos se cambian en documentos.js.
+  documentos: (window.DOCUMENTOS || []).map((d) => ({ id: d.id, codigo: d.codigo, nombre: d.nombreCorto || d.nombre })),
 
   // Estados del candidato, en orden
   estados: [
@@ -729,11 +725,12 @@ window.CONFIG_PANEL = {
 <script>
   // ¿Llegó todo? Si no, en vez de una página en blanco se explica qué pasa.
   (function () {
-    var faltan = ['React', 'ReactDOM', 'Babel', 'JSZip'].filter(function (n) { return !window[n]; });
+    var faltan = ['React', 'ReactDOM', 'Babel', 'JSZip', 'DOCUMENTOS'].filter(function (n) { return !window[n]; });
     if (faltan.length) {
-      document.getElementById('carga-panel-texto').textContent =
-        'No se pudo cargar el panel. Revisa la conexión y recarga la página. Si sigue igual, pide a sistemas ' +
-        'que permitan cdnjs.cloudflare.com y cdn.jsdelivr.net en este computador.';
+      document.getElementById('carga-panel-texto').textContent = faltan.length === 1 && faltan[0] === 'DOCUMENTOS'
+        ? 'No se pudo cargar la lista de documentos (documentos.js). Recarga la página; si sigue igual, revisa que ese archivo esté en el repositorio junto al panel.'
+        : 'No se pudo cargar el panel. Revisa la conexión y recarga la página. Si sigue igual, pide a sistemas ' +
+          'que permitan cdnjs.cloudflare.com y cdn.jsdelivr.net en este computador.';
     }
   })();
 </script>
@@ -1907,7 +1904,8 @@ function fotoDeEjemplo() {
   });
 }
 
-const CODIGOS = { foto: '01', cedula: '02', diplomas: '03', manipulacion: '04', referencia: '05', referencia_personal: '05', adres: '06', pension: '07' };
+/** Código de cada documento (01, 02…), de documentos.js. */
+const CODIGOS = Object.fromEntries(CONFIG.documentos.map((d) => [d.id, d.codigo]));
 
 /**
  * Arma un ZIP igual al de la app del candidato.
@@ -3582,7 +3580,8 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('raiz')).render(<App />);
+// Sin la lista de documentos (documentos.js) el panel no abre: se queda el mensaje de carga
+if (CONFIG.documentos.length) ReactDOM.createRoot(document.getElementById('raiz')).render(<App />);
 </script>
 </body>
 </html>
