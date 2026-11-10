@@ -29,10 +29,15 @@
           5.2 Pantallas 1 a 4 (Inicio → Datos → Documentos → Envío)
           5.3 Tutoriales y ventanas emergentes
           5.4 Pantalla final
-     6. APP PRINCIPAL        Decide qué pantalla mostrar, guarda cada cambio y arranca la app.
+     6. APP PRINCIPAL        Envío normal: decide qué pantalla mostrar y guarda cada cambio.
+     7. MODO CORRECCIÓN      Link ?c=... que manda Gestión Humana desde su panel: el candidato
+                             vuelve a subir SOLO los documentos que le rechazaron o le faltan.
+                             Contrato del link y del ZIP con el panel (panel-gh.html).
+     8. ARRANQUE             Abre el envío normal o el modo corrección según la dirección.
 
    PALABRAS QUE SE REPITEN
      sesion   Todo el avance del candidato: { datos, archivos, expira, ... } (ver sesionNueva).
+              En el modo corrección es otra sesión, guardada con otra clave (ver sección 7).
      doc      Un documento de la CONFIGURACIÓN (ej. la cédula), con sus reglas de revisión.
      item     Un archivo ya aceptado: { nombre, blob, huella, revisado, ... }.
      puesto   Una fila de la lista de cargos: { cargo, seccion, manipulacion }.
@@ -48,7 +53,8 @@ const LOGO = window.LOGO_CANAVERAL;
    ----------------------------------------------------------------------------
    IndexedDB es una "base de datos" que trae el navegador. Todo lo que se guarda
    aquí queda SOLO en el celular/computador del candidato: no viaja a internet.
-   Guardamos un único registro llamado "actual" con toda la sesión.
+   El envío normal se guarda en un registro llamado "actual". Cada corrección
+   (sección 7) usa su propia clave, "correccion_<huella>_<n>", para no mezclarse.
    ============================================================================ */
 const BD = {
   nombre: 'canaveral_documentos_ingreso',
@@ -77,9 +83,10 @@ const BD = {
     });
   },
 
-  leer()         { return this.operar('readonly',  (a) => a.get(this.clave)); },
-  guardar(valor) { return this.operar('readwrite', (a) => a.put(valor, this.clave)); },
-  borrar()       { return this.operar('readwrite', (a) => a.delete(this.clave)); },
+  // "clave" es opcional: sin ella se usa "actual" (envío normal)
+  leer(clave = this.clave)          { return this.operar('readonly',  (a) => a.get(clave)); },
+  guardar(valor, clave = this.clave) { return this.operar('readwrite', (a) => a.put(valor, clave)); },
+  borrar(clave = this.clave)        { return this.operar('readwrite', (a) => a.delete(clave)); },
 };
 
 /* ============================================================================
@@ -617,6 +624,8 @@ async function armarZip(sesion) {
     version: 1,
     cedula: datos.cedula,
     nombre: datos.nombre,
+    celular: datos.celular || '',
+    correo: datos.correo || '',
     cargo: datos.cargo,
     seccion: datos.seccion,
     primerEmpleo: !!datos.primerEmpleo,
@@ -642,6 +651,8 @@ function textoDeRevision(sesion, resumen) {
     '',
     `Nombre:        ${datos.nombre}`,
     `Documento:     ${datos.cedula}`,
+    `Celular:       ${datos.celular || '—'}`,
+    `Correo:        ${datos.correo || '—'}`,
     `Cargo:         ${datos.cargo}`,
     `Sección:       ${datos.seccion}`,
     `Primer empleo: ${datos.primerEmpleo ? 'Sí' : 'No'}`,
@@ -706,7 +717,7 @@ function sesionNueva(dispositivoPersonal, primerEmpleo) {
     dispositivoPersonal,
     primerEmpleo,   // respuesta a "¿Es tu primer empleo?" (se copia a datos al guardar los datos)
     autorizacion: { aceptada: true, fecha: new Date(ahora).toISOString() },
-    datos: null,    // { nombre, cedula, cargo, seccion, primerEmpleo }
+    datos: null,    // { nombre, cedula, celular, correo, cargo, seccion, primerEmpleo }
     archivos: {},   // { idDocumento: [ { nombre, tamano, blob, fecha } ] }
   };
 }
@@ -718,6 +729,8 @@ function sesionNueva(dispositivoPersonal, primerEmpleo) {
    documentos reales. No se guardan en ningún lado.
    ============================================================================ */
 const MODO_PRUEBA = new URLSearchParams(location.search).has('prueba');
+/** Código del link de corrección (?c=...) o null si es un envío normal. Ver sección 7. */
+const CODIGO_CORRECCION = new URLSearchParams(location.search).get('c');
 
 /** Crea un PDF mínimo de mentira (solo para el modo prueba). */
 function pdfFalso(nombre) {
@@ -841,8 +854,9 @@ const APP_ACTUAL = navegadorDentroDeApp();
 /** Tipo de celular, para decir "Safari" o "Chrome" en el aviso. */
 const ES_IPHONE = /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
 const ES_ANDROID = /Android/i.test(navigator.userAgent || '');
-/** Dirección de esta página, sin "?prueba=1" ni nada extra (para copiarla). */
-const ENLACE_PAGINA = location.origin + location.pathname;
+/** Dirección de esta página, sin "?prueba=1" (para copiarla). En una corrección conserva su ?c=... */
+const ENLACE_PAGINA = location.origin + location.pathname
+  + (CODIGO_CORRECCION ? `?c=${encodeURIComponent(CODIGO_CORRECCION)}` : '');
 
 /** Aviso para abrir la página en Chrome o Safari. Solo aparece dentro de apps. */
 function AvisoNavegadorApp() {
@@ -914,13 +928,14 @@ const PASOS = ['Preguntas iniciales', 'Tus datos y cargo', 'Sube tus documentos'
 /**
  * Panel izquierdo en PC con el avance: los pasos anteriores van con ✓ y el actual resaltado.
  * paso: número del paso actual (1 a 4), o undefined en la pantalla final (todos con ✓).
+ * pasos: nombres de los pasos (el modo corrección manda los suyos).
  */
-function PanelPasos({ paso }) {
+function PanelPasos({ paso, pasos = PASOS }) {
   return (
     <aside className="lateral" aria-label="Pasos">
       <h2 className="lateral-titulo">Tu avance</h2>
       <ol className="pasos-lista">
-        {PASOS.map((t, i) => {
+        {pasos.map((t, i) => {
           const n = i + 1, estado = !paso ? 'hecho' : n < paso ? 'hecho' : n === paso ? 'actual' : '';
           return (
             <li key={t} className={`paso-item ${estado}`} aria-current={estado === 'actual' ? 'step' : undefined}>
@@ -1117,10 +1132,17 @@ function PantallaInicio({ alComenzar, guardadoDisponible, avisoInicial }) {
   );
 }
 
-/** Pantalla 2: nombre, cédula, cargo (buscador) y sección. */
+/** Celular colombiano: 10 números y empieza por 3. */
+const CELULAR_VALIDO = /^3\d{9}$/;
+/** Correo con forma nombre@dominio.algo (revisión sencilla, sin espacios). */
+const CORREO_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/** Pantalla 2: nombre, cédula, celular, correo, cargo (buscador) y sección. */
 function PantallaDatos({ datosIniciales, primerEmpleoInicial, alGuardar }) {
   const [nombre, setNombre] = useState(datosIniciales?.nombre || '');
   const [cedula, setCedula] = useState(datosIniciales?.cedula || '');
+  const [celular, setCelular] = useState(datosIniciales?.celular || '');
+  const [correo, setCorreo] = useState(datosIniciales?.correo || '');
   // Si hay datos guardados de antes, solo se reutilizan el cargo y la sección que SIGAN
   // existiendo en la lista actual (la lista puede cambiar; si no, el candidato quedaría trabado).
   const cargoGuardadoValido = CARGOS_UNICOS.includes(datosIniciales?.cargo) ? datosIniciales.cargo : '';
@@ -1162,6 +1184,12 @@ function PantallaDatos({ datosIniciales, primerEmpleoInicial, alGuardar }) {
     const nuevosErrores = {};
     if (nombreLimpio.length < 3) nuevosErrores.nombre = 'Escribe tu nombre completo, como aparece en tu cédula.';
     if (cedulaLimpia.length < 5 || cedulaLimpia.length > 12) nuevosErrores.cedula = 'Escribe tu número de documento, solo números.';
+    // Celular: obligatorio, 10 números y empieza por 3 (si lo escriben con +57 se le quita)
+    const celularLimpio = celular.replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, '');
+    if (!CELULAR_VALIDO.test(celularLimpio)) nuevosErrores.celular = 'Escribe tu celular: 10 números y empieza por 3.';
+    // Correo: opcional; si lo escriben, debe tener forma de correo
+    const correoLimpio = correo.trim().toLowerCase();
+    if (correoLimpio && !CORREO_VALIDO.test(correoLimpio)) nuevosErrores.correo = 'Revisa tu correo: debe ser como nombre@correo.com (o déjalo vacío).';
     // Si escribió el cargo completo pero no tocó la sugerencia, se acepta igual.
     let cargoFinal = cargo;
     let seccionFinal = seccion;
@@ -1180,7 +1208,8 @@ function PantallaDatos({ datosIniciales, primerEmpleoInicial, alGuardar }) {
     else if (!buscarPuesto(cargoFinal, seccionFinal)) nuevosErrores.seccion = 'Elige la sección a la que vas a entrar.';
     setErrores(nuevosErrores);
     if (Object.values(nuevosErrores).every((v) => !v)) {
-      alGuardar({ nombre: nombreLimpio, cedula: cedulaLimpia, cargo: cargoFinal, seccion: seccionFinal, primerEmpleo });
+      alGuardar({ nombre: nombreLimpio, cedula: cedulaLimpia, celular: celularLimpio, correo: correoLimpio,
+                  cargo: cargoFinal, seccion: seccionFinal, primerEmpleo });
     } else {
       // Lleva la vista al primer mensaje de error para que el candidato sepa qué falta.
       setTimeout(() => {
@@ -1214,7 +1243,20 @@ function PantallaDatos({ datosIniciales, primerEmpleoInicial, alGuardar }) {
                      placeholder="Solo números"
                      value={cedula} onChange={(e) => setCedula(e.target.value)} maxLength={20} />
             </label>
+            <label className={`fila fila-campo ${errores.celular ? 'con-error' : ''}`}>
+              <span className="etiqueta">Celular</span>
+              <input type="tel" inputMode="tel" autoComplete="tel-national" enterKeyHint="next"
+                     placeholder="10 números, empieza por 3"
+                     value={celular} onChange={(e) => setCelular(e.target.value)} maxLength={20} />
+            </label>
+            <label className={`fila fila-campo ${errores.correo ? 'con-error' : ''}`}>
+              <span className="etiqueta">Correo (opcional)</span>
+              <input type="email" inputMode="email" autoComplete="email" autoCapitalize="none" autoCorrect="off"
+                     spellCheck={false} enterKeyHint="next" placeholder="nombre@correo.com"
+                     value={correo} onChange={(e) => setCorreo(e.target.value)} maxLength={120} />
+            </label>
           </div>
+          <p className="grupo-pie">Gestión Humana te escribirá a este celular (o al correo) si hay que corregir algún documento.</p>
         </section>
 
         {/* Respuesta de la primera pantalla; se deja corregir por si la tocó mal */}
@@ -1300,7 +1342,8 @@ function PantallaDatos({ datosIniciales, primerEmpleoInicial, alGuardar }) {
  *   - Documentos normales: solo PDF que el candidato ya tenga listo.
  *   - La foto 3×4 (tipo 'imagen'): se sube como imagen JPG/PNG, no como PDF.
  */
-function TarjetaDocumento({ doc, posicion, ayuda, archivos, cedula, todosLosArchivos, alAgregar, alQuitar }) {
+function TarjetaDocumento({ doc, posicion, ayuda, archivos, cedula, todosLosArchivos, alAgregar, alQuitar, motivoGH }) {
+  // motivoGH (opcional): en el modo corrección, por qué Gestión Humana pide este documento
   const selectorPdf = useRef(null);    // elige el PDF (o la imagen, en la foto 3×4)
   const [error, setError] = useState(null);
   const [revisando, setRevisando] = useState(false);
@@ -1361,6 +1404,7 @@ function TarjetaDocumento({ doc, posicion, ayuda, archivos, cedula, todosLosArch
         {tieneArchivos ? <Palomita tamano={16} /> : posicion}
       </div>
       <div className="fila-cuerpo">
+        {motivoGH && <p className="motivo-gh">Gestión Humana dice: {motivoGH}</p>}
         <div className="fila-titulo fuerte">{doc.nombre}</div>
         <div className="fila-sub">
           {ayuda}{' '}
@@ -1502,13 +1546,17 @@ function PantallaDocumentos({ sesion, alAgregar, alQuitar, alEditarDatos, alCont
   );
 }
 
-/** Pantalla 4: descargar el ZIP y enviarlo. */
-function PantallaEnvio({ sesion, alVolver, alTerminar }) {
+/**
+ * Pantalla 4: descargar el ZIP y enviarlo.
+ * nombreZip y armar son opcionales: el modo corrección manda su propio nombre de ZIP
+ * y su propia función para armarlo (sección 7). Sin ellos, es el envío normal.
+ */
+function PantallaEnvio({ sesion, alVolver, alTerminar, nombreZip: nombreZipFijo, armar = armarZip }) {
   const [zip, setZip] = useState(null);            // archivo ZIP ya armado
   const [armando, setArmando] = useState(false);
   const [error, setError] = useState(null);
   const [abrioEnvio, setAbrioEnvio] = useState(false);
-  const nombreZip = nombreDelZip(sesion.datos);
+  const nombreZip = nombreZipFijo || nombreDelZip(sesion.datos);
   const hayLink = !!CONFIG.linkSubida; // link de "Solicitar archivos" de OneDrive
 
   /** Arma el ZIP y lo descarga. */
@@ -1516,7 +1564,7 @@ function PantallaEnvio({ sesion, alVolver, alTerminar }) {
     setArmando(true);
     setError(null);
     try {
-      const blob = zip || await armarZip(sesion);
+      const blob = zip || await armar(sesion);
       setZip(blob);
       descargarArchivo(blob, nombreZip);
     } catch (e) {
@@ -1892,8 +1940,10 @@ function App() {
             setAvisoInicial(`Tu avance anterior se borró porque pasaron más de ${CONFIG.diasConservacion} días. Empieza de nuevo.`);
           } else {
             setSesion(guardada);
-            // Si el cargo o la sección guardados ya no existen en la lista, se pide elegirlos de nuevo
-            const datosValidos = guardada.datos && buscarPuesto(guardada.datos.cargo, guardada.datos.seccion);
+            // Si el cargo o la sección guardados ya no existen en la lista, o si el avance es de
+            // antes de pedir el celular, se vuelve a "Tus datos" para completarlos
+            const datosValidos = guardada.datos && buscarPuesto(guardada.datos.cargo, guardada.datos.seccion)
+              && CELULAR_VALIDO.test(guardada.datos.celular || '');
             setPantalla(datosValidos ? 'documentos' : 'datos');
           }
         }
@@ -2012,6 +2062,8 @@ function App() {
 
   /** Solo modo prueba: cambia entre datos normales y casos difíciles. */
   function cambiarModoPrueba(modo) {
+    // "Corrección" abre el modo corrección con un link de ejemplo (sección 7)
+    if (modo === 'correccion') { abrirCorreccionDeEjemplo(); return; }
     setModoPrueba(modo);
     if (modo === 'normal') { setSesion(null); setPantalla('inicio'); return; }
     setSesion(sesionDePrueba(modo));
@@ -2070,7 +2122,7 @@ function App() {
 
       {MODO_PRUEBA && (
         <div className="selector-prueba" aria-label="Datos de prueba">
-          {[['normal', 'Normal'], ['extremo', 'Caso extremo'], ['vacio', 'Vacío']].map(([valor, texto]) => (
+          {[['normal', 'Normal'], ['extremo', 'Caso extremo'], ['vacio', 'Vacío'], ['correccion', 'Corrección']].map(([valor, texto]) => (
             <button key={valor} type="button" className={modoPrueba === valor ? 'activo' : ''}
                     onClick={() => cambiarModoPrueba(valor)}>{texto}</button>
           ))}
@@ -2100,6 +2152,507 @@ class PantallaDeError extends React.Component {
   }
 }
 
+/* ============================================================================
+   7. MODO CORRECCIÓN
+   ----------------------------------------------------------------------------
+   Gestión Humana rechaza documentos en su panel (panel-gh.html) y le manda al
+   candidato un link especial: <esta página>?c=<código>. Con ese link la página
+   NO hace el envío normal: muestra solo los documentos pedidos, con el motivo,
+   y arma un ZIP de corrección. No vuelve a pedir datos, cargo ni autorización.
+
+   Pantallas: Inicio (qué hay que corregir, ¿dispositivo propio?) → Verificar
+   cédula → Documentos → Envío → Final. Reutiliza TarjetaDocumento (las mismas
+   revisiones de archivos), PantallaEnvio, el guardado y la inactividad.
+
+   El avance se guarda con la clave "correccion_<h>_<n>": no toca ni borra el
+   avance de un envío normal ("actual").
+
+   CONTRATO con el panel (no cambiarlo sin cambiar también panel-gh.html):
+     Link:  ?c=<código>; código = JSON → texto UTF-8 → base64url (sin "=").
+            JSON = { "v": 1, "n": 1, "h": "<16 primeros hex de SHA-256 de la cédula>",
+                     "d": [ { "id": "adres", "m": "No se lee bien" } ] }
+            "id" es el de CONFIG.documentos (si no existe, se ignora y se avisa).
+            El link no lleva nombre ni cédula a la vista: solo la huella "h".
+     ZIP:   <cedula>_CORRECCION_<n>.zip, archivos con nombreArchivoEnZip() y
+            datos_candidato.json = { "version": 1, "tipo": "correccion", "correccion": n,
+            "cedula", "generado", "archivos": [ { "documento", "archivo", "nombreOriginal",
+            "revisadoAutomaticamente", "conContrasena", "contrasenaEsCedula" } ] }
+   ============================================================================ */
+
+/** Versión del contrato del link que entiende esta página. */
+const VERSION_LINK_CORRECCION = 1;
+/** Largo máximo del motivo que se muestra (igual que en el panel). */
+const MAXIMO_MOTIVO = 160;
+/** Nombres de los 4 pasos del modo corrección (panel izquierdo en PC). */
+const PASOS_CORRECCION = ['Lo que debes corregir', 'Verifica tu documento', 'Corrige tus documentos', 'Descarga y envía'];
+/** Cédula del link de ejemplo del modo prueba (?prueba=1 → "Corrección"). */
+const CEDULA_PRUEBA_CORRECCION = '1144098765';
+
+/** Huella de una cédula: 16 primeros caracteres hex de SHA-256, usando solo sus dígitos. */
+async function huellaCedula(cedula) {
+  const digitos = String(cedula || '').replace(/\D/g, '');
+  const resumen = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(digitos));
+  return Array.from(new Uint8Array(resumen)).map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+}
+
+/** Texto → UTF-8 → base64url sin "=" (lo mismo que hace el panel). */
+function aBase64Url(texto) {
+  let binario = '';
+  new TextEncoder().encode(texto).forEach((b) => { binario += String.fromCharCode(b); });
+  return btoa(binario).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** base64url → texto UTF-8. Lanza error si el código está dañado. */
+function desdeBase64Url(codigo) {
+  const base64 = codigo.replace(/-/g, '+').replace(/_/g, '/');
+  const binario = atob(base64 + '==='.slice((base64.length + 3) % 4));
+  return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(binario, (c) => c.charCodeAt(0)));
+}
+
+/**
+ * Lee el código del link. Devuelve { n, h, documentos: [{ doc, motivo }], ignorados: [id] }
+ * o null si el código está dañado, tiene otra versión o no pide ningún documento conocido.
+ */
+function leerLinkCorreccion(codigo) {
+  try {
+    const datos = JSON.parse(desdeBase64Url(String(codigo || '').trim()));
+    if (!datos || datos.v !== VERSION_LINK_CORRECCION) return null;
+    const n = Number(datos.n);
+    if (!Number.isInteger(n) || n < 1) return null;
+    if (!/^[0-9a-f]{16}$/.test(String(datos.h || ''))) return null;
+    if (!Array.isArray(datos.d) || datos.d.length === 0) return null;
+    const pedidos = {};
+    const ignorados = [];
+    datos.d.forEach((x) => {
+      const doc = CONFIG.documentos.find((d) => d.id === (x && x.id));
+      if (!doc) ignorados.push(String(x && x.id));
+      else pedidos[doc.id] = String((x && x.m) || '').slice(0, MAXIMO_MOTIVO);
+    });
+    // En el mismo orden de la CONFIGURACIÓN, como en el envío normal
+    const documentos = CONFIG.documentos.filter((d) => d.id in pedidos).map((doc) => ({ doc, motivo: pedidos[doc.id] }));
+    if (documentos.length === 0) return null;
+    return { n, h: datos.h, documentos, ignorados };
+  } catch {
+    return null;
+  }
+}
+
+/** La corrección del link de esta dirección (null si no hay ?c= o si está dañado). */
+const CORRECCION = CODIGO_CORRECCION !== null ? leerLinkCorreccion(CODIGO_CORRECCION) : null;
+
+/** Clave con la que se guarda el avance de una corrección (distinta de "actual"). */
+function claveCorreccion(correccion) {
+  return `correccion_${correccion.h}_${correccion.n}`;
+}
+
+/** Sesión nueva de corrección. "cedula" se llena cuando el candidato la verifica. */
+function sesionCorreccionNueva(correccion, dispositivoPersonal) {
+  const ahora = Date.now();
+  return {
+    version: 1,
+    tipo: 'correccion',
+    n: correccion.n,
+    h: correccion.h,
+    creado: ahora,
+    expira: ahora + CONFIG.diasConservacion * MS_POR_DIA,
+    dispositivoPersonal,
+    cedula: null,
+    archivos: {},   // { idDocumento: [ item ] }, igual que en el envío normal
+  };
+}
+
+/** Nombre del ZIP de corrección: 1144098765_CORRECCION_1.zip */
+function nombreZipCorreccion(sesion) {
+  return `${sesion.cedula}_CORRECCION_${sesion.n}.zip`;
+}
+
+/** Arma el ZIP de corrección (solo los documentos pedidos) con el JSON del contrato. */
+async function armarZipCorreccion(sesion, correccion) {
+  const zip = new JSZip();
+  const listado = [];
+  correccion.documentos.forEach(({ doc }) => {
+    const lista = sesion.archivos[doc.id] || [];
+    lista.forEach((item, i) => {
+      const nombre = nombreArchivoEnZip(sesion.cedula, doc, item, i, lista.length);
+      zip.file(nombre, item.blob);
+      listado.push({ documento: doc.id, archivo: nombre, nombreOriginal: item.nombre,
+                     revisadoAutomaticamente: !!item.revisado,
+                     conContrasena: !!item.protegido || !!item.claveEsCedula,
+                     contrasenaEsCedula: !!item.claveEsCedula });
+    });
+  });
+  zip.file('datos_candidato.json', JSON.stringify({
+    version: 1,
+    tipo: 'correccion',
+    correccion: sesion.n,
+    cedula: sesion.cedula,
+    generado: new Date().toISOString(),
+    archivos: listado,
+  }, null, 2));
+  return zip.generateAsync({ type: 'blob', compression: 'STORE' });
+}
+
+/** Modo prueba: abre el modo corrección con un link de ejemplo (pide EPS y diplomas). */
+async function abrirCorreccionDeEjemplo() {
+  const h = await huellaCedula(CEDULA_PRUEBA_CORRECCION);
+  const codigo = aBase64Url(JSON.stringify({ v: 1, n: 1, h, d: [
+    { id: 'adres', m: 'No se lee bien' },
+    { id: 'diplomas', m: 'Falta el acta de bachiller' },
+  ] }));
+  location.href = `${location.pathname}?prueba=1&c=${codigo}`;
+}
+
+/** Link dañado o de otra versión: solo se muestra este mensaje. */
+function EnlaceCorreccionDanado() {
+  return (
+    <div className="carga-inicial" role="alert">
+      <img className="carga-logo" src={LOGO} alt="Supertiendas Cañaveral" />
+      <p className="carga-texto">Este enlace de corrección está incompleto. Pide uno nuevo a Gestión Humana.</p>
+    </div>
+  );
+}
+
+/** Corrección, pantalla 1: qué pide Gestión Humana y ¿el dispositivo es propio o prestado? */
+function InicioCorreccion({ correccion, guardadoDisponible, avisoInicial, alComenzar }) {
+  const [dispositivo, setDispositivo] = useState(null); // 'propio' | 'prestado'
+  const cuantos = correccion.documentos.length;
+  // Mismas opciones y reglas de guardado que en el envío normal
+  const opciones = [
+    { valor: 'propio', titulo: 'Sí, es mío',
+      detalle: guardadoDisponible
+        ? `Guardamos tu avance aquí por ${CONFIG.diasConservacion} días para que termines después.`
+        : 'Este navegador no permite guardar tu avance.' },
+    { valor: 'prestado', titulo: 'No, es prestado o público',
+      detalle: `Ten tus documentos listos antes de empezar: no guardamos nada y si la dejas ${CONFIG.minutosInactividad} minutos sin usar, se borra sola.` },
+  ];
+
+  return (
+    <>
+      <main className="contenido">
+        {avisoInicial && <div className="aviso aviso-alerta" role="status">{avisoInicial}</div>}
+        <AvisoNavegadorApp />
+
+        <div className="portada">
+          <img className="logo logo-blanco" src={LOGO} alt="Supertiendas Cañaveral" />
+          <h1>Corrige tus documentos</h1>
+          <p>Gestión Humana te pide corregir {plural(cuantos, 'documento', 'documentos')}.</p>
+        </div>
+
+        <AyudaMovil />
+
+        {correccion.ignorados.length > 0 && (
+          <div className="aviso aviso-alerta" role="status">
+            {correccion.ignorados.length === 1
+              ? 'Este enlace pedía un documento que esta página no reconoce, así que no aparece.'
+              : `Este enlace pedía ${correccion.ignorados.length} documentos que esta página no reconoce, así que no aparecen.`}
+            {' '}Si crees que falta algo, pregúntale a Gestión Humana.
+          </div>
+        )}
+
+        <section className="grupo">
+          <h2 className="grupo-titulo">Lo que debes corregir</h2>
+          <div className="lista">
+            {correccion.documentos.map(({ doc, motivo }) => (
+              <div className="fila" key={doc.id}>
+                <div className="fila-cuerpo">
+                  <div className="fila-titulo">{doc.nombre}</div>
+                  {motivo && <p className="motivo-gh">Gestión Humana dice: {motivo}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="grupo">
+          <h2 className="grupo-titulo">¿Este celular o computador es tuyo?</h2>
+          <div className="lista" role="radiogroup">
+            {opciones.map((op) => (
+              <label key={op.valor} className="fila fila-tocable">
+                <input className="oculto" type="radio" name="dispositivo" checked={dispositivo === op.valor}
+                       onChange={() => setDispositivo(op.valor)} />
+                <div className="fila-cuerpo">
+                  <div className="fila-titulo">{op.titulo}</div>
+                  <div className="fila-sub">{op.detalle}</div>
+                </div>
+                {dispositivo === op.valor && <span className="marca-check"><Palomita /></span>}
+              </label>
+            ))}
+          </div>
+        </section>
+      </main>
+
+      <div className="barra-accion">
+        <div className="barra-accion-interna">
+          <button className="boton boton-principal" disabled={!dispositivo}
+                  onClick={() => alComenzar(guardadoDisponible && dispositivo === 'propio')}>
+            Comenzar
+          </button>
+          {!dispositivo && <p className="nota">Responde la pregunta para continuar.</p>}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Corrección, pantalla 2: el candidato escribe su número de documento y se compara su
+ * huella con la del link. No sigue hasta que coincida.
+ */
+function VerificarCedula({ correccion, alVerificar }) {
+  const [cedula, setCedula] = useState('');
+  const [error, setError] = useState('');
+  const [revisando, setRevisando] = useState(false);
+
+  async function verificar() {
+    const digitos = cedula.replace(/\D/g, '');
+    if (digitos.length < 5 || digitos.length > 12) { setError('Escribe tu número de documento, solo números.'); return; }
+    setRevisando(true);
+    const coincide = (await huellaCedula(digitos)) === correccion.h;
+    setRevisando(false);
+    if (!coincide) { setError('Ese número no coincide con el de esta solicitud. Revisa que esté bien escrito.'); return; }
+    alVerificar(digitos);
+  }
+
+  return (
+    <div style={{ display: 'contents' }}>
+      <main className="contenido">
+        <h1>Verifica tu documento</h1>
+        <p className="bajada">Para proteger tus datos, escribe el número de documento con el que mandaste tus documentos.</p>
+        <section className="grupo">
+          <div className="lista">
+            <label className={`fila fila-campo ${error ? 'con-error' : ''}`}>
+              <span className="etiqueta">Número de documento</span>
+              <input type="text" inputMode="numeric" autoComplete="off" enterKeyHint="done" placeholder="Solo números"
+                     value={cedula} maxLength={20}
+                     onChange={(e) => { setCedula(e.target.value); setError(''); }}
+                     onKeyDown={(e) => e.key === 'Enter' && verificar()} />
+            </label>
+          </div>
+          {error && <p className="grupo-pie error" role="alert">{error}</p>}
+          {MODO_PRUEBA && <p className="grupo-pie">Modo prueba: el número es {CEDULA_PRUEBA_CORRECCION}.</p>}
+        </section>
+      </main>
+      <div className="barra-accion">
+        <div className="barra-accion-interna">
+          <button type="button" className="boton boton-principal" disabled={revisando || !cedula.trim()} onClick={verificar}>
+            {revisando ? 'Verificando…' : 'Verificar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Corrección, pantalla 3: solo los documentos pedidos, con el motivo arriba en rojo. */
+function DocumentosCorreccion({ correccion, sesion, alAgregar, alQuitar, alContinuar }) {
+  const faltan = correccion.documentos.filter(({ doc }) => !(sesion.archivos[doc.id] || []).length).length;
+  return (
+    <>
+      <main className="contenido">
+        <h1>Corrige tus documentos</h1>
+        <p className="bajada">Sube de nuevo cada documento en PDF (la foto como imagen).</p>
+        <AyudaMovil />
+        <section className="grupo">
+          <h2 className="grupo-titulo">Documentos</h2>
+          <div className="lista">
+            {correccion.documentos.map(({ doc, motivo }, i) => (
+              <TarjetaDocumento key={doc.id} doc={doc} posicion={i + 1} ayuda={doc.ayuda} motivoGH={motivo}
+                                archivos={sesion.archivos[doc.id] || []}
+                                cedula={sesion.cedula} todosLosArchivos={sesion.archivos}
+                                alAgregar={alAgregar} alQuitar={alQuitar} />
+            ))}
+          </div>
+          <p className="grupo-pie">
+            {sesion.dispositivoPersonal
+              ? `Tu avance se guarda en este dispositivo hasta el ${fechaLegible(sesion.expira)}.`
+              : 'No guardamos nada en este dispositivo: si cierras la página, tendrás que empezar de nuevo.'}
+          </p>
+        </section>
+      </main>
+      <div className="barra-accion">
+        <div className="barra-accion-interna">
+          <button type="button" className="boton boton-principal" disabled={faltan > 0} onClick={alContinuar}>Continuar</button>
+          {faltan > 0 && <p className="nota">Te {faltan === 1 ? 'falta' : 'faltan'} {plural(faltan, 'documento', 'documentos')} para poder enviar.</p>}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** Corrección, pantalla 5: cierre. */
+function FinalCorreccion({ nombreZip }) {
+  return (
+    <main className="contenido final">
+      <div className="final-icono"><Palomita tamano={44} /></div>
+      <h1>¡Listo!</h1>
+      <p className="bajada">Listo, Gestión Humana revisará tu corrección.</p>
+      <div className="aviso aviso-alerta">
+        El archivo <strong style={{ overflowWrap: 'anywhere' }}>{nombreZip}</strong> sigue en tu carpeta de
+        Descargas. Si este dispositivo no es tuyo, bórralo.
+      </div>
+    </main>
+  );
+}
+
+/**
+ * App del modo corrección. Igual que App(), pero con sus propias pantallas, su propia
+ * clave de guardado y sin datos, cargo ni autorización.
+ *   pantalla: 'inicio' | 'verificar' | 'documentos' | 'envio' | 'final'
+ */
+function AppCorreccion({ correccion }) {
+  const clave = claveCorreccion(correccion);
+  const [cargando, setCargando] = useState(true);
+  const [sesion, setSesion] = useState(null);
+  const [pantalla, setPantalla] = useState('inicio');
+  const [guardadoDisponible, setGuardadoDisponible] = useState(true);
+  const [avisoInicial, setAvisoInicial] = useState(null);
+  const [zipFinal, setZipFinal] = useState('');
+  const [confirmacion, setConfirmacion] = useState(null);
+
+  // --- Al abrir: recupera el avance de ESTA corrección (no el del envío normal) ---
+  useEffect(() => {
+    (async () => {
+      try {
+        const guardada = MODO_PRUEBA ? null : await BD.leer(clave);
+        if (guardada) {
+          if (Date.now() > guardada.expira) {
+            await BD.borrar(clave);
+            setAvisoInicial(`Tu avance anterior se borró porque pasaron más de ${CONFIG.diasConservacion} días. Empieza de nuevo.`);
+          } else {
+            setSesion(guardada);
+            setPantalla(guardada.cedula ? 'documentos' : 'verificar');
+          }
+        }
+      } catch {
+        setGuardadoDisponible(false);
+      }
+      setCargando(false);
+    })();
+  }, []);
+
+  // --- Cada cambio se guarda (solo si el dispositivo es propio y no es prueba) ---
+  useEffect(() => {
+    if (!sesion || !sesion.dispositivoPersonal || sesion.esPrueba) return;
+    BD.guardar(sesion, clave).catch(() => {
+      setGuardadoDisponible(false);
+      setSesion((s) => (s ? { ...s, dispositivoPersonal: false } : s));
+      setConfirmacion({
+        mensaje: 'No pudimos guardar tu avance en este dispositivo. Puedes seguir, pero termina antes de cerrar la página.',
+        textoAccion: 'Entendido', alConfirmar: () => {}, soloAviso: true,
+      });
+    });
+  }, [sesion]);
+
+  /** Borra solo el avance de esta corrección. */
+  async function borrarTodo() {
+    try { await BD.borrar(clave); } catch { /* no había nada guardado */ }
+    setSesion(null);
+  }
+
+  // --- Limpieza automática en dispositivos prestados (igual que el envío normal) ---
+  const segundosRestantes = useInactividad(
+    !!sesion && !sesion.dispositivoPersonal && !sesion.esPrueba && pantalla !== 'final',
+    CONFIG.minutosInactividad,
+    async () => {
+      await borrarTodo();
+      setPantalla('inicio');
+      setAvisoInicial('Borramos tus documentos porque la página estuvo sin uso. Empieza de nuevo cuando quieras.');
+    }
+  );
+
+  function comenzar(dispositivoPersonal) {
+    const nueva = sesionCorreccionNueva(correccion, dispositivoPersonal);
+    if (MODO_PRUEBA) nueva.esPrueba = true; // en modo prueba no se guarda nada
+    setAvisoInicial(null);
+    setSesion(nueva);
+    setPantalla('verificar');
+  }
+
+  function agregarArchivos(idDoc, nuevos, reemplazar) {
+    setSesion((s) => ({ ...s, archivos: { ...s.archivos, [idDoc]: reemplazar ? nuevos.slice(-1) : [...(s.archivos[idDoc] || []), ...nuevos] } }));
+  }
+
+  function quitarArchivo(idDoc, indice) {
+    setSesion((s) => ({ ...s, archivos: { ...s.archivos, [idDoc]: (s.archivos[idDoc] || []).filter((_, i) => i !== indice) } }));
+  }
+
+  function terminar() {
+    setConfirmacion({
+      mensaje: '¿Ya subiste el paquete? Vamos a borrar tus documentos de este dispositivo.',
+      textoAccion: 'Sí, ya lo subí',
+      alConfirmar: async () => {
+        setZipFinal(nombreZipCorreccion(sesion));
+        await borrarTodo();
+        setPantalla('final');
+      },
+    });
+  }
+
+  const paso = { inicio: 1, verificar: 2, documentos: 3, envio: 4 }[pantalla];
+  const completos = sesion ? correccion.documentos.filter(({ doc }) => (sesion.archivos[doc.id] || []).length).length : 0;
+  const mostrarAvance = ['documentos', 'envio'].includes(pantalla);
+
+  if (cargando) return null;
+
+  return (
+    <div className="app">
+      <Encabezado paso={paso} completos={completos} total={mostrarAvance ? correccion.documentos.length : 0} />
+      <div className="escritorio">
+        <PanelPasos paso={paso} pasos={PASOS_CORRECCION} />
+        <div className="columna-central">
+          {pantalla === 'inicio' && (
+            <InicioCorreccion correccion={correccion} guardadoDisponible={guardadoDisponible}
+                              avisoInicial={avisoInicial} alComenzar={comenzar} />
+          )}
+          {pantalla === 'verificar' && sesion && (
+            <VerificarCedula correccion={correccion}
+                             alVerificar={(cedula) => { setSesion((s) => ({ ...s, cedula })); setPantalla('documentos'); }} />
+          )}
+          {pantalla === 'documentos' && sesion?.cedula && (
+            <DocumentosCorreccion correccion={correccion} sesion={sesion} alAgregar={agregarArchivos}
+                                  alQuitar={quitarArchivo} alContinuar={() => setPantalla('envio')} />
+          )}
+          {pantalla === 'envio' && sesion?.cedula && (
+            <PantallaEnvio sesion={sesion} nombreZip={nombreZipCorreccion(sesion)}
+                           armar={(s) => armarZipCorreccion(s, correccion)}
+                           alVolver={() => setPantalla('documentos')} alTerminar={terminar} />
+          )}
+          {pantalla === 'final' && <FinalCorreccion nombreZip={zipFinal} />}
+        </div>
+        <PanelAyuda />
+      </div>
+
+      {confirmacion && <HojaConfirmacion {...confirmacion} alCerrar={() => setConfirmacion(null)} />}
+
+      {segundosRestantes !== null && (
+        <div className="aviso-flotante" role="alert">
+          <p>Por seguridad, borraremos todo en {segundosRestantes} s si no usas la página.</p>
+          <button type="button" className="boton boton-tintado boton-chico">Sigo aquí</button>
+        </div>
+      )}
+
+      {MODO_PRUEBA && (
+        <div className="selector-prueba" aria-label="Datos de prueba">
+          <button type="button" onClick={() => { location.href = `${location.pathname}?prueba=1`; }}>Envío normal</button>
+          <button type="button" className="activo">Corrección</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================================
+   8. ARRANQUE
+   ----------------------------------------------------------------------------
+   Sin ?c= en la dirección → envío normal (App). Con ?c= válido → modo corrección.
+   Con ?c= dañado → solo el mensaje "Este enlace de corrección está incompleto".
+   ============================================================================ */
+function Arranque() {
+  if (CODIGO_CORRECCION === null) return <App />;
+  if (!CORRECCION) return <EnlaceCorreccionDanado />;
+  return <AppCorreccion correccion={CORRECCION} />;
+}
+
 if (!window.NAVEGADOR_ANTIGUO) {
-  ReactDOM.createRoot(document.getElementById('raiz')).render(<PantallaDeError><App /></PantallaDeError>);
+  ReactDOM.createRoot(document.getElementById('raiz')).render(<PantallaDeError><Arranque /></PantallaDeError>);
 }

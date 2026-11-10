@@ -34,7 +34,16 @@ Marca cada punto con ✅ o ❌. Si algo sale ❌, toma pantallazo y anota en qu�
 | 14 | Toca **Abrir página de subida** y sube el ZIP | El ZIP se sube a OneDrive sin error | | |
 | 15 | Vuelve y toca **Ya lo subí, borrar mis datos** | Sale la pantalla final | | |
 
-## 4. Revisión en Gestión Humana
+## 4. Corrección (link que manda Gestión Humana)
+| # | Qué hacer | Qué debe pasar | Android | iPhone |
+|---|---|---|---|---|
+| C1 | En el panel (`panel-gh.html`), abre al candidato de prueba, rechaza un documento y toca **Pedir correcciones → Abrir WhatsApp** | Llega por WhatsApp el mensaje con el link | | |
+| C2 | Abre el link desde WhatsApp | Sale "Corrige tus documentos" con el motivo en rojo | | |
+| C3 | Escribe un número de documento equivocado | "Ese número no coincide…" y no deja seguir | | |
+| C4 | Escribe el número correcto, sube el documento y descarga el paquete | Se descarga `CEDULA_CORRECCION_1.zip` | | |
+| C5 | Súbelo con **Abrir página de subida** y procésalo en el panel | En la ficha el documento queda pendiente y "llegó en la corrección 1" | | |
+
+## 5. Revisión en Gestión Humana
 | # | Qué hacer | Qué debe pasar |
 |---|---|---|
 | 16 | Abre la carpeta de OneDrive y descarga el ZIP que llegó | Están todos los archivos con nombre `CEDULA_NN_DOCUMENTO.pdf` |

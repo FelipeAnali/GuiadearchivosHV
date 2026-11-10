@@ -36,6 +36,13 @@ Si el dispositivo es propio, el avance se guarda unos días en el navegador; si 
    y el manual en:
    `https://felipeanali.github.io/GuiadearchivosHV/manual/Manual_candidato_Documentos_de_ingreso.pdf`
 
+## Correcciones
+
+Cuando Gestión Humana rechaza un documento en el panel, toca **Pedir correcciones** y le manda al candidato un
+link (por WhatsApp, correo o copiado). Ese link abre esta misma página en **modo corrección**: el candidato
+verifica su número de documento, sube solo lo que le pidieron y envía un ZIP `CEDULA_CORRECCION_N.zip`, que el
+panel procesa sin tocar los demás documentos. Ver [COMO_FUNCIONA.md](COMO_FUNCIONA.md).
+
 ## Revisión automática de documentos
 
 - **PDF con texto** (descargados de una página, como ADRES o el fondo de pensión): la página lee el contenido y rechaza el archivo si no corresponde o si se parece más a otro documento. El nombre del archivo no importa.

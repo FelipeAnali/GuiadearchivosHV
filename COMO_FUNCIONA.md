@@ -19,6 +19,7 @@ Para cambios de configuración (links, cargos, textos) ver [GUIA.md](GUIA.md).
 | `src/app.jsx` | **Fuente** del código de la app (React con JSX). Se edita aquí. |
 | `herramientas/compilar.js` | Compila `src/app.jsx` con Babel y lo pone dentro de `index.html` (`npm run compilar`). |
 | `manual/` | Manual del candidato (PDF). |
+| `panel-gh.html` | Panel de Gestión Humana: procesa los ZIP, revisa documentos y pide correcciones. |
 | `GUIA.md`, `PRUEBAS.md` | Guía de cambios comunes y lista de pruebas en celulares. |
 
 ¿Por qué compilar? Antes la página traducía el JSX en el celular del candidato con Babel (~3 MB en cada visita).
@@ -36,8 +37,39 @@ Inicio ──► Datos ──► Documentos ──► Envío ──► Final
  └ ¿primer empleo?, ¿dispositivo propio?, autorización de datos
 ```
 
+En "Datos" se piden también el **celular** (obligatorio: 10 números que empiezan por 3) y el **correo** (opcional).
+Van en `datos_candidato.json` como `celular` y `correo`: Gestión Humana los usa para mandar las correcciones.
+Si alguien tenía un avance guardado de antes, sin celular, la página lo devuelve a "Datos" para completarlo.
+
 `App()` (sección 6 de `src/app.jsx`) guarda el estado: `pantalla` y `sesion`. Las pantallas (sección 5) solo
 muestran y avisan con funciones `al...` (`alGuardar`, `alAgregar`...).
+
+## Modo corrección (`?c=...`)
+
+Gestión Humana rechaza documentos en su panel y le manda al candidato un link a esta misma página con `?c=<código>`.
+Con ese link la página **no** hace el envío normal:
+
+```
+Lo que debes corregir ──► Verifica tu documento ──► Corrige tus documentos ──► Envío ──► Final
+ (¿dispositivo propio?)    (huella de la cédula)     (solo lo pedido, con motivo)
+```
+
+- No vuelve a pedir primer empleo, datos, cargo ni autorización.
+- La cédula se verifica sin que viaje en el link: se compara la huella SHA-256 que escribe el candidato con la del link.
+- Usa la misma `TarjetaDocumento` (todas las revisiones de archivos) y la misma pantalla de envío.
+- El avance se guarda con la clave `correccion_<huella>_<n>`: **no toca** el avance de un envío normal.
+- Si el link está dañado o es de otra versión, solo se muestra "Este enlace de corrección está incompleto".
+
+**Contrato con el panel** (no cambiarlo sin cambiar también `panel-gh.html`):
+
+| | Formato |
+|---|---|
+| Link | `<app>?c=<código>`; código = JSON → UTF-8 → base64url sin `=` |
+| JSON del link | `{ "v": 1, "n": 1, "h": "<16 hex de SHA-256 de la cédula>", "d": [ { "id": "adres", "m": "No se lee bien" } ] }` |
+| ZIP | `<cedula>_CORRECCION_<n>.zip`, archivos con el nombre de siempre |
+| `datos_candidato.json` | `{ "version": 1, "tipo": "correccion", "correccion": n, "cedula", "generado", "archivos": [...] }` |
+
+El detalle está en `src/app.jsx` (sección 7) y en `panel-gh.html` (sección 6B).
 
 ## Dónde se guarda el avance
 
@@ -99,4 +131,5 @@ Si la app falla ya abierta, `PantallaDeError` muestra "Algo salió mal" con un b
 
 - `?prueba=1`: datos de prueba sin guardar nada (botones Normal / Caso extremo / Vacío).
 - `?prueba=1&app=1`: muestra el aviso de "Abre esta página en Chrome/Safari".
+- `?prueba=1` → botón **Corrección**: abre el modo corrección con un link de ejemplo (cédula `1144098765`, pide EPS y diplomas).
 - Antes de enviar el link a candidatos, seguir [PRUEBAS.md](PRUEBAS.md) en un Android y un iPhone reales.
