@@ -1,0 +1,2250 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<!--
+  ============================================================================
+  PANEL DE GESTIÓN HUMANA — Documentos de ingreso
+  Supertiendas Cañaveral S.A.S.
+  ----------------------------------------------------------------------------
+  Página para la analista de Gestión Humana. Trabaja directamente sobre la
+  carpeta "Hojas de vida" sincronizada con OneDrive en el computador.
+
+  QUÉ HACE (PARTES 1 y 2 de 6):
+    1. ARRANQUE: elegir la carpeta "Hojas de vida" y escribir quién la usa.
+       Si faltan las subcarpetas (Recibidos, Candidatos, Historial), las crea.
+    2. BANDEJA: muestra los ZIP que llegaron a "Recibidos" (los que suben los
+       candidatos con el link de "Solicitar archivos") y revisa cada uno.
+    3. PROCESAR: saca los archivos del ZIP a la carpeta del candidato
+       (Candidatos/1144123456_LAURA_GOMEZ), crea su "expediente.json" y mueve
+       el ZIP a "Recibidos/Procesados". No se borra nada.
+    4. CANDIDATOS: listado con búsqueda, estado, avance y días esperando.
+    5. FICHA: aprobar o rechazar (con motivo) cada documento del candidato,
+       subir los archivos de GH (SAGRILAFT, ARL, EPS, caja, pensión, paquete
+       de inducción), marcar los chequeos (examen médico, ERP, Cronoseg) y
+       cambiar el estado. Todo queda en expediente.json y en la bitácora.
+       Los archivos de GH se guardan en Candidatos/<cédula>_<NOMBRE>/Gestion_Humana.
+
+  LO QUE LLEGA EN LAS SIGUIENTES PARTES:
+    3. Correcciones (pedirlas y procesar los ZIP de corrección).
+    4. Entrega final en ZIP o en un solo PDF.
+    5. Historial, conservación y ajustes.
+
+  PRIVACIDAD:
+    - Esta página NO tiene servidor. Lee y escribe solo en la carpeta que la
+      analista elige en SU computador (que OneDrive sincroniza).
+    - Lo único que recuerda el navegador es CUÁL carpeta abrir y el nombre de
+      quien usa el panel. Ningún documento se guarda en el navegador.
+
+  REQUISITO: Chrome o Edge en computador (usan "File System Access API" para
+  poder abrir una carpeta). Safari, Firefox y celulares no lo permiten.
+
+  CARPETA DE EJEMPLO: en la pantalla de inicio está "Abrir carpeta de ejemplo".
+  Crea una carpeta falsa EN MEMORIA (no toca el computador) con datos de
+  prueba, y abajo aparece un selector: Normal / Peor caso / Vacío / Uno.
+
+  MAPA DEL CÓDIGO (en este orden dentro del archivo):
+    ESTILO             Estilo iPhone/iPad (iOS), colores de la marca, modo oscuro.
+    CONFIGURACIÓN      Nombres de carpetas, documentos, checklist de GH y estados.
+    LOGO               Logo de Cañaveral incrustado (imagen en texto base64).
+    1. UTILIDADES      Textos, fechas, plurales.
+    2. RECORDAR        Guarda en el navegador cuál carpeta y quién la usa.
+    3. ARCHIVOS        Leer, escribir y mover archivos en la carpeta.
+    4. EXPEDIENTE      Leer y guardar expediente.json (con aviso de choques).
+    5. BANDEJA         Buscar los ZIP en Recibidos y revisarlos.
+    6. PROCESAR        Pasar un ZIP a la carpeta del candidato.
+    7. CANDIDATOS      Leer el listado y calcular el avance.
+    8. EJEMPLO         Carpeta falsa en memoria con datos de prueba.
+    9. PANTALLAS       Inicio, Bandeja, Candidatos, Ficha del candidato.
+   10. APP PRINCIPAL   Decide qué pantalla mostrar.
+  ============================================================================
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F3F6EF" />
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#08200F" />
+<title>Panel de ingreso · Cañaveral</title>
+
+<!-- Nunito: tipografía corporativa (Manual de Marca) para los títulos; el resto usa la letra del iPhone -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@800;900&display=swap" rel="stylesheet" />
+
+<style>
+  /* ==========================================================================
+     ESTILO IPHONE / IPAD (iOS) — igual que la app del candidato
+     Colores de sistema de Apple + el verde de Cañaveral como acento.
+     Mismos valores que documentos-ingreso.html; el modo oscuro solo cambia
+     estas variables.
+     ========================================================================== */
+  :root {
+    --tinte: #1D5A2B;                        /* acento: verde del logo Cañaveral */
+    --sobre-tinte: #FFFFFF;
+    --tinte-suave: rgba(29, 90, 43, 0.12);   /* botones "tintados" */
+    --lima: #7DD105;                         /* verde lima: avance y "listo" */
+    --tinta: #08200F;                        /* verde casi negro de la marca */
+    --fondo: #F3F6EF;                        /* verde muy claro de la marca */
+    --celda: #FFFFFF;                        /* fondo de las listas */
+    --celda-presionada: #E6ECE1;
+    --texto: #08200F;
+    --texto-2: rgba(8, 32, 15, 0.6);         /* texto secundario */
+    --texto-3: rgba(8, 32, 15, 0.42);        /* fechas, pistas */
+    --separador: rgba(8, 32, 15, 0.16);
+    --relleno: rgba(29, 90, 43, 0.09);       /* fondos verdes muy suaves */
+    --rojo: #D93025;
+    --rojo-suave: rgba(217, 48, 37, 0.10);
+    --alerta-fondo: #FFF4E5;
+    --alerta-texto: #8A5300;
+    --azul: #0A64C8;                         /* estado "Recibido" (azul de sistema) */
+    --azul-suave: rgba(10, 100, 200, 0.10);
+    --barra: rgba(243, 246, 239, 0.86);      /* barras translúcidas */
+    --barra-lateral: #E9EEE4;                /* barra lateral tipo iPad */
+    --portada: #08200F;
+    --sombra-flotante: 0 10px 30px rgba(8, 32, 15, 0.2);
+    --radio: 12px;
+    --facil: cubic-bezier(0.2, 0.8, 0.2, 1); /* curva de las hojas de iOS */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --tinte: #7DD105;
+      --sobre-tinte: #08200F;
+      --tinte-suave: rgba(125, 209, 5, 0.16);
+      --fondo: #08200F;
+      --celda: #10301A;
+      --celda-presionada: #18402A;
+      --texto: #FFFFFF;
+      --texto-2: rgba(235, 245, 230, 0.62);
+      --texto-3: rgba(235, 245, 230, 0.42);
+      --separador: rgba(125, 209, 5, 0.18);
+      --relleno: rgba(255, 255, 255, 0.10);
+      --rojo: #FF6B5E;
+      --rojo-suave: rgba(255, 107, 94, 0.14);
+      --alerta-fondo: #2E2A10;
+      --alerta-texto: #FFC24D;
+      --azul: #8CC4FF;
+      --azul-suave: rgba(140, 196, 255, 0.14);
+      --barra: rgba(8, 32, 15, 0.86);
+      --barra-lateral: #0C2614;
+      --portada: #10301A;
+    }
+  }
+
+  /* ==========================================================================
+     BASE (letra del iPhone: San Francisco; títulos en Nunito de la marca)
+     ========================================================================== */
+  html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+    font-size: 16px; line-height: 1.35; letter-spacing: -0.2px;
+    background: var(--fondo); color: var(--texto);
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font: inherit; color: inherit; letter-spacing: inherit; }
+  button, .fila-tocable { touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+  :focus-visible { outline: 3px solid var(--lima); outline-offset: 2px; border-radius: 6px; }
+  h1, h2, h3 { margin: 0; }
+  h1 { font-family: 'Nunito', -apple-system, sans-serif; font-size: 33px; line-height: 1.12; font-weight: 900; letter-spacing: 0; }
+  h2 { font-size: 22px; font-weight: 700; line-height: 1.2; }
+  h3 { font-size: 17px; font-weight: 600; }
+  p { margin: 0; }
+  .numeros { font-variant-numeric: tabular-nums; }
+  .logo { display: block; width: auto; max-width: 100%; object-fit: contain; flex-shrink: 0; }
+
+  /* ==========================================================================
+     BOTONES (estilo iOS: relleno, tintado y de texto)
+     ========================================================================== */
+  .boton {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-height: 34px; padding: 0 14px; border: 0; border-radius: 999px;
+    font-size: 15px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    transition: opacity 120ms ease-out;
+  }
+  .boton:active:not(:disabled) { opacity: 0.6; }          /* iOS atenúa al tocar */
+  .boton:disabled { opacity: 0.35; cursor: not-allowed; }
+  .boton-principal { background: var(--tinte); color: var(--sobre-tinte); }
+  .boton-secundario, .boton-suave { background: var(--tinte-suave); color: var(--tinte); }
+  .boton-texto { background: none; color: var(--tinte); padding: 0 6px; font-weight: 400; font-size: 16px; }
+  .boton-texto.peligro { color: var(--rojo); }
+  .boton-grande { min-height: 50px; padding: 0 20px; border-radius: 14px; font-size: 17px; width: 100%; }
+  @media (hover: hover) and (pointer: fine) { .boton:hover:not(:disabled) { opacity: 0.85; } }
+
+  /* ==========================================================================
+     ESTRUCTURA: barra lateral tipo iPad + área de trabajo
+     ========================================================================== */
+  .marco { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: 100vh; }
+  .lateral {
+    background: var(--barra-lateral); border-right: 0.5px solid var(--separador);
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 22px 12px 18px; position: sticky; top: 0; height: 100vh;
+  }
+  /* Logo: alto fijo y ancho automático, nunca estirado */
+  .lateral .logo { height: 40px; align-self: flex-start; margin: 0 8px 22px; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .lateral .logo { filter: brightness(0) invert(1); } }
+  .menu-item {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    min-height: 44px; padding: 0 12px; border-radius: 10px; border: 0; background: none;
+    color: var(--texto); font-size: 17px; text-align: left; cursor: pointer;
+  }
+  .menu-item svg { flex-shrink: 0; color: var(--tinte); }
+  .menu-item .etiqueta { flex: 1; min-width: 0; }
+  /* Fila elegida: relleno verde con letra blanca, como la barra lateral del iPad */
+  .menu-item[aria-current="page"] { background: var(--tinte); color: var(--sobre-tinte); font-weight: 600; }
+  .menu-item[aria-current="page"] svg { color: var(--sobre-tinte); }
+  .menu-item:disabled { opacity: 0.4; cursor: default; }
+  @media (hover: hover) and (pointer: fine) {
+    .menu-item:not(:disabled):not([aria-current="page"]):hover { background: var(--relleno); }
+  }
+  .contador {
+    min-width: 22px; height: 22px; padding: 0 7px; border-radius: 11px;
+    background: var(--lima); color: var(--tinta); font-size: 13px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums;
+  }
+  .pronto { font-size: 13px; color: var(--texto-2); }
+  .menu-item[aria-current="page"] .pronto { color: var(--sobre-tinte); }
+  .lateral-pie {
+    margin-top: auto; padding: 14px 12px 0; border-top: 0.5px solid var(--separador);
+    display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--texto-2);
+  }
+  .lateral-pie strong { color: var(--texto); font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+  .lateral-pie button { align-self: flex-start; background: none; border: 0; padding: 4px 0; color: var(--tinte); cursor: pointer; font-size: 15px; }
+  .carpeta-nombre { overflow-wrap: anywhere; }
+
+  .trabajo { padding: 0 40px 90px; min-width: 0; }
+  /* Barra superior translúcida con título grande (se queda arriba al bajar) */
+  .encabezado {
+    position: sticky; top: 0; z-index: 5;
+    margin: 0 -40px 20px; padding: 26px 40px 14px;
+    background: var(--barra);
+    -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 0.5px solid var(--separador);
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  }
+  .encabezado p { color: var(--texto-2); margin-top: 4px; font-size: 15px; }
+  .acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+  /* En pantallas angostas la barra lateral pasa arriba */
+  @media (max-width: 860px) {
+    .marco { grid-template-columns: minmax(0, 1fr); }
+    .lateral { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px 12px; gap: 4px; border-right: 0; border-bottom: 0.5px solid var(--separador); }
+    .lateral .logo { height: 30px; margin: 0 8px 0 4px; align-self: center; }
+    .menu-item { width: auto; min-height: 36px; font-size: 15px; }
+    .menu-item .pronto { display: none; }
+    .lateral-pie { margin-top: 0; width: 100%; flex-direction: row; flex-wrap: wrap; gap: 2px 12px; border-top: 0; padding: 6px 4px 0; align-items: center; }
+    .trabajo { padding: 0 16px 90px; }
+    .encabezado { margin: 0 -16px 16px; padding: 18px 16px 12px; }
+    h1 { font-size: 28px; }
+  }
+
+  /* ==========================================================================
+     LISTAS AGRUPADAS (el estilo de la app Ajustes del iPhone)
+     ========================================================================== */
+  .tarjeta { background: var(--celda); border-radius: var(--radio); overflow: hidden; }
+  .grupo-titulo, .ficha section > h3 { font-size: 13px; font-weight: 400; color: var(--texto-2); margin: 0 16px 7px; }
+  .nota-seccion { font-size: 13px; color: var(--texto-2); margin: 7px 16px 0; }
+  .fila {
+    position: relative;
+    display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 12px; align-items: start;
+    padding: 12px 16px;
+  }
+  /* Línea fina entre filas, con sangría como en iOS */
+  .fila + .fila::before, .cand + .cand::before, .item-ficha + .item-ficha::before {
+    content: ''; position: absolute; top: 0; right: 0; left: var(--sangria, 16px);
+    height: 0.5px; background: var(--separador);
+  }
+  .fila { --sangria: 68px; }
+  .fila-tocable { cursor: pointer; }
+  .fila-tocable:active { background: var(--celda-presionada); }
+  @media (hover: hover) and (pointer: fine) { .fila-tocable:hover { background: var(--celda-presionada); } }
+  /* Ícono de la fila: cuadrito redondeado de color, como en Ajustes */
+  .icono-caja {
+    width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--tinte); color: var(--sobre-tinte);
+  }
+  .icono-caja.malo { background: var(--rojo); color: #FFFFFF; }
+  .icono-caja.ojo { background: var(--alerta-texto); color: #FFFFFF; }
+  .icono-caja.info { background: var(--azul); color: #FFFFFF; }
+  .fila-texto { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .fila-titulo { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+  .fila-sub { color: var(--texto-2); font-size: 15px; overflow-wrap: anywhere; }
+  .fila-pista { color: var(--texto-3); font-size: 13px; overflow-wrap: anywhere; }
+  .fila-lado { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; align-self: center; }
+  .mensajes { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  .mensaje { font-size: 14px; padding: 7px 12px; border-radius: 10px; overflow-wrap: anywhere; }
+  .mensaje.error { background: var(--alerta-fondo); color: var(--rojo); }
+  .mensaje.aviso { background: var(--alerta-fondo); color: var(--alerta-texto); }
+  .mensaje.info { background: var(--tinte-suave); color: var(--texto); }
+  @media (max-width: 600px) {
+    .fila { grid-template-columns: 34px minmax(0, 1fr); gap: 12px; --sangria: 62px; }
+    .fila .icono-caja { width: 34px; height: 34px; border-radius: 8px; }
+    .fila-lado { grid-column: 2; align-items: flex-start; }
+    .fila-lado:empty { display: none; }
+  }
+
+  /* Etiquetas de estado (píldoras) */
+  .etiqueta-estado {
+    display: inline-flex; align-items: center; height: 26px; padding: 0 10px;
+    border-radius: 13px; font-size: 13px; font-weight: 600; white-space: nowrap; flex-shrink: 0;
+  }
+  .e-recibido { background: var(--azul-suave); color: var(--azul); }
+  .e-revision { background: var(--alerta-fondo); color: var(--alerta-texto); }
+  .e-correcciones { background: var(--rojo-suave); color: var(--rojo); }
+  .e-completo { background: var(--tinte-suave); color: var(--tinte); }
+  .e-contratado { background: var(--lima); color: var(--tinta); }
+  .e-no_contratado { background: var(--relleno); color: var(--texto-2); }
+
+  /* La "caña": barra de avance hecha de nudos, igual que en la app del candidato */
+  .cana { display: flex; gap: 2px; width: 140px; }
+  .cana-ancha { width: 100%; gap: 3px; }
+  .nudo { flex: 1; height: 6px; border-radius: 3px; background: var(--relleno); }
+  .nudo.recibido { background: color-mix(in srgb, var(--lima) 35%, transparent); }
+  .nudo.aprobado { background: var(--lima); }
+  .nudo.rechazado { background: var(--rojo); }
+  .avance-texto { font-size: 13px; color: var(--texto-2); margin-top: 5px; font-variant-numeric: tabular-nums; }
+
+  /* ==========================================================================
+     LISTADO DE CANDIDATOS
+     ========================================================================== */
+  .filtros { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+  /* Campo de búsqueda de iOS: relleno gris, sin borde, con lupa */
+  .buscador {
+    flex: 1 1 260px; min-width: 0; height: 38px; padding: 0 12px 0 36px; border-radius: 10px; border: 0; outline-offset: 0;
+    background: var(--relleno) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23748A7A' stroke-width='2'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='M11 11l3.5 3.5'/%3E%3C/svg%3E") no-repeat 12px center;
+  }
+  .buscador::placeholder { color: var(--texto-2); }
+  input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
+  /* Botón desplegable de iOS: texto verde con flechitas */
+  .selector {
+    height: 38px; padding: 0 30px 0 12px; border-radius: 10px; border: 0; max-width: 100%;
+    background: var(--relleno) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14' fill='none' stroke='%231D5A2B' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 5l3-3 3 3M2 9l3 3 3-3'/%3E%3C/svg%3E") no-repeat right 11px center;
+    color: var(--tinte); font-weight: 600; -webkit-appearance: none; appearance: none; cursor: pointer;
+  }
+  .selector option { color: #08200F; background: #FFFFFF; }
+  .cand {
+    position: relative;
+    display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.6fr) 150px 148px 64px 14px;
+    gap: 18px; align-items: center; padding: 12px 16px; --sangria: 16px;
+  }
+  /* Flechita ">" al final de las filas que se abren, como en iOS */
+  .cand.fila-tocable::after {
+    content: ''; width: 8px; height: 8px; justify-self: end;
+    border-right: 2px solid var(--texto-3); border-top: 2px solid var(--texto-3); transform: rotate(45deg);
+  }
+  .cand-cabecera { font-size: 13px; color: var(--texto-2); padding: 0 16px 7px; display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.6fr) 150px 148px 64px 14px; gap: 18px; }
+  .c-estado { justify-self: start; }
+  .cand-dias { text-align: right; font-variant-numeric: tabular-nums; }
+  .cand-dias strong { font-family: 'Nunito', sans-serif; font-size: 22px; font-weight: 900; display: block; line-height: 1; }
+  .cand-dias span { font-size: 12px; color: var(--texto-2); }
+  .cand-dias.viejo strong { color: var(--rojo); }
+  @media (max-width: 1100px) {
+    .cand { grid-template-columns: minmax(0, 1fr) auto 14px; gap: 6px 14px; }
+    .cand-cabecera { display: none; }
+    .cand > .c-cargo { grid-column: 1; }
+    .cand > .c-estado { grid-column: 2; grid-row: 1; justify-self: end; }
+    .cand > .c-avance { grid-column: 1; }
+    .cand > .c-dias { grid-column: 2; grid-row: 2 / span 2; align-self: end; }
+    .cand.fila-tocable::after { grid-column: 3; grid-row: 1 / span 3; align-self: center; }
+  }
+
+  /* ==========================================================================
+     PANTALLA DE INICIO (igual que la app del candidato: portada + listas)
+     ========================================================================== */
+  .inicio { max-width: 600px; margin: 0 auto; padding: 28px 16px 60px; }
+  .portada {
+    position: relative; overflow: hidden;
+    background: var(--portada); color: #FFFFFF;
+    border-radius: 20px; padding: 26px 22px 24px; margin-bottom: 28px;
+  }
+  .portada::after {               /* curva lima de las piezas de marca de Cañaveral */
+    content: ''; position: absolute; right: -150px; top: -70px;
+    width: 220px; height: 300px; border-radius: 50%; border: 22px solid var(--lima);
+  }
+  .portada > * { position: relative; z-index: 1; max-width: 74%; }
+  @media (max-width: 600px) { .portada h1 { font-size: 28px; } .portada::after { right: -175px; } }
+  .portada .logo { height: 44px; margin-bottom: 18px; filter: brightness(0) invert(1); }
+  .portada h1 { color: #FFFFFF; margin-bottom: 6px; }
+  .portada p { color: rgba(255, 255, 255, 0.78); font-size: 16px; }
+  .grupo { margin-bottom: 28px; }
+  .grupo-pie { font-size: 13px; color: var(--texto-2); margin: 7px 16px 0; }
+  .pasos-arranque { list-style: none; margin: 0; padding: 0; counter-reset: paso; }
+  .pasos-arranque li { position: relative; display: flex; gap: 12px; align-items: flex-start; padding: 11px 16px; counter-increment: paso; font-size: 16px; }
+  .pasos-arranque li + li::before { content: ''; position: absolute; top: 0; right: 0; left: 58px; height: 0.5px; background: var(--separador); }
+  .pasos-arranque li > span:first-child {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center;
+    background: var(--relleno); color: var(--texto-2); font-weight: 600; font-size: 15px;
+  }
+  .pasos-arranque li > span:first-child::before { content: counter(paso); }
+  .arbol-fila { display: flex; gap: 12px; align-items: center; padding: 11px 16px; position: relative; }
+  .arbol-fila + .arbol-fila::before { content: ''; position: absolute; top: 0; right: 0; left: 52px; height: 0.5px; background: var(--separador); }
+  .arbol-fila svg { color: var(--tinte); flex-shrink: 0; }
+  .arbol-fila small { margin-left: auto; color: var(--texto-2); font-size: 14px; text-align: right; }
+  .arbol-fila.sangria { padding-left: 36px; }
+  /* Campo de texto dentro de la lista (como en la app del candidato) */
+  .fila-campo { display: block; padding: 9px 16px 10px; }
+  .fila-campo label { display: block; font-size: 13px; color: var(--texto-2); margin-bottom: 2px; }
+  .fila-campo input { width: 100%; border: 0; outline: 0; padding: 2px 0; background: transparent; min-height: 28px; font-size: 17px; }
+  .fila-campo input::placeholder { color: var(--texto-2); opacity: 0.7; }
+  .nota { font-size: 13px; color: var(--texto-2); text-align: center; margin-top: 14px; }
+  .alerta { padding: 12px 16px; border-radius: var(--radio); font-size: 15px; margin-top: 14px; }
+  .alerta.error { background: var(--alerta-fondo); color: var(--rojo); }
+  .alerta.aviso { background: var(--alerta-fondo); color: var(--alerta-texto); }
+
+  /* ==========================================================================
+     VACÍO, HOJA DEL CANDIDATO, AVISOS Y DIÁLOGOS
+     ========================================================================== */
+  .vacio { padding: 52px 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .vacio p { color: var(--texto-2); max-width: 440px; font-size: 15px; }
+  .vacio .icono-caja { width: 56px; height: 56px; border-radius: 14px; margin-bottom: 6px; }
+
+  .velo { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 40; animation: aparecer 200ms ease-out; }
+  /* Ficha = "hoja" de iOS: sube desde abajo, esquinas redondeadas, barra de título arriba */
+  .detalle {
+    position: fixed; z-index: 41; left: 50%; bottom: 0; transform: translateX(-50%);
+    width: min(680px, 100%); height: calc(100vh - 28px);
+    background: var(--fondo); border-radius: 14px 14px 0 0; overflow: hidden;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.2);
+    display: flex; flex-direction: column;
+    animation: subirHoja 300ms var(--facil);
+  }
+  .agarre { width: 36px; height: 5px; border-radius: 3px; background: var(--separador); margin: 7px auto 0; flex-shrink: 0; }
+  .detalle-cabeza {
+    padding: 8px 20px 14px; background: var(--barra);
+    -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 0.5px solid var(--separador); display: flex; flex-direction: column; gap: 10px;
+  }
+  .detalle-cabeza h2 { font-family: 'Nunito', -apple-system, sans-serif; font-weight: 900; font-size: 26px; }
+  .detalle-cuerpo { padding: 22px 20px 48px; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 28px; }
+  .bitacora { display: flex; flex-direction: column; padding: 4px 0; margin: 0; list-style: none; font-size: 15px; }
+  .bitacora li { position: relative; padding: 9px 16px; }
+  .bitacora li + li::before { content: ''; position: absolute; top: 0; right: 0; left: 16px; height: 0.5px; background: var(--separador); }
+  .bitacora span { color: var(--texto-2); font-size: 13px; display: block; margin-top: 1px; }
+
+  /* Aviso flotante (como las notificaciones de iOS) */
+  .aviso-flotante {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60;
+    background: var(--celda); color: var(--texto); padding: 13px 18px; border-radius: 16px;
+    box-shadow: var(--sombra-flotante); max-width: calc(100% - 32px);
+    display: flex; gap: 10px; align-items: center; font-size: 15px; font-weight: 600;
+    animation: subirAviso 240ms var(--facil);
+  }
+  .aviso-flotante svg { color: var(--tinte); flex-shrink: 0; }
+  .aviso-flotante.error { color: var(--rojo); }
+  .aviso-flotante.sobre-selector { bottom: 66px; }
+  /* Diálogo tipo "alerta" de iOS */
+  .dialogo-fondo { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 70; display: flex; align-items: center; justify-content: center; padding: 16px; animation: aparecer 180ms ease-out; }
+  .dialogo { background: var(--celda); border-radius: 14px; padding: 20px 18px 16px; width: min(380px, 100%); display: flex; flex-direction: column; gap: 12px; text-align: center; animation: crecer 220ms var(--facil); }
+  .dialogo h2 { font-size: 17px; font-weight: 600; }
+  .dialogo p { color: var(--texto-2); font-size: 14px; }
+  .dialogo input { height: 40px; padding: 0 12px; border-radius: 10px; border: 0; background: var(--relleno); font-size: 16px; width: 100%; }
+  .dialogo .campo { display: flex; flex-direction: column; gap: 4px; text-align: left; }
+  .dialogo label { font-size: 13px; color: var(--texto-2); }
+  .dialogo .acciones { justify-content: center; }
+  .dialogo .acciones .boton { flex: 1; min-height: 44px; border-radius: 12px; }
+
+  .progreso-lote { height: 4px; background: var(--relleno); border-radius: 2px; overflow: hidden; margin-top: 8px; }
+  .progreso-lote div { height: 100%; background: var(--lima); transition: width 200ms ease-out; }
+  .girando { animation: girar 800ms linear infinite; display: inline-flex; }
+
+  /* Selector del modo de ejemplo: control segmentado de iOS */
+  .selector-prueba {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50;
+    display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--relleno);
+    -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); max-width: calc(100% - 24px); overflow-x: auto;
+  }
+  .selector-prueba button { border: 0; background: transparent; padding: 5px 12px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .selector-prueba button[aria-pressed="true"] { background: var(--celda); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12); }
+
+  /* Zona para soltar ZIP arrastrados en la bandeja */
+  .zona-soltar { min-height: calc(100vh - 40px); border-radius: 18px; outline: 2px dashed transparent; outline-offset: -2px; transition: outline-color 160ms ease; }
+  .zona-soltar.activa { outline-color: var(--lima); }
+  .aviso-soltar { position: fixed; left: 50%; top: 24px; transform: translateX(-50%); z-index: 60; background: var(--lima); color: var(--tinta); font-weight: 700; padding: 10px 18px; border-radius: 999px; pointer-events: none; }
+
+  /* ==========================================================================
+     FICHA DEL CANDIDATO
+     ========================================================================== */
+  .cabeza-estado { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .selector-estado { height: 32px; border-radius: 16px; font-size: 14px; }
+  .cabeza-estado .e-recibido { background-color: var(--azul-suave); color: var(--azul); }
+  .cabeza-estado .e-revision { background-color: var(--alerta-fondo); color: var(--alerta-texto); }
+  .cabeza-estado .e-correcciones { background-color: var(--rojo-suave); color: var(--rojo); }
+  .cabeza-estado .e-completo { background-color: var(--tinte-suave); color: var(--tinte); }
+  .cabeza-estado .e-contratado { background-color: var(--lima); color: var(--tinta); }
+  .cabeza-estado .e-no_contratado { background-color: var(--relleno); color: var(--texto-2); }
+  .listo-banner { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-weight: 600; }
+  .item-ficha {
+    position: relative; --sangria: 54px;
+    display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 12px; align-items: start;
+    padding: 11px 16px; min-height: 44px;
+  }
+  .item-titulo { font-size: 17px; }
+  /* Círculo de estado (como en la app del candidato) */
+  .punto {
+    width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+    display: grid; place-items: center; background: var(--relleno); color: var(--texto-2);
+  }
+  .punto.hecho { background: var(--lima); color: var(--tinta); }
+  .punto.malo { background: var(--rojo); color: #FFFFFF; }
+  .item-botones { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; justify-content: flex-end; align-self: center; }
+  .item-ficha .nombre-archivo { font-size: 13px; color: var(--texto-2); overflow-wrap: anywhere; margin-top: 2px; }
+  .enlace-archivo { background: none; border: 0; padding: 0 10px 0 0; color: var(--tinte); cursor: pointer; font-size: 15px; }
+  .enlace-archivo:disabled { opacity: 0.35; cursor: default; }
+  .motivo-texto { font-size: 14px; color: var(--rojo); overflow-wrap: anywhere; margin-top: 2px; }
+  /* Control segmentado de iOS (Aprobar / Rechazar, Apto / No apto...) */
+  .segmento { display: inline-flex; background: var(--relleno); border-radius: 9px; padding: 2px; gap: 2px; flex-shrink: 0; align-self: center; }
+  .segmento button { border: 0; background: none; padding: 5px 14px; border-radius: 7px; font-size: 14px; font-weight: 500; cursor: pointer; color: var(--texto); white-space: nowrap; transition: background-color 160ms ease; }
+  .segmento button[aria-pressed="true"] { background: var(--celda); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12); color: var(--tinte); font-weight: 600; }
+  .segmento button.rechazar[aria-pressed="true"] { color: var(--rojo); }
+  .segmento button:disabled { cursor: default; }
+  .segmento-ancho { display: flex; width: 100%; margin-bottom: 10px; }
+  .segmento-ancho button { flex: 1; }
+  .caja-motivo { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 12px; border-radius: 10px; background: var(--relleno); }
+  .caja-motivo input { height: 38px; padding: 0 12px; border-radius: 10px; border: 0; background: var(--celda); font-size: 16px; }
+  .caja-motivo .acciones { justify-content: flex-end; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { border: 0; background: var(--tinte-suave); color: var(--tinte); border-radius: 999px; padding: 4px 11px; font-size: 13px; cursor: pointer; }
+  .casillas { display: flex; flex-direction: column; margin-top: 4px; }
+  /* Fila con interruptor de iOS (en lugar de casilla de chequeo) */
+  .casilla { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; font-size: 16px; padding: 6px 0; }
+  .casilla > span { min-width: 0; }
+  .casilla small { display: block; color: var(--texto-2); font-size: 12.5px; }
+  .interruptor {
+    -webkit-appearance: none; appearance: none;
+    width: 51px; height: 31px; border-radius: 31px; margin: 0;
+    background: var(--relleno); position: relative; flex-shrink: 0; cursor: pointer;
+    transition: background 200ms ease-out;
+  }
+  .interruptor::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 27px; height: 27px; border-radius: 50%; background: #fff;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.16);
+    transition: transform 200ms ease-out;
+  }
+  .interruptor:checked { background: var(--lima); }
+  .interruptor:checked::after { transform: translateX(20px); }
+  .interruptor:disabled { opacity: 0.6; }
+  @media (max-width: 600px) {
+    .detalle { height: calc(100vh - 12px); border-radius: 12px 12px 0 0; }
+    .detalle-cuerpo { padding: 18px 12px 40px; }
+    .item-ficha { grid-template-columns: 26px minmax(0, 1fr); }
+    .item-ficha > .segmento, .item-ficha > .item-botones { grid-column: 2; justify-content: flex-start; justify-self: start; }
+  }
+
+  @keyframes aparecer { from { opacity: 0; } }
+  @keyframes subirHoja { from { transform: translate(-50%, 100%); } }
+  @keyframes subirAviso { from { opacity: 0; transform: translate(-50%, 12px); } }
+  @keyframes crecer { from { opacity: 0; transform: scale(1.08); } }
+  @keyframes girar { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .detalle, .aviso-flotante, .dialogo, .velo { animation: aparecer 160ms ease-out; }
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="raiz"></div>
+
+<!-- =========================================================================
+     CONFIGURACIÓN
+     Nombres de carpetas, documentos y estados. Los documentos deben coincidir
+     con los de la app del candidato (mismo "id").
+     ========================================================================= -->
+<script>
+window.CONFIG_PANEL = {
+  // Nombre de las subcarpetas dentro de "Hojas de vida"
+  carpetas: {
+    recibidos: 'Recibidos',        // aquí llegan los ZIP del link de OneDrive
+    procesados: 'Procesados',      // dentro de Recibidos: ZIP ya pasados al candidato
+    candidatos: 'Candidatos',      // una carpeta por candidato
+    historial: 'Historial',        // no contratados (parte 5)
+    anteriores: '_anteriores',     // dentro del candidato: versiones reemplazadas
+    gestionHumana: 'Gestion_Humana', // dentro del candidato: archivos que sube GH
+  },
+  // Días esperando a partir de los cuales el número se pone en rojo
+  diasAlerta: 5,
+  // Peso máximo de los archivos que sube Gestión Humana (MB)
+  tamanoMaximoGHMB: 15,
+
+  // CHECKLIST DE GESTIÓN HUMANA (lo que completa la analista en la ficha).
+  // tipo: 'archivo'   → se sube un PDF o imagen (ej. consulta SAGRILAFT)
+  //       'pension'   → primer empleo: archivo; si ya trabajó: casilla "ya afiliado"
+  //       'induccion' → documento del paquete de inducción (un PDF o separados)
+  //       'apto'      → Apto / No apto
+  //       'chequeo'   → casilla hecho / no hecho
+  // En la parte 5 esta lista se podrá editar desde Ajustes.
+  checklistGH: [
+    { id: 'sagrilaft',     nombre: 'Consulta SAGRILAFT',             tipo: 'archivo' },
+    { id: 'arl',           nombre: 'Afiliación ARL',                 tipo: 'archivo' },
+    { id: 'eps',           nombre: 'Afiliación EPS',                 tipo: 'archivo' },
+    { id: 'caja',          nombre: 'Afiliación caja de compensación', tipo: 'archivo' },
+    { id: 'pension',       nombre: 'Afiliación a pensión',           tipo: 'pension' },
+    { id: 'contrato',      nombre: 'Contrato de trabajo',            tipo: 'induccion' },
+    { id: 'autorizaciones', nombre: 'Autorizaciones',                tipo: 'induccion' },
+    { id: 'comunicado',    nombre: 'Comunicado',                     tipo: 'induccion' },
+    { id: 'formato_induccion', nombre: 'Formato de inducción',       tipo: 'induccion' },
+    { id: 'examen',        nombre: 'Examen médico',                  tipo: 'apto' },
+    { id: 'erp',           nombre: 'Creado en el ERP',               tipo: 'chequeo' },
+    { id: 'cronoseg',      nombre: 'Creado en Cronoseg',             tipo: 'chequeo' },
+  ],
+
+  // Documentos que manda el candidato (id = el de la app del candidato)
+  documentos: [
+    { id: 'foto',                nombre: 'Foto 3×4' },
+    { id: 'cedula',              nombre: 'Cédula' },
+    { id: 'diplomas',            nombre: 'Diplomas' },
+    { id: 'manipulacion',        nombre: 'Manipulación de alimentos' },
+    { id: 'referencia',          nombre: 'Referencia laboral' },
+    { id: 'referencia_personal', nombre: 'Referencias personales' },
+    { id: 'adres',               nombre: 'Certificado de EPS (ADRES)' },
+    { id: 'pension',             nombre: 'Certificado de pensión' },
+  ],
+
+  // Estados del candidato, en orden
+  estados: [
+    { id: 'recibido',      nombre: 'Recibido' },
+    { id: 'revision',      nombre: 'En revisión' },
+    { id: 'correcciones',  nombre: 'Con correcciones' },
+    { id: 'completo',      nombre: 'Completo' },
+    { id: 'contratado',    nombre: 'Contratado' },
+    { id: 'no_contratado', nombre: 'No contratado' },
+  ],
+};
+</script>
+
+<!-- LOGO de Cañaveral (imagen en texto base64, para no depender de internet) -->
+<script>window.LOGO_CANAVERAL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAoAAAAC8CAMAAADfNO/uAAAAYFBMVEUYfT0Cfns9PT0AAH8gWSsAqgB/fwBVVVUAAAAdWisAfwAcWSocWSocWSocWSoCVQIcWSocWSoZWCsAVVUkVyoA/wAeYC4tZi4gYi8APj4QZC4XTS0BPwEkSCQDZgMgWSoto/a9AAAAIHRSTlMEAgQCRwMCAwD9Am8vj08Dz68UAw8B/gf+BAsMBAcFKunzQR8AAC/eSURBVHja7X2JlqM6sq3r3DdgzRLgKTOr/v8vb0RIgAAN2Gm7zjqJunt1VdnGWGzFuCPi0Ny1WN8wln9VuGZf+7pnHR74DMv9sziqRu97uq/XAVBIK10GgbpROwD39VIAOnM5WqNyElAe+Q7Afb0MgCjiQMYJyb+SQvBsAYDtvqf7eiUAHeBP8oQaZo2yRu4ScF8vBCAHAHIlOJdihUDQwHIH4L5eDUChRHPmChDYrwxEftwBuK/XARC9jKNSijVOCXmbv9g2yigA4G4D7uulAJSCN5+NaxSfK2HWWCt2J2RfrwagEQgywZl089fcUYnTDsB9vRiAR+7AzLvyTzULOqN96DAQvQNwX69zQhCAxyD5HJ+9eDZ2z4Ts69Ve8MkcT9IBBFnXgCM8CxFywY9iB+C+XgpAK1EJw19Ex2f61hoPQLbv6b5eBECItJyMMCfjgHalPiI/GIkwnB/kDsB9vToVd4P/WdFpAXG/LnZPFNf26HYA7uuFXrCATIgDP0Sem6YzkbxzR6mUsMdu39F9vQyAPeAMQGeOKAO5OY4+L8ZgFFfKmD0Is69X8gG1ufBGIgKPp9NxynvcjAUAuqPdN3RfLwRg39iLbDhQUuF/Up4C9YCo0CAAO0gF7ybgvl4HwLaRFwg3W0ucaAECzzNiDgZUMhdqTwXv68UAhDhMI6zl+sq0OJqpFoQDAO2eCNnXSwFIbnDnrCTd2x2Nz8ppa5zkXNk9DLivF1fFUewFOPneIzn+AcCx5v8ASRDwx/cozL5eDED0QsAN5rYjAqBXuf9Y00kFInC0Cfe1r9cA0HshXGJJCP4ZqjAZWoBoAgIA96LMfb0agOiFgLRTCEB+wbDL2YAFiAJwpyL8/dX/xwGIvGcszAQegkYwWt2TAAQASsiD/GT4sRaUQcO0/stK4FnPoGUt+3cB0G8sM0f1ZRXpXoFusA4CUKqfrIFn4U/91w6ic/q/KgFhT8/BCOSNFSq4xAqJqF4A2uOPbY2FgBNgGVsIUEFGkpqI/Q34WSjZUc+51pkM/X8NALElGzfAwb+i3m18WfongrEFAWgBfz9ZAMJewPEbl3nPkyNZG6vJgz35iolnCGB5Op6M+3cAkBoCCmsgA6IxAXdsVGDeCyBhnbBI3UJk5sdyAcEWieBHS7q/cBed/+6nZKPc8y71LQAy3YeubEfrmj9H+wVOL5RfwhG/CaXAHYHAtBWgfOSPJSJQemix3iM8oD8AVzP/8EmoGX7SO2ocqxKwdwKoL0g/wIifbHqsjDPWGmP5GSMxCpLA0h5/bgxmjT8sXn2D8HCGvohFapOg3/93AKikR5qgu0LeKae6EAw8w+nr0Q2RjiNDkP9U/N2C/rXQtUkIJe2bAEgFEsdjJGs/JDwr8USh/rdVMFZ6SC70GIRBBCIlH3YaIAg/FarkYNutne3Dj1oBBviwRoloQQ69Xh9Qq6ipTNv/m3uqVfG3AajR8zVGquuwm1iaLiygjuAHROgjl4zOvPqhAhCy4+FZMc1gURxacPcO6K8AyJrnBKL/PQCELIfFrrzjeWY3ACREAhsozITSTAw5gH98/MFUaDLEgIah40kCIzw1a2cR6jFGPfwR/q9n6+wJvsrmuQj4REi5IAOpYU4HAOpPHS7Lrtd2cRW2vIoer7L+XuaTOQkbkPmvWGVH/BW+kzQ5YNIlD0AD3djM8QIapR18Ldhw6+Cfm/+BMkzjS0SgQPOnCkDve877Im5+IKxJZtD0PASWy7QRAM1tQ1KObfveYf1eALDN3IDO/PkuANJoj3TyCIQ8mHjcWKhFFy0kPZyXzuBpQZdUcv+gRh3v9Md6wCwJwHF10M144kgyNWYXWvqjpgQKBFHVP4sNpH+WaOeMha/UGDl8QjU9RMGCuwPCQInhUypGyvoqVxVdBb73c/peer+FZA7ecQxACgMrzPPY2bUoDoT/6v/5YQCCj5vDYGvgHiHVIczFMiWoH5YvDoYGlQ5PICcT6CfTsLqgglliC84G8gkyhEWCzSaIw8sxYNJNEex5Bm3KqwzGD6PUBCQC6BMn88FXYZ8DxGlnxnjqKtwHaqbvnYyrxsnhH/lcAjpuZzH2Ec3cjP9s1cMqWBh0da9rcUxMP+j7DOgGBHLGbxTgv0HwD/tECwaCsVP54/9DlLAdnWCmF4rUP8ZRR1qPFHion/TklJghaJR1MkZWANSN/iKGTwizAKCFLCn3fwgHQx7XV9f0MaHW12dNfEk5OSHzFxCef8KdfszzP/LrMQAC8qGvkPSxvjmQPsABptPz6aUeinowfUHrAhuB42ZwPP/2/HPhN/qi8Mx0ZJbHEZpRyNhRWX94sWkSGIHHcTouEThoejV8QizedEIAyikuyG6LN/ir+6vMgONtSBacqRHPIwAh8HFZZHluIf45/4YH7bADJhFBykFSzUK4JbJ6cf+M4Z3nHUDE74sL7L+h+A3RCMbhxeBhtT98Ptz45MBe8bPydJ8EYGtGAE5PG2w0Gz/A3sMI8OwgBTX8+5hnG+EEllG4hsEFYuIQAZCFYwExiugqTXQV+F4T5WyGaBL8iPGFAYD24n8c5+EVTv/sf5yk6Dt8+PQgGepAmlfS/BmAm5uMQZz7wV1QzOxsTyAAyeAF9gG2KpdQHgIOif3hhUisiRUaZI3URzPV61cAaMh4DzoOK2qGqwWLSvlPxAA0YP7goz67c0CWds5N7UMRgIPy51Gu0MYApHyJ48dBZ7fDj+C36QUPwF8+2NZFWR8bGxTjCDf1eBywb2jIFvhshqhEbO3AE/v0DLw/RdADCgyiHjSC5T+dhj9ImwmE3Kdj6wBEsDA2qj984yE810/d9yxcuoOPDNDht4l7z6NUHIsB2I/aHqOM4Sro/IYvAk4JPWQ73sQYTqf7GX5RCEQTvpHr/Xu0ahkmIfCW2W+Mvn87EI33SDsDsIogGF0ZbJ0L1h6B/8sRdwr6BAIFhjv74ye0JuhYfJsEHB0AFT519k/YdN6S1Fr4t50HAHLUUD7S/bmIA04ADALQOBau4vxVrsFlhzv6RCd2TKXoMZzu74d1Zp4JITww9nn178OosPdnXPM7fORROXQY074nKTDQh+gSqQClI+49J18Ewgaw6RKCB9qKH1+LyTDCN3cVJWN1AE79FYfnHzAhp2sb+usAQHOLbfR5Km4C4Poqlv56DWIr4Gy6v8Mi9TZcOvydRSkTM4RnWKSCmWbfTsUxBgWXglxhgCBKQb3uz0siEP8DUwlBViL+Gru34/AOpuAxCDmWDVYAGOUvvTLUg2V1A7Pu9uHcb2TZEzCHeHe78r+7FQBb/yf+pek6cCEbYDd8bxtnfGHy1eJO9WiJTkSUzw+BawAgC86SVcJ9qxjqMIX0LSIQY+o9QJB3q2uOIhAaEYG4tN6138fDNWMY/0NMktDB1lYBqOP5F6hNtZk8W1r0tzEMwxMAXEvAwaKbX8WyJkjABAD5jNm1JCMA8dXGMSPlS9JGx0sq0XxTBYdIECDQKt18AQ0GY/N6GfGC6AtMSrpxIEgDCYssX1vqCdiqn2MhBj3kRgO+WwCQLQE4JpACdgBLZ3NM0KvHCN42ADaNTVBkzT/T964A6D/6schwBwDy5U35ALWaBQ4fzcYe5hwcKLiE2IsTGI43S1h3xmITIiAbGVC/ltOHTb4hDM7P/Fk+Mln9IUC2AmD7IADhfdcnABA/WwGgSwCwn6dUYmCKVMrmG3Qs1PxQ3QbIgtDiuSEduxyGRCJQYgJOYpGcxnvIYZ/Igz8uSAMWu0kD0FVVMPgPJsSP4zUh4i4VvLrKoIIR0BtVcDt8iyG+92gD6sBegJCc+W4mZI4wTjJQONSd/DgjeOMuBBGIv9CqG/kkp4wXoqmC82dgrplTEDYC0M7dVFKSs/DuivW1DYCDE5LL2iQA6O/0z8oJuQbDYQy2mZl3TNcU6jtVCIfFxEtgoHL8r0Mx6EgIspiiT8OqpVNEi3Bnhf5IEvkUjPoveMht2/a1lhFRGIKxW1IFs14cF7ngqYxhwGYQRZZdiUqK69pdm8gGvK4AOLmuizCM1fFVzvH3rACYC8McwheDTQbX0syZeXyw9W6yHDI529WEDizaw+KgQVZxRCCHeiMkOcTjaLwIlHBb/AwCGMIx5F6lWd15smT0nUy3tDRjf9V6ezCWdZW+EJ1+AIPOsePD64bHyj6J5CmXAIT3/G7opUUgGp737+EJzwp15wAM+O5/kzCKA9F/4svHV0kDsJ3zugecUQQ8vIcejp4DdUhX/B6SfZta6MRkXb2k5OM9SUcI5A5yvhaZL90oxgYRCL0QIAxtKXEnUAkkoA97XHVB0pzwv8JpWWZ+Jq1FRNC+XJMkRTvnKeOmfI7BO2Lph7AF7cnHmIrDTNmQDJ5ScSFHh5vRqZkNeF0Vbsi1E9JHSTa/pc4XEGcAqH+F08FDKk4OfsVtdEccw3M0sWQgMBgSdJCh++Mv229w0XxuD9Qr2JRuXRNCZSAdjH2zaN4BG9oBWUtMxjIysSQmguUF6RHI+0lanwzbdpRj1P52foEJ4bsLKtF1Y0jtmwnGu+PIcBd/SEstxDBjQDq62GtlgCiyRRTxQriJ6E//P7BHkB8wMKkIgDMyAgsvSeJdiUBQJfX8/8I4lmsCgONVpLjBA2WTJ7O8SjNdJQ1ANkb1qJpqJCRixuNqJxtQj8C8YiOa8didbd0G9M/zjExsM/GH3KooCXdUacy0KY9AmIoZIxBEIHTCAgIXRmzkB2u+TMILARxfpChp4HC65xksJDSdpxoE9i78fXjYAIgW3PBB53TVqswlP9SxiCtoojDuDIAxLcqfYzZ9ZiBGnaZU3AyAQzIC3ut5BGs6VnQVgl1OAk7XWtCxIi9YiJFijeYFP/kHhvQoU/WCUQVowZfhoZO9HVKekgAdi00AkX4FjrAcp7AOIpCjgUdlDYxGh+hUM3Nrs3eE8HM8Fa3CX+or4vmbes3omPILGNSUv/fZ0s+gcwrh9LNM4m/BFZz4pxEA54TUIY52k+uwWxKA/ezyfGDHdHNwRlcpAHBxq0c5qdoZQdaTF6cge5LSnekelnzc6pAeCHceESjABowRaEkEopTGnmwYw7zYNb6APajzPrBeBjEXj4/LUCfB3oK/1QnoFgadKeoWtQoey2A0xtmCk3FyVFQBCMKknt91Qe/ibCg9OfFFgVp0eR4i4HZhi86uouOrRCo4YiX6N/82SWiaL2z/4WWmvAd/wmaeNT8ktYpxHVByAwJhO8eIMolAdFEwxgLmOQYOTuYroZcgWO0egt864v7u1kIoB/+4M5jKcii4KN7HTcWyLO7OFjG1LAmNU2AmB0nkbLKmR0xaMFzNFyUdRZYIhprXmdMpUoSpq/C461rPgOx8sXpZi4JZWPi6y5CaGwmq0tFvsLfl9Y+FjiAl+MElD0nDGsj2H4hAMSLQBIXY+1AhOMLohciWTuFc+1PmXDZ5Dey2we8dCFzWQkQ4MmaWxSq70DdMEfkayNu87FZTraOvWxzLMgMAQyXkstiRUfpf0gsDJR0rPNd9BykZwbErJoX5bpyL1FXUeJXz3KePXXwWqiwlXUvP3gjGur/LHmA3tX1ABpCU8fWTO1x63AkJ6G0L686YEA4IPAMT5oP1Q34DciUcNC/8PNf4eHO7aCljoYXM3GWLmjma01YAvjyVl7CVEqvWcGoePGIsWcfdr/xXmSsQn1HS2aMdobdfZXkxnXmBNRt+53IJUxQxh4xaMlT/idFoKHZWEuODw1GEjlhQRidPCECBMa25aYIyEfLE6Z75Glo4He9Y5szeV9CRVRNQGLEhwNpiG4x1TwTdju0x9PDyBEB4helEIwWNcW3d6llGhqW/WLdDR472ytZXaedXmb0FLjrP+rCQ3Fi8Ai+Eu2TxvzP691azuyycKgApfmAlhVI9AiHip4I+xAgLqho0FTiOa1i5wY4C1NZ8VTzOTevFJSdn8wQB2DxYSfcTqEKftqLi0s2JNLR9kbIDBHaYkYPsL/SAGXrwggjkBl0/AiC6wWZRowPvvh1tKjytjveuVyphvel+XuCMf/wQANY3OANAtM1BzSIC0Q6Emjtw04wN/b/4BS1bAiDHkGQcqMVWxRDDa1KjW1f1Y8dN+u+FT+lg/s4N/BwAVp64cYd8dMwiAkGJQ7ESTAi20AmBlDA5udxgXwTIFvuCFhGni0E6qhQV8CH8vVIEjucTA/pcpsFoP16m+f/7xQxVH8/oQx67Fww4Nwz8f6GgbYIdlDDmeUHIQXEw1Akjk+J4UlP2TEDPSulAgH42T8HfCzsfjYU1YeqsSGDwJXX3PbVz/gFNPasAtPkGlRgNBAnXQWpIEi0LMr9eaZBnw2UAYA+VmRc5ARCEpeTUzpzdJ43zjvCLXRAIcf5uvav4tcQgxEn718yUAROH/ZzOOQ8AENrjQz6Ny18QxwZdzE8oCP2hJRGIXWHAOfFIHRwO7RtqKSeXMeSH8fc6HczGBhYsImzEBAkrXjlVq2l+Qv/OctBXFgBISQJAYIs9YoD/Av1g/jEkjihOCOaTBfIqUleiZJw21D8afGS36KWpHsXfy3TwAMA4ykLB1StlF5b5iX/tWMF/9xJItFMm+2wPlTS9QE8EmH0W0pbIPh16KV2AMIDOcXibb9GLYg4Ht0LrBHtfPPJorfkLfjBPRBo1+2kYecOS2RBXrUk5IhCULPojEIYJfgjxFQSW0BELFglcHpfuKClzwi8zsZXPuA6peKRs5lLWr6xsAjZsnyJPgkmo2x1+Txlj2+rf+jEAesONEAhxPyAPcayLI7FwBhGoKAyjKRdCQT/0eXByJrbumBluui/Fw317WpYlKZjXBSt2iP1lZ1jUZsVhvAC1sDOEQIE6dhCBKD6wj1hDyTikk/8BAaiIrmoOmx0QuGgfWpCc0xRV99Ix0zs+3rDsgwBs2C9o0ArVb4BAjjOB3QEaxLDAm24a6s5+lV5K9YMAXGjgsgFIVVxFTV0GIPt3SDH28H0wxp72G6jcsaX/sjdXQ2/rIrt8tF0NgD0xsgGBZ/A/wMG1Zx/hI1aWQO7bDYLUAnsWtpQ8UVg0Z2YamBUz/r5XXclXzgNwbOaa2G6q18qbccOcGFaq0dxYpMdYYVQ6Qziw0j1kKFC+OEtvltDrKq7S3ff+J+rEJepfyTTLlxEih2eO/7wEMn11WiYDvUgIvCpEoLRNsO++zNCACRppGSouhTJ27KEKGjiuUS5nQOakQZ2S1bbw2DXUg9GY+jmSyiV1TBdNQD17sfo06A2dEL70W2+UEkOp7g1LFIX7SN/DVkM1/CI3lRj6rmmMbcTq4nt09bxdceOvhY3vtwAQcFId18pIBgIlsONIggGWFrbeJGGF4g44u0CJkRfVjAJQ4N/abQrYLsPVYmsYRhOBl2jLxveyZvEO9Q5vJTFAxW8RcnlpxIpKvRzGsljPb67BrwsNUsxy0gCx12iyqMjeQ+Bdw2fnD733Nwj2TLdNAmMLtXmJId2Ozr8drx8NtRsG1VhZbGnG/PvoB/sywvmQsk6sNr7NBoEhg3bYwlq3OI/HdhT5M2ThgcvxC7j5TuNwng6LMKnPNAhA4C7M/FbW2DuyHCl/KcXL1/OShGPUUhN3qOM2zaXCc9HOCrT4LNdGsLYLF50VK4pnQVZsbseGrFDDxnuMR6hrD75l4NPGAfHoHmopu5ZOTDqMKkWtING6RKNho0oHblbQY+YbL7hZP9k2pwOByXw9NFuGwcOtSW5xbjokPxR1ZCO+jKRqB6pUwuyInyIsYxekTAGUa8aMSPBBWcI05anNZn4X5HIMRvToxbLbnZhR0d2KkGDz5aGa2skuY5q+WwzVKiVOkW6WZ2eskR2MkX5R6lkiROimXOLFE/IrNcJm8ZzkOXvgZKoGMGy8jQeXbIjCbAMg+hzo6EoAH7bpsr4fEVwWSAd/6K6641EDewYFoFVzr+Fgi1xjVuXMrDVw6rnTz6EH9Udm8LWSboMVwEYF0vF7nCCWLvfy0q5VZtmdzz9BrWxZHTBf9B1D88CyEviqypxGuZgouLpllzz4NlULoZuWZwO5yyu7DVEYOJaHja1ZOJTzISvwiOagCe0cQNUr9n9DqRzODsYkiLzwhm3LAaesO7aYALXmIuhsnRWQB1bSYOxPipqnFOXJwRpFU7r9Uva38fMKFnxoqadsNendmY2FCdlbju9etqxYIEnfyj7M8mPrr9TZ+srUxrt6FAYfzrowPRO6UFCWalH9wqhMEwQs1q7rEGnGkSHA2JILAajNnTyX5Vnka/wV6kpsTsiO/Tfyd5EvH0zRIVij85rPmFR/0pzInM6jzlghySYn5YLb9Q5C6+WU/ELNn4pUqHW/i4IwWd2IOWxwQ928ORED3sJXBoT42E9YsQ1jC4dSYMAd56IZBhJg7Qi4jycVm5+q6AL31UIqucafeohNmBcVvuNxSZYklDCbiso3VzizSknW8FvdpgJpnTYYsicsi34xdgEsWp53EortljDgrxkAexxLBxATH6lwpPbzF5XD3fCpDsYw6kdbA4NJLTf8DDTB7S5wpuw8fk78sTqiWaizCdma/HP/rFWLqmV9i67QK1IgYAndmpCA8CBM9qUt+jAV7CjJLz70iC4+nm0V1KkAW/6Rofk9U8HQleQSIkjE+9P90uY50YxR1RHA8Uwp6U+tPEFjfYexBRG3VBXlcsecZ/dBcQKzjiLczWu1dLI6W3lL5WHKBQDZ3eWlBEC5ifiY+o2GfaPA0HRF+QUwuJmahX4v/qIty0dh8D2HdRm7OV5OQ6uyxcHD54QIBHw4PzJWedYwRKeBpnCD2erxWW2LcCk0z0JL3Ol1FuB+XjXeTq9tkZYrzrwKY7atoUcx4y22NSJJGoEuRWXcjv5zAa9gYKpaLYS+F39RUWQxCrMAIOlZgwVip7FdHmNzr+sk1WBYgPeLBSCa+usbS63LZ+77h9l0i+noatO037P/wm9kvgToeIfLsHrHxuR6/gL/wF6rzbUHtuyv9c0vmWb15jahL4FfZX5OHMG6u6Aitlps4T2HtWMPNzxEawMGxy7dDNvbGJrb7Z0P4qRCZgkaJR8xNmzEdrxUaj365hl17VOr5u+seWEUu8//CGq+rT5Et2hSn9+sL5n+rRlZI5u7BdjUne3BgorIgrwVojBNqj+ggZldrRonGAsWESuwwzbJc0gQaCwXETgwHUpBjFLLfSrbDebegsf7DS+6oe7xcqioL17zHXXkJ6fWi7Sb/CMTkWXT39K9HkHIisy3O/PAr1ZRW9LHS8mKUZgUG8Z7hEguoHQ1hv+4m7dIwhOBbeYYZDQFGoHw+0gxLzKvN/OQCZilfBRiuLm6lz/wVOz3Adhus0OtyngzfDZdLfMlrPAVKs5uyvRXfOo8AI8PVYOF7E3ee4dunqriYeZtXzrWh1yIX3aUE4c4C2JQLnkeICYNhr8hQUyS30jSv3p7JVK56d5dNaak+FVmH/QTAGi3/SqeNQ9p6FVFBMrojLs8ADP7YH2g8ZkSMDyhwgaS0E7ezhSHLkVh0gAM+ML0CvQIBSuQcufUw1MvEPgBAIRIoPCR8IVMq+gcdR8ASw8exmp8apfR89dlavUhAI4WKcuLA078UVtQSMj9sxtO5FrIVe0xEfXYTxwMeXpUBRcMQMDfJ2OirN/yti+duEx3LBzeCq3yufiAWHMDndBpNlfbROcQaIIY+IM3gabF6YVmZdXZJ9abFx68V/wue8icNN8EoJyNSimFXjOvD8mIhogb1RO5VltTSlvk7zCXeFLBbzIPAJA1t6KXkrkhuykK0+YAGBL+HGiLMDYO+LXYJjVIwdG2BGYEdIhRkP2QNHRELiPL5cD/fU3wCw9eDiWh+Xj8DUd4fAOAfGo9ogpOFcvd53A0sU6AmS0n8pomjfUZu9q4knuEQIG5VqK7z4sLcyNsMXCeBuBJRkx3WwL4IR8L5mQ8EOcZTE2YExEgyOK4NA6i8GwczZc+sNjo8z3Syz6+UN9nv83H41mxOHowp7nZYC58mJrPaGsev92QGGqXdztStWSJcPCPqVyZ3xc8L544H/LNbLyaAPi7eOIOxfa1J8hIQ28FjZPUFXdov1gRVU0wIOn7TIijtjBNuzkKaK53uSBnW37wmX0YRBeMENRli5SVwstiMcWvkPtM0n/ispbeZGPVhc1zZQEsfHBCFFwo4Npd2T0AtJWcjz8TGbU/65dW6jxbbs1h0dVt0AwkYw/8EaDEyLEnOpYE0xhZhTUAYk5bqgRe7ZN6OQdrN/Ntqp6RDJvZtLe8jOwG0e7qlJNayCn3RBcb4lJ8rD7zYf/ZX1nx2Fb3QPAMgYdXnPY27d+IqahL5FOATVNpzeHg4opGBCgcCgk4g7TpxahBCGoGTTsMgNPh8Nb5HlbS1/eFAWvnMGf+iA3OGD2i3yWRPdDx2pIhygpiP3ZiRPYK17wHZ3RxSwvW2BFLZqt7YNZHKx46lz6UfcGkGC38/HfapgZAuManj0ljQBAq0NAU7JzXwzpc3TZgPUEaWOGdfGx3gu9pOVQ/h9AN29QAmD8Plul6wCoZnluaWRkdPUVYdIEVdc2nW2wZvEEDy0d5KUfZr5wb7ssuqiRdV7bwr9lL+FNZa82Bt0zxVZhUYg3p4VaREOxDdgxkIgxFAgwuJzP8Y7ZFNpqtPZWLdRSiYn6XAChCby9Vvle94XE0tpwYzWNgTr9b3K4shHjC4/5sajmJwh7wlY9mNCuduKmQQZXZG3kv2p/Kw4YE7GXIikA8DfUwjHC94C33pBsFdCUH2YhDteeb6I7fAiDbwqseBGDmuUZU9kI83w7qs1A9WBGAXVlGxgfTboqLLn4Q8X/DHOp0+6bPXKZ8VqGT71K1PMGB8l4LTGUwHRlY2bCT2iABI1fkhkIQeaI4xRXJ0fLm8Q1DuSAYwwweolk95ncA2LOoVr/PY2dwTzNvsZssAjXkPGXxDbpuCLSFNEWtSOa24KPxdZ5DZsk6us+ZyTE/ri+gf8EW8+jIa57RxksPGoierivrncOGENyZXBFUx9AjC9UvCEGOIRqGB8BipyyJ///PTWzvSVkEII2QFvUr2crPjA3NzlQH0VSEU1czBHL6xnxsqI9YEiLl6nmXXPBWmQ2CVeebBLE40uCz+rquefLJv2oUJijxTYXpwRAEto8lIYj9XxRGu5GQZbrOADdLGQHtA7/uACArut9mbNHclhSBLpr2cVzIVe8kS975qJ2DypeYDcFRuWxSIhcHrZRaN9JumrLjygc5FMwb7kJs1dai7jmlrqbIT9azY1sBGIoyMdDihSDQEDA95x03NPykQfGADQTVhnhDNQ6oxwo1f3y7uiLIdMBUUUZSPMCEj/FTdEHa4m7biOcii3Zmxnb36LTf7K9dCgGxQe9AXFePszWPBaOzqFdGHFSoCFsB6Mkvyv/B4DxpbENEANGgfjlOkIV+PnxTwGsqyavOd/LlNKJGUsm+JfY+1YOO9CicNpyDDEYi6cbsRnLQrKed2kAnrIvVthAC0rHfp+u+X1nzxHFoWa5aOmzNxWKPLKhCRyEIfWIMzsqEavTzL5hK2IBKdjgMF4ritlbEHVOzDNc/iqOW53XKrqwZQIUY7LkeoWs3nYNs0D+yiFyV/z5OPJtbqY/Q4uWyM1M9BAQJO1bPJIy+X+Y8xYn+yok7bO+mDP6HTwSDv4/gw+lWHP/5A9r3KobjROSUtKqeWJFrNyHmyqvoA1dk19Rwqi2cRFbJ89JWFS3Ra9nJHDPzBRTNR3LOpY99pC5y3VSiLbRqTnmEWZt4CgKKag3Nhyl/5+GOft6ghoGhBQEZyI9AOZzBhvgYPxI4SIRDpxhqizAe9j/HB6ahLwo/UAdn03AjyakYoK2dRF4To1VakqgZkRssogU3Y44VkqDtvZWgiRNua2m1bQxgWwsy201tOdhdAAw1mydPyEIhCL15YSwmTsfUNEOdIwDHvE9fq0OQKUb0in0hmvxPkDWKgN2STFHlJMaYSvgylTRcBcHltMDSJ5sFTEQ5CJPeHLc+4J25oz6sHnyoOTVlzy4IycN9Qw2gNYyvD4E+Nxa9dmiMgEYg8BFwrLWMw1mVOoRUwx22ol2JphqN11XturKpkujIdtJuN8mDcg+e4amaTe7CXFUbdndlmk1MeSqAob2PAhxE/q/scZJ1kT8YzvcAkJpcyGOAoMBKTINBmOMZzEFO7Xkj5lLTmI1lp3FBnl3zpORDDKg5AAvGV1fzD+RQCFjebZZ1cMegRZ8/BvMSrbmkxNfu8kFkcshYISSXnshoy/Zq4ZbGX1N1gu8EYOhIF6rkwPSDoIwDIqpDNwR1sJk0GqvFrWyj1652gqhnawC09ShE3QnO45j7couKIC7V7vR1XvfMIl68r6v2GZu1hlYu3Z28rYJhIwUumNZMmw2/xlYweicAh0Z7Jz9eC2AHFerwA4CRhbFpGWYmbWvnoJrPOfkgkU4XBU3uau0SeFRDJSvGV/4JKw/Achia9fn7tM3mYORQgDWPQv/a0leBmoZzao7v2wjguIS5+rJ3VMgWbHhfcll6vlFYp2Z6Hx4Zb4WtRi9YlAxUfJzeAOlgACAsmGJtpxCkqvtpn3E3GJU8bOWDWOwTFIuVmrmSf8KEjQIAlc+byjr3tsRIbliunjV8f7HPE3TTV3/cOZqUoO8gtaUqZAuWjalI8/jXVOOe9wNwbLZ88WKQG3u8YbN8pObbKfTB6n4b8v1psE+bmxRnm7IE1IVikRkAnakG9WUpXlAqDoOZH58lfNjJJJcbAPg5f7S2TuiWbNlj2fcunw2hKCBKJDvAipIELDdIrBWR4lvYJ93tIwCc2s2fsG+HhQldGpwQPBRytpX15CUfXOF0/2Zsq1PigNxKfXIBgPp3dTcn9ZONwrDfumxp3ppyK2x2q3ISxWi1LYl9Q+1PsaLAzYYTwZ8+fW8fvqlbbSonUFJgWO3/UZy+oXXtIsPZeAyAHoJMKN8zgYxAHp5zNJBgQw2WQeWhuN1MlIwfbFtpLDmWMRc3oq3QtXjtNInE0IhMWLZQY3sLg0UX+Btrf9RWd47FDYlVsyGz5moZ0fWOlCuM/4TbKBwbi2OdxOMAHIdN4cgmsAqgT+CNzIyL3FCQd09bNFGacl35OO++agqsyoXBESnocNnCITK1sIirBgbERDxKF12p4kljs0lPNjnrthom2tyLsbrxisZ4lRuJGTpejwMwGnZqj1+QiKNNtherN5YlbWsv+U0UG+maSh6tLmHIWv3Wb4GBjsRpLhmsrkkMMuF1ayrIehyyTZJ8fonJvsumdm1zLwC3/GIc8NRXd018C4B+a240RBjHg0F3fWgE5J71GzxT3H0bxDpHHI/UT6WF0cm03ztMJwz2tuWGidAMz2S51JV9CEPfbqtBULze5C/JDf7+w0Pj5lZLYKvvA5BGt4IRqFqm22GCw6OtbFc703/3GhgEKVV3dVX/IABVfrPHltsWzLs/kDSIeliJiXE10ng+Ky+eoL664xsAyKgkXagmjC3jGxr0b31mrEQC2NxaTW9g0+tK5po9BYDqYUKpfqjLbgxAuW1kbj17vvmbz3UQPwOAJOi8AQN6GL0Qtm1OyEY+m/22Cm5LnT3CIz7XYPxNjWT0/VLFdOzbEqlO9sl1avyu6lHF3vxDMuEpElBRnZIkR1heIjbit+S49SOpHzz5Gyd0yKEkU9R2UzzBFC3YovX4nDYP4r7WLzlNDe6/e/IdGtZV9fQMCfg/nTwBO1V8dFwxqhTpv9PYfsq0sSeocTT+++rprw3xsO1jz3/h7Nw37mBe0aYfarauNnjRLkmG0d9s7i4xUCerR+wZAMSnh8XC0FBa+1A0e3zCzpLQW8/olcNwf/Ayt1rjtZp1BoW3VYEgbVUA3qURVpTxmzk+zMovddb8ursn8rDxFflRs8BwJOdTbEDEiPUD60FQnGa1gL2zD+JPb3T/RAk8vsfYrdZUqAJAhaeZ1/BSOClDf4I7zqNas9XU41WZpZxE7qlWRtvZ4gAMLz8qj86x5jkAhC8SwygHCEXHIr2v/Y5MomYLlzS8s/1zfKCL7KIiqZZoqJUYALPn0xZu8l7TPlEyc682MbO5pfyuKExdB8Mk7FbVbt9WW7A+BYDgKFyghS/SgeCHnhZzhe4cbGpVJ+aM3lIgxqKp60zRAiryQOomkhl6sMoysyz/BvsRZWTFRuzo+2VSoSpEl+hk17xiK+HvUOPXlk+MFzJPAqA6WWzjG0TJ3K26D4G8bZr5lMKSdAqS0lTMSJG3QeqdO1w9W0wGQ/YZ8/OM7Kc2lXSkSwa3h0amLqKPUBGqIlCWNs1M7SOL54M9SwLSs3FAa6HMxSqwxMqkqWUxjV4SyvObJ6+FUKHsKuLtFM1kzjnKRkVzAXLt26xr8s1bjLrblONfmc5N288ypsD7TXuo8k16mKswhNKRgVH05s8sNd5lzbMASJYNNDPH/HPzy17kWqgrs+nUsvTOO1PilCVFj4n7+R/SCP2owcJw3cQxpUwL0nOY6CLSSVq9ipsWN8P+aUqDbPnGqiS9qcjSlMa15AA0fciWC/Ky8S85it0nARBcD2ieyum75WVdZcXShOcleSqz82nVYwvTJbHBEyv3OF9KJrYaKowXmT/H1ODrCOlrEy1Zn6ZLm2FFU2pc11eHayduO4slo76KnZLTn4KDmx0aMDv3ufmS8W98DgDhTi4WSuOUnx2cmAGifZ64cO5T21ZQPTa2cT7m4Ek8Ar76+MfylHzIeZBLdcuLUFVqXsKtdLTMgAlrC22+oJLVqMCFnYTbvkXDTYtbwMW1qXTqZmu4z0qOF4LBKj2/Yr9GoKFd6ZsnAxBQ1yIrmtGhScl1KmbKtXLgomkqHSvjR2akmjsqMQUzgRyqIPBUEYP9HPAhJb4OCN7Gv8VXl6XCEzPkLJF+k4sTlQETVhmpZfzczKeSlvYCf02yNsmPd85cAror4/xTWCAqPEe2rX/ZV0zwMnORPpNwRiYfopt/Hh9OvCvPASClK2CmF6n2T3NJ8yuwtkfwxb7DqCUl2jL8wmnC+bEADk9QXrwfsG3oNdElr0XT5DoH/9VNrmoMIz5dJ5zzHOTcDcHDH75rLUEQw4Z+U1OUZdqT9yRdCs6E9Ihgm0YHMOrOrYZP0+cRUmwqissAd34PbFsR5K9x48X6hHTjxp9zGw9TwrBxC9yhfzizCzzLBvzHgBEopc/8XzKxTb85NxduCG4pHMQte6HjQoDUg3Lnc/a12YNhOvN14yf7/P34F276mrvvq+u6obxjSxP2X1pf70HE/NdoB4fqK/Ej0wR2gi58tW5Zf0/5D8jKX8nN9Qf7Wrp9nXkMTwUgoU5LGbhP+UFwbK0f2NZ9D59lSRWjm/xrc9FRa87Pqg+f5b8rfHrbb4repfWd47vhkMQfwUPVNy9a4T4f3niGtbfwv9TWPgmAlACBRgmyYARGDwnqF/y6e9v39R9bT5OAFIqWVJF0Nac7p1Hvawfgd1dnTjANHIu/NBmBu2jb11sBCKFofpYQndOkjt2+tft6JwBbDEU36IW0wQjU++bu630ApHQYViVR6yIkpe5G4L7eCEAKRQtAoK+Fu2Sabu5rX6+yARtMgDREAjjI3Qjc15sB2KLvy5iCVJfDIUpqNwL39V4AqpMJI++QGrAHYvb1VgCS7wuFIZC4BraQOe46eF9vtgGBG0a0Dhi1KqCRithF4L7eCUCgX1/k2UF7Otn5AcO7EbivNwKQEiBIHENStoiH5O5rX28AoC/IhE6pilGl7m4E7uutAAwZOJiZ1PhyqT0bt6+3OiEg9i6cwbwubHnEM30P97WvVwHQF2TSeBTqTGj33d3XOwGIVaLG4dxCcEjc8bgHYvb1Zgk4GIHOG4E7LXpfb7UBPQ2LY23cGY3APRu3r/cCkGFbGIFj4zo0ApOT4Pe1r1cBEL0Q03yhEchoNuhuBO7rnQCkPrcOjcDOd6zas3H7eq8EpA7l2PFgCMTsEnBfb7QBvRciYGYIANAd92zcvt4MQCoGcVLJfsjG7SJwX+8DINLyQeoBAJ3Pxu28/H29F4DUoZyMQJyUeNojgft6axzQeyEKI4Et6eM9FbKvt9qAZxyWKSyUB/fUFnv3Qvb1TgD6kvQvAGAXStV3HbyvNwIQB99DAg4A+IdapZ52L2Rf7wRgmJMk0QthODdD7gDc1zttQFS7SIgRNH/navZcyL7eC8DGeyFOeDi6HX/7eicAsTuq0c7uindffwWAWByMhBg3xAXFvsX7eiMAfSha08gfnIm2G4H7erMN6AkxjgYwHLIja/a1rxcBsLEno1wY4HbZCVn7ei8A0Qs54aQ+Ke3xAlMb9k69+3onAGE+p7RmGN553S3Afb1bBdMgR1jkAO/421d5/S87x1NzTk5eUQAAAABJRU5ErkJggg==';</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
+const CONFIG = window.CONFIG_PANEL;
+const LOGO = window.LOGO_CANAVERAL;
+const C = CONFIG.carpetas;
+const MS_POR_DIA = 24 * 60 * 60 * 1000;
+
+/* ==========================================================================
+   1. UTILIDADES
+   ========================================================================== */
+
+/** Convierte un texto en nombre de archivo seguro: "Laura Gómez" → "LAURA_GOMEZ".
+ *  Es la MISMA regla de la app del candidato, para que los nombres coincidan. */
+function textoParaArchivo(texto, maximo = 40) {
+  const limpio = (texto || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase();
+  if (limpio.length <= maximo) return limpio;
+  const cortado = limpio.slice(0, maximo);
+  const ultimoGuion = cortado.lastIndexOf('_');
+  return (ultimoGuion > 0 ? cortado.slice(0, ultimoGuion) : cortado).replace(/_+$/g, '');
+}
+
+/** Texto sin tildes y en minúscula, para buscar sin importar cómo se escribió. */
+function paraBuscar(texto) {
+  return (texto || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+/** "Laura María Gómez" → "Laura María Gómez" en formato título si vino en mayúsculas. */
+function nombreBonito(texto) {
+  const t = (texto || '').trim();
+  if (t !== t.toUpperCase()) return t;
+  return t.toLowerCase().replace(/(^|\s|-)(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+}
+
+/** Plural correcto: plural(1,'día','días') → "1 día". */
+function plural(n, uno, varios) {
+  return `${n.toLocaleString('es-CO')} ${n === 1 ? uno : varios}`;
+}
+
+/** Fecha corta en español: "9 nov. 2026, 2:33 p. m." */
+function fechaCorta(valor) {
+  if (!valor) return '—';
+  return new Date(valor).toLocaleString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+/** Días completos entre una fecha y hoy (0 = hoy). */
+function diasDesde(valor) {
+  if (!valor) return 0;
+  const inicio = new Date(valor); inicio.setHours(0, 0, 0, 0);
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.round((hoy - inicio) / MS_POR_DIA));
+}
+
+/** Tamaño legible: 1536000 → "1,5 MB". */
+function tamanoLegible(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toLocaleString('es-CO', { maximumFractionDigits: 0 })} KB`;
+  return `${(bytes / 1024 / 1024).toLocaleString('es-CO', { maximumFractionDigits: 1 })} MB`;
+}
+
+/** Marca de tiempo para nombres de carpeta: "2026-11-09_1433". */
+function marcaDeTiempo(fecha = new Date()) {
+  const d = (n) => String(n).padStart(2, '0');
+  return `${fecha.getFullYear()}-${d(fecha.getMonth() + 1)}-${d(fecha.getDate())}_${d(fecha.getHours())}${d(fecha.getMinutes())}`;
+}
+
+// Ítems del checklist por id (incluye el PDF único del paquete de inducción)
+const ITEMS_GH = Object.fromEntries([...CONFIG.checklistGH, { id: 'paquete_induccion', nombre: 'Paquete de inducción (PDF)', tipo: 'archivo-induccion' }].map((i) => [i.id, i]));
+const nombreDocumento = (id) => (CONFIG.documentos.find((d) => d.id === id) || {}).nombre || id;
+const nombreEstado = (id) => (CONFIG.estados.find((e) => e.id === id) || {}).nombre || id;
+
+/** Abre un archivo (PDF o foto) en otra pestaña. */
+async function abrirArchivo(handle) {
+  const archivo = await handle.getFile();
+  const url = URL.createObjectURL(archivo);
+  window.open(url, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+}
+
+/* ==========================================================================
+   2. RECORDAR LA CARPETA Y EL USUARIO
+   El navegador guarda (en IndexedDB) SOLO: el acceso a la carpeta elegida y
+   el nombre de quien usa el panel. Ningún documento.
+   ========================================================================== */
+const BD_NOMBRE = 'panel-gh';
+const BD_TABLA = 'ajustes';
+
+function abrirBd() {
+  return new Promise((resolver, rechazar) => {
+    const pedido = indexedDB.open(BD_NOMBRE, 1);
+    pedido.onupgradeneeded = () => pedido.result.createObjectStore(BD_TABLA);
+    pedido.onsuccess = () => resolver(pedido.result);
+    pedido.onerror = () => rechazar(pedido.error);
+  });
+}
+async function recordar(clave, valor) {
+  try {
+    const bd = await abrirBd();
+    await new Promise((ok, mal) => {
+      const t = bd.transaction(BD_TABLA, 'readwrite');
+      t.objectStore(BD_TABLA).put(valor, clave);
+      t.oncomplete = ok; t.onerror = () => mal(t.error);
+    });
+  } catch (e) { console.warn('No se pudo recordar', clave, e); }
+}
+async function recuperar(clave) {
+  try {
+    const bd = await abrirBd();
+    return await new Promise((ok, mal) => {
+      const p = bd.transaction(BD_TABLA).objectStore(BD_TABLA).get(clave);
+      p.onsuccess = () => ok(p.result); p.onerror = () => mal(p.error);
+    });
+  } catch (e) { return undefined; }
+}
+
+/* ==========================================================================
+   3. ARCHIVOS (sobre la carpeta elegida)
+   Funcionan igual con la carpeta real del computador y con la carpeta de
+   ejemplo en memoria (sección 8), porque ambas tienen las mismas funciones.
+   ========================================================================== */
+
+/** ¿Este navegador permite abrir carpetas? (Chrome/Edge de computador) */
+const puedeAbrirCarpetas = typeof window.showDirectoryPicker === 'function';
+
+/** Abre (o crea) una subcarpeta. */
+function subcarpeta(carpeta, nombre, crear = true) {
+  return carpeta.getDirectoryHandle(nombre, { create: crear });
+}
+
+/** Lista lo que hay dentro de una carpeta: [{ nombre, handle, tipo }]. */
+async function listar(carpeta) {
+  const lista = [];
+  for await (const [nombre, handle] of carpeta.entries()) {
+    lista.push({ nombre, handle, tipo: handle.kind });
+  }
+  return lista.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
+
+/** ¿Existe un archivo o carpeta con ese nombre? */
+async function existe(carpeta, nombre) {
+  for await (const [n] of carpeta.entries()) if (n === nombre) return true;
+  return false;
+}
+
+/** Escribe un archivo (texto o Blob), reemplazándolo si ya existe. */
+async function escribir(carpeta, nombre, contenido) {
+  const handle = await carpeta.getFileHandle(nombre, { create: true });
+  const escritor = await handle.createWritable();
+  await escritor.write(contenido);
+  await escritor.close();
+  return handle;
+}
+
+/** Busca un nombre libre: si "x.zip" existe, devuelve "x (2).zip". */
+async function nombreLibre(carpeta, nombre) {
+  if (!(await existe(carpeta, nombre))) return nombre;
+  const punto = nombre.lastIndexOf('.');
+  const base = punto > 0 ? nombre.slice(0, punto) : nombre;
+  const ext = punto > 0 ? nombre.slice(punto) : '';
+  for (let i = 2; i < 1000; i++) {
+    const intento = `${base} (${i})${ext}`;
+    if (!(await existe(carpeta, intento))) return intento;
+  }
+  return `${base}_${Date.now()}${ext}`;
+}
+
+/**
+ * Mueve un archivo a otra carpeta. Si el navegador sabe "mover", lo usa;
+ * si no, copia y luego borra el original (solo si la copia quedó bien).
+ */
+async function moverArchivo(handle, carpetaOrigen, carpetaDestino, nombreNuevo) {
+  const destino = await nombreLibre(carpetaDestino, nombreNuevo || handle.name);
+  if (typeof handle.move === 'function') {
+    try { await handle.move(carpetaDestino, destino); return destino; }
+    catch (e) { /* algunos navegadores no lo permiten fuera de su espacio: se copia */ }
+  }
+  const archivo = await handle.getFile();
+  await escribir(carpetaDestino, destino, archivo);
+  await carpetaOrigen.removeEntry(handle.name);
+  return destino;
+}
+
+/** Crea las subcarpetas que falten y devuelve cuáles creó. */
+async function prepararEstructura(raiz) {
+  const creadas = [];
+  for (const nombre of [C.recibidos, C.candidatos, C.historial]) {
+    if (!(await existe(raiz, nombre))) creadas.push(nombre);
+    await subcarpeta(raiz, nombre);
+  }
+  await subcarpeta(await subcarpeta(raiz, C.recibidos), C.procesados);
+  return creadas;
+}
+
+/* ==========================================================================
+   4. EXPEDIENTE (expediente.json dentro de la carpeta de cada candidato)
+   Guarda todo lo que la analista hace con el candidato. Tiene un número de
+   versión "rev": antes de guardar se revisa que nadie más lo haya cambiado.
+   ========================================================================== */
+const ARCHIVO_EXPEDIENTE = 'expediente.json';
+
+class ErrorChoque extends Error {}
+
+/** Lee el expediente. Devuelve null si no existe; lanza error si está dañado. */
+async function leerExpediente(carpetaCandidato) {
+  if (!(await existe(carpetaCandidato, ARCHIVO_EXPEDIENTE))) return null;
+  const handle = await carpetaCandidato.getFileHandle(ARCHIVO_EXPEDIENTE);
+  const texto = await (await handle.getFile()).text();
+  return JSON.parse(texto);
+}
+
+/**
+ * Guarda el expediente. Si alguien lo cambió desde que se leyó (otro "rev"),
+ * NO guarda y avisa, para no borrar el trabajo de la otra persona.
+ */
+async function guardarExpediente(carpetaCandidato, expediente) {
+  let actual = null;
+  try { actual = await leerExpediente(carpetaCandidato); } catch (e) { actual = null; }
+  if (actual && (actual.rev || 0) !== (expediente.rev || 0)) {
+    throw new ErrorChoque(`${actual.actualizadoPor || 'Otra persona'} cambió este candidato hace un momento. Recarga para ver sus cambios.`);
+  }
+  const nuevo = { ...expediente, rev: (expediente.rev || 0) + 1, actualizado: new Date().toISOString() };
+  await escribir(carpetaCandidato, ARCHIVO_EXPEDIENTE, JSON.stringify(nuevo, null, 2));
+  return nuevo;
+}
+
+/** Expediente vacío para un candidato nuevo. */
+function expedienteNuevo(datos, usuario) {
+  const ahora = new Date().toISOString();
+  return {
+    version: 1,
+    rev: 0,
+    cedula: datos.cedula,
+    nombre: datos.nombre,
+    cargo: datos.cargo || '',
+    seccion: datos.seccion || '',
+    primerEmpleo: !!datos.primerEmpleo,
+    autorizacionDatos: datos.autorizacionDatos || null,
+    estado: 'recibido',
+    creado: ahora,
+    actualizado: ahora,
+    actualizadoPor: usuario,
+    documentos: {},      // { cedula: { archivos: [...], revision: 'pendiente', motivo: '' } }
+    gestionHumana: {},   // checklist de GH (parte 2)
+    envios: [],          // cada ZIP procesado
+    bitacora: [],        // qué se hizo, quién y cuándo
+  };
+}
+
+/** Agrega una línea a la bitácora del expediente. */
+function anotar(expediente, usuario, accion) {
+  expediente.bitacora = [...(expediente.bitacora || []), { fecha: new Date().toISOString(), usuario, accion }];
+  expediente.actualizadoPor = usuario;
+}
+
+/* ==========================================================================
+   5. BANDEJA: buscar los ZIP en "Recibidos" y revisar cada uno
+   ========================================================================== */
+
+/** Nombre válido para un archivo dentro del ZIP: 1144123456_02_CEDULA.pdf */
+const PATRON_ARCHIVO = /^\d{5,12}_\d{2}_[A-Z0-9_]+\.(pdf|jpg|jpeg|png)$/i;
+
+/**
+ * Busca lo que hay en Recibidos (y en sus subcarpetas, por si OneDrive crea
+ * alguna), sin entrar a "Procesados".
+ */
+async function buscarEnRecibidos(raiz) {
+  const recibidos = await subcarpeta(raiz, C.recibidos);
+  const encontrados = [];
+  async function recorrer(carpeta, ruta, nivel) {
+    for (const item of await listar(carpeta)) {
+      if (item.tipo === 'directory') {
+        if (nivel === 0 && item.nombre === C.procesados) continue;
+        if (nivel < 2) await recorrer(item.handle, [...ruta, item.nombre], nivel + 1);
+      } else if (!item.nombre.startsWith('.') && !item.nombre.startsWith('~')) {
+        const archivo = await item.handle.getFile();
+        encontrados.push({
+          id: [...ruta, item.nombre].join('/'),
+          nombre: item.nombre,
+          ruta,
+          handle: item.handle,
+          carpeta,
+          tamano: archivo.size,
+          fecha: archivo.lastModified,
+        });
+      }
+    }
+  }
+  await recorrer(recibidos, [], 0);
+  return encontrados.sort((a, b) => a.fecha - b.fecha); // el más antiguo primero
+}
+
+/**
+ * Revisa un archivo de la bandeja. Devuelve:
+ *   { tipo: 'envio' | 'correccion' | 'invalido', datos, zip, errores[], avisos[] }
+ * "errores" impiden procesarlo; "avisos" solo informan.
+ */
+async function analizarArchivo(item, raiz) {
+  const r = { tipo: 'invalido', datos: null, zip: null, errores: [], avisos: [], archivos: [] };
+
+  if (!/\.zip$/i.test(item.nombre)) {
+    r.errores.push('No es un paquete ZIP. El candidato debe enviar el paquete que arma la página de documentos.');
+    return r;
+  }
+  try {
+    r.zip = await JSZip.loadAsync(await item.handle.getFile());
+  } catch (e) {
+    r.errores.push('El ZIP está dañado o no se pudo abrir. Pídele al candidato que lo descargue y lo suba otra vez.');
+    return r;
+  }
+
+  const json = r.zip.file('datos_candidato.json');
+  if (!json) {
+    r.errores.push('El ZIP no tiene "datos_candidato.json": no lo armó la página de documentos.');
+    return r;
+  }
+  try {
+    r.datos = JSON.parse(await json.async('string'));
+  } catch (e) {
+    r.errores.push('El archivo de datos del candidato está dañado.');
+    return r;
+  }
+
+  const d = r.datos;
+  if (!/^\d{5,12}$/.test(String(d.cedula || ''))) r.errores.push('La cédula del paquete no es válida.');
+  if (!String(d.nombre || '').trim()) r.errores.push('El paquete no trae el nombre del candidato.');
+  if (!Array.isArray(d.archivos)) d.archivos = [];
+
+  // Solo se aceptan archivos con el nombre estándar y que de verdad estén en el ZIP
+  d.archivos.forEach((a) => {
+    const nombre = String(a.archivo || '');
+    if (!PATRON_ARCHIVO.test(nombre) || nombre.includes('/') || nombre.includes('\\')) {
+      r.avisos.push(`Se ignora "${nombre}": no tiene el nombre estándar.`);
+    } else if (!r.zip.file(nombre)) {
+      r.avisos.push(`Falta en el ZIP: ${nombreDocumento(a.documento)} (${nombre}).`);
+    } else {
+      r.archivos.push(a);
+    }
+  });
+  if (!r.archivos.length && !r.errores.length) r.errores.push('El paquete no trae ningún documento.');
+
+  const conClave = r.archivos.filter((a) => a.conContrasena && !a.contrasenaEsCedula).length;
+  if (conClave) r.avisos.push(`${plural(conClave, 'archivo tiene', 'archivos tienen')} contraseña que no es la cédula.`);
+  const sinRevisar = r.archivos.filter((a) => !a.revisadoAutomaticamente).length;
+  if (sinRevisar) r.avisos.push(`${plural(sinRevisar, 'archivo', 'archivos')} sin revisión automática (escaneado o protegido).`);
+
+  const esCorreccion = d.tipo === 'correccion' || /CORRECCION/i.test(item.nombre);
+  r.tipo = r.errores.length ? 'invalido' : (esCorreccion ? 'correccion' : 'envio');
+  if (esCorreccion) r.errores.push('Es una corrección. Procesar correcciones llega en la parte 3; por ahora queda en la bandeja.');
+
+  // ¿Ya existe este candidato?
+  if (!r.errores.length) {
+    const existente = await buscarCarpetaCandidato(raiz, d.cedula);
+    if (existente) r.avisos.push('Este candidato ya tiene carpeta: es un envío nuevo. Los archivos actuales se guardan en "_anteriores".');
+    const enHistorial = await buscarCarpetaCandidato(raiz, d.cedula, C.historial);
+    if (enHistorial) r.avisos.push('Esta cédula está en el Historial (no contratado antes).');
+  }
+  return r;
+}
+
+/* ==========================================================================
+   6. PROCESAR: pasar un ZIP a la carpeta del candidato
+   Orden pensado para no perder nada si algo falla a la mitad:
+     1) guardar versiones anteriores, 2) escribir archivos nuevos,
+     3) guardar expediente, 4) solo al final mover el ZIP a Procesados.
+   Si algo falla, el ZIP sigue en la bandeja y se puede volver a procesar.
+   ========================================================================== */
+
+/** Busca la carpeta de un candidato por cédula (empieza por "1144123456_"). */
+async function buscarCarpetaCandidato(raiz, cedula, donde = C.candidatos) {
+  const carpeta = await subcarpeta(raiz, donde);
+  for (const item of await listar(carpeta)) {
+    if (item.tipo === 'directory' && (item.nombre === String(cedula) || item.nombre.startsWith(`${cedula}_`))) return item.handle;
+  }
+  return null;
+}
+
+async function procesarZip(raiz, item, usuario) {
+  const analisis = await analizarArchivo(item, raiz);
+  if (analisis.errores.length) throw new Error(analisis.errores[0]);
+  const d = analisis.datos;
+  const candidatos = await subcarpeta(raiz, C.candidatos);
+
+  // 1) Carpeta del candidato (nueva o existente)
+  let carpeta = await buscarCarpetaCandidato(raiz, d.cedula);
+  const esNuevo = !carpeta;
+  if (!carpeta) carpeta = await subcarpeta(candidatos, `${d.cedula}_${textoParaArchivo(d.nombre, 40)}`);
+
+  let expediente = null;
+  try { expediente = await leerExpediente(carpeta); } catch (e) { expediente = null; }
+  const revLeida = expediente ? expediente.rev : undefined;
+  if (!expediente) expediente = expedienteNuevo(d, usuario);
+
+  // 2) Si ya había documentos, se guardan en _anteriores/<fecha>/ antes de reemplazar
+  const actuales = (await listar(carpeta)).filter((x) => x.tipo === 'file' && x.nombre !== ARCHIVO_EXPEDIENTE);
+  let carpetaAnterior = null;
+  if (actuales.length) {
+    const anteriores = await subcarpeta(carpeta, C.anteriores);
+    carpetaAnterior = await nombreLibre(anteriores, marcaDeTiempo());
+    const destino = await subcarpeta(anteriores, carpetaAnterior);
+    for (const x of actuales) await moverArchivo(x.handle, carpeta, destino);
+  }
+
+  // 3) Escribir los archivos del ZIP
+  const documentos = {};
+  for (const a of analisis.archivos) {
+    const blob = await analisis.zip.file(a.archivo).async('blob');
+    await escribir(carpeta, a.archivo, blob);
+    const doc = documentos[a.documento] || { archivos: [], revision: 'pendiente', motivo: '', conContrasena: false, revisadoAutomaticamente: true };
+    doc.archivos.push(a.archivo);
+    doc.conContrasena = doc.conContrasena || !!a.conContrasena;
+    doc.revisadoAutomaticamente = doc.revisadoAutomaticamente && !!a.revisadoAutomaticamente;
+    documentos[a.documento] = doc;
+  }
+
+  // 4) Actualizar el expediente
+  expediente = {
+    ...expediente,
+    nombre: d.nombre, cargo: d.cargo || '', seccion: d.seccion || '',
+    primerEmpleo: !!d.primerEmpleo,
+    autorizacionDatos: d.autorizacionDatos || expediente.autorizacionDatos,
+    documentos,
+    envios: [...(expediente.envios || []), {
+      zip: item.nombre, generado: d.generado || null,
+      procesado: new Date().toISOString(), procesadoPor: usuario,
+      archivos: analisis.archivos.map((a) => a.archivo),
+    }],
+  };
+  if (revLeida !== undefined) expediente.rev = revLeida;
+  anotar(expediente, usuario, esNuevo
+    ? `Recibió el paquete con ${plural(analisis.archivos.length, 'archivo', 'archivos')}`
+    : `Llegó un envío nuevo (${plural(analisis.archivos.length, 'archivo', 'archivos')}); los anteriores quedaron en ${C.anteriores}/${carpetaAnterior || '—'}`);
+  await guardarExpediente(carpeta, expediente);
+
+  // 5) Mover el ZIP a Recibidos/Procesados
+  const procesados = await subcarpeta(await subcarpeta(raiz, C.recibidos), C.procesados);
+  await moverArchivo(item.handle, item.carpeta, procesados);
+
+  return { esNuevo, nombre: d.nombre };
+}
+
+/* ==========================================================================
+   7. CANDIDATOS: leer el listado (un expediente por carpeta)
+   ========================================================================== */
+async function leerCandidatos(raiz) {
+  const carpeta = await subcarpeta(raiz, C.candidatos);
+  const lista = [];
+  for (const item of await listar(carpeta)) {
+    if (item.tipo !== 'directory') continue;
+    let expediente = null, problema = null;
+    try {
+      expediente = await leerExpediente(item.handle);
+      if (!expediente) problema = 'Esta carpeta no tiene expediente.json (se creó a mano o quedó a medias).';
+    } catch (e) {
+      problema = 'El expediente.json está dañado.';
+    }
+    const cedula = (item.nombre.match(/^\d+/) || [''])[0];
+    lista.push({
+      carpeta: item.handle,
+      nombreCarpeta: item.nombre,
+      expediente,
+      problema,
+      cedula: expediente ? expediente.cedula : cedula,
+      nombre: expediente ? expediente.nombre : item.nombre.replace(/^\d+_?/, '').replace(/_/g, ' '),
+    });
+  }
+  return lista;
+}
+
+/**
+ * ¿Cómo va un ítem del checklist de GH? Devuelve 'hecho', 'malo' o 'pendiente'.
+ * Las reglas de cada tipo están explicadas en CONFIG.checklistGH.
+ */
+function estadoItemGH(expediente, item) {
+  const gh = expediente.gestionHumana || {};
+  const g = gh[item.id] || {};
+  const tieneArchivo = (g.archivos || []).length > 0;
+  switch (item.tipo) {
+    case 'archivo': return tieneArchivo ? 'hecho' : 'pendiente';
+    case 'pension': return (expediente.primerEmpleo ? tieneArchivo : (g.hecho || tieneArchivo)) ? 'hecho' : 'pendiente';
+    case 'induccion': {
+      const modo = (gh._induccion || {}).modo || 'unico';
+      const archivoOk = modo === 'unico' ? ((gh.paquete_induccion || {}).archivos || []).length > 0 : tieneArchivo;
+      return archivoOk && g.hecho ? 'hecho' : 'pendiente';
+    }
+    case 'apto': return g.valor === 'apto' ? 'hecho' : g.valor === 'no_apto' ? 'malo' : 'pendiente';
+    default: return g.hecho ? 'hecho' : 'pendiente';
+  }
+}
+
+/**
+ * Avance total del candidato: documentos del candidato (aprobados) + checklist de GH.
+ * Devuelve { total, hechos, nudos[] }; cada nudo es una clase de la "caña".
+ */
+function avanceDe(expediente) {
+  if (!expediente) return { total: 0, hechos: 0, nudos: [] };
+  const nudos = Object.values(expediente.documentos || {})
+    .map((d) => d.revision === 'aprobado' ? 'aprobado' : d.revision === 'rechazado' ? 'rechazado' : 'recibido');
+  CONFIG.checklistGH.forEach((item) => {
+    const e = estadoItemGH(expediente, item);
+    nudos.push(e === 'hecho' ? 'aprobado' : e === 'malo' ? 'rechazado' : '');
+  });
+  return { total: nudos.length, hechos: nudos.filter((n) => n === 'aprobado').length, nudos };
+}
+
+/* ==========================================================================
+   8. CARPETA DE EJEMPLO (en memoria)
+   Imita una carpeta del computador con las mismas funciones (entries,
+   getFileHandle, getDirectoryHandle, removeEntry...). Sirve para conocer el
+   panel y para probarlo con datos difíciles. No toca el computador.
+   ========================================================================== */
+function errorNoExiste(nombre) { return new DOMException(`No existe: ${nombre}`, 'NotFoundError'); }
+
+class ArchivoMemoria {
+  constructor(name, blob, fecha) { this.kind = 'file'; this.name = name; this.blob = blob; this.fecha = fecha || Date.now(); }
+  async getFile() { return new File([this.blob], this.name, { lastModified: this.fecha }); }
+  async createWritable() {
+    const partes = [];
+    return { write: async (d) => { partes.push(d); }, close: async () => { this.blob = new Blob(partes); this.fecha = Date.now(); } };
+  }
+}
+class CarpetaMemoria {
+  constructor(name) { this.kind = 'directory'; this.name = name; this.hijos = new Map(); }
+  async getDirectoryHandle(n, op = {}) {
+    const h = this.hijos.get(n);
+    if (h && h.kind === 'directory') return h;
+    if (!op.create) throw errorNoExiste(n);
+    const nueva = new CarpetaMemoria(n); this.hijos.set(n, nueva); return nueva;
+  }
+  async getFileHandle(n, op = {}) {
+    const h = this.hijos.get(n);
+    if (h && h.kind === 'file') return h;
+    if (!op.create) throw errorNoExiste(n);
+    const nuevo = new ArchivoMemoria(n, new Blob([])); this.hijos.set(n, nuevo); return nuevo;
+  }
+  async removeEntry(n) { if (!this.hijos.delete(n)) throw errorNoExiste(n); }
+  async *entries() { for (const par of [...this.hijos.entries()]) yield par; }
+  async queryPermission() { return 'granted'; }
+  async requestPermission() { return 'granted'; }
+  // Pone un archivo directamente (solo para armar los datos de ejemplo)
+  poner(nombre, blob, fecha) { this.hijos.set(nombre, new ArchivoMemoria(nombre, blob, fecha)); }
+}
+
+/** PDF mínimo de una página con un título (para los datos de ejemplo). */
+function pdfDeEjemplo(titulo) {
+  const t = textoParaArchivo(titulo, 60).replace(/_/g, ' ');
+  const flujo = `BT /F1 28 Tf 72 700 Td (${t}) Tj ET BT /F1 12 Tf 72 670 Td (Documento de ejemplo del panel de Gestion Humana) Tj ET`;
+  const objetos = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${flujo.length} >>\nstream\n${flujo}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let pdf = '%PDF-1.4\n';
+  const posiciones = [];
+  objetos.forEach((o, i) => { posiciones.push(pdf.length); pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objetos.length + 1}\n0000000000 65535 f \n`;
+  posiciones.forEach((p) => { pdf += `${String(p).padStart(10, '0')} 00000 n \n`; });
+  pdf += `trailer\n<< /Size ${objetos.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return new Blob([pdf], { type: 'application/pdf' });
+}
+
+/** Foto 3×4 de ejemplo (silueta sobre fondo blanco). */
+function fotoDeEjemplo() {
+  return new Promise((ok) => {
+    const c = document.createElement('canvas'); c.width = 300; c.height = 400;
+    const g = c.getContext('2d');
+    g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, 300, 400);
+    g.fillStyle = '#B9C6BC';
+    g.beginPath(); g.arc(150, 150, 70, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(150, 400, 130, 150, 0, 0, Math.PI * 2); g.fill();
+    c.toBlob((b) => ok(b), 'image/jpeg', 0.8);
+  });
+}
+
+const CODIGOS = { foto: '01', cedula: '02', diplomas: '03', manipulacion: '04', referencia: '05', referencia_personal: '05', adres: '06', pension: '07' };
+
+/**
+ * Arma un ZIP igual al de la app del candidato.
+ * c = { cedula, nombre, cargo, seccion, primerEmpleo, docs: ['foto','cedula',...], diplomas: 2,
+ *       sinJson, jsonRoto, faltante, tipo, conClave }
+ */
+async function zipDeEjemplo(c, foto) {
+  const zip = new JSZip();
+  const lista = [];
+  (c.docs || []).forEach((id) => {
+    const cantidad = id === 'diplomas' ? (c.diplomas || 1) : 1;
+    for (let i = 0; i < cantidad; i++) {
+      const sufijo = cantidad > 1 ? `_${i + 1}` : '';
+      const ext = id === 'foto' ? 'jpg' : 'pdf';
+      const nombre = `${c.cedula}_${CODIGOS[id]}_${id.toUpperCase()}${sufijo}.${ext}`;
+      if (c.faltante !== id) zip.file(nombre, id === 'foto' ? foto : pdfDeEjemplo(`${nombreDocumento(id)} ${c.nombre}`));
+      lista.push({ documento: id, archivo: nombre, nombreOriginal: `${id}.${ext}`,
+                   revisadoAutomaticamente: !(c.conClave === id), conContrasena: c.conClave === id, contrasenaEsCedula: false });
+    }
+  });
+  if (!c.sinJson) {
+    const datos = { version: 1, tipo: c.tipo, cedula: c.cedula, nombre: c.nombre, cargo: c.cargo, seccion: c.seccion,
+                    primerEmpleo: !!c.primerEmpleo, autorizacionDatos: { aceptada: true, fecha: new Date().toISOString() },
+                    generado: new Date().toISOString(), archivos: lista };
+    zip.file('datos_candidato.json', c.jsonRoto ? '{"cedula": "114' : JSON.stringify(datos, null, 2));
+  }
+  return zip.generateAsync({ type: 'blob', compression: 'STORE' });
+}
+
+const DOCS_COMPLETOS = ['foto', 'cedula', 'diplomas', 'referencia', 'adres', 'pension'];
+const DOCS_PRIMER = ['foto', 'cedula', 'diplomas', 'referencia_personal', 'adres'];
+
+/** Crea la carpeta de ejemplo según el modo: normal, peor, vacio, uno. */
+async function crearCarpetaDeEjemplo(modo) {
+  const raiz = new CarpetaMemoria('Hojas de vida (ejemplo)');
+  await prepararEstructura(raiz);
+  if (modo === 'vacio') return raiz;
+
+  const foto = await fotoDeEjemplo();
+  const recibidos = await subcarpeta(raiz, C.recibidos);
+  const hace = (dias, horas = 0) => Date.now() - dias * MS_POR_DIA - horas * 3600 * 1000;
+
+  // Candidatos que ya están en el panel: se procesan con la misma función real
+  async function sembrar(c, dias, estado, revisados = 0) {
+    const nombreZip = `${c.cedula}_${textoParaArchivo(c.nombre)}.zip`;
+    recibidos.poner(nombreZip, await zipDeEjemplo(c, foto), hace(dias));
+    const item = (await buscarEnRecibidos(raiz)).find((x) => x.nombre === nombreZip);
+    await procesarZip(raiz, item, 'Analista de ejemplo');
+    const carpeta = await buscarCarpetaCandidato(raiz, c.cedula);
+    const exp = await leerExpediente(carpeta);
+    exp.creado = new Date(hace(dias)).toISOString();
+    exp.estado = estado;
+    Object.values(exp.documentos).slice(0, revisados).forEach((d, i) => {
+      d.revision = i === 1 && estado === 'correcciones' ? 'rechazado' : 'aprobado';
+      if (d.revision === 'rechazado') d.motivo = 'No se lee bien';
+    });
+    // Checklist de GH de ejemplo: completo para "Completo"/"Contratado", algo hecho para "En revisión"
+    const hacer = estado === 'completo' || estado === 'contratado' ? CONFIG.checklistGH : estado === 'revision' ? CONFIG.checklistGH.slice(0, 2) : [];
+    if (hacer.length) {
+      const carpetaGH = await subcarpeta(carpeta, C.gestionHumana);
+      const marca = { fecha: new Date(hace(dias - 1)).toISOString(), por: 'Analista de ejemplo' };
+      for (const item of hacer) {
+        if (item.tipo === 'archivo' || (item.tipo === 'pension' && c.primerEmpleo)) {
+          const nombre = `${c.cedula}_GH_${textoParaArchivo(item.id)}.pdf`;
+          carpetaGH.poner(nombre, pdfDeEjemplo(item.nombre));
+          exp.gestionHumana[item.id] = { archivos: [nombre], ...marca };
+        } else if (item.tipo === 'apto') exp.gestionHumana[item.id] = { valor: 'apto', ...marca };
+        else exp.gestionHumana[item.id] = { hecho: true, ...marca };
+      }
+      if (hacer.some((i) => i.tipo === 'induccion')) {
+        const nombre = `${c.cedula}_GH_PAQUETE_INDUCCION.pdf`;
+        carpetaGH.poner(nombre, pdfDeEjemplo('Paquete de induccion'));
+        exp.gestionHumana.paquete_induccion = { archivos: [nombre], ...marca };
+      }
+    }
+    await guardarExpediente(carpeta, exp);
+  }
+
+  if (modo === 'uno') {
+    await sembrar({ cedula: '1144098765', nombre: 'Laura Gómez', cargo: 'AUXILIAR DE FRUVER', seccion: 'FRUVER', docs: DOCS_COMPLETOS }, 2, 'revision', 3);
+    recibidos.poner('1107554433_ANDRES_ROJAS_AUXILIAR_DE_PANADERIA.zip',
+      await zipDeEjemplo({ cedula: '1107554433', nombre: 'Andrés Rojas', cargo: 'AUXILIAR DE PANADERIA', seccion: 'PANADERIA', docs: [...DOCS_COMPLETOS, 'manipulacion'] }, foto), hace(0, 3));
+    return raiz;
+  }
+
+  if (modo === 'normal') {
+    await sembrar({ cedula: '1144098765', nombre: 'Laura Gómez', cargo: 'AUXILIAR DE FRUVER', seccion: 'FRUVER', docs: DOCS_COMPLETOS, diplomas: 2 }, 6, 'revision', 4);
+    await sembrar({ cedula: '1006223344', nombre: 'Camilo Andrés Mejía', cargo: 'AUXILIAR DE BODEGA', seccion: 'BODEGA', docs: DOCS_COMPLETOS }, 3, 'correcciones', 3);
+    await sembrar({ cedula: '1193456712', nombre: 'Daniela Ospina', cargo: 'AUXILIAR DE CARNES', seccion: 'CARNES', docs: [...DOCS_COMPLETOS, 'manipulacion'] }, 12, 'completo', 7);
+    await sembrar({ cedula: '31945220', nombre: 'Martha Lucía Cárdenas', cargo: 'AUXILIAR DE ASEO', seccion: 'ASEO', docs: DOCS_COMPLETOS }, 20, 'contratado', 6);
+    recibidos.poner('1107554433_ANDRES_ROJAS_AUXILIAR_DE_PANADERIA.zip',
+      await zipDeEjemplo({ cedula: '1107554433', nombre: 'Andrés Rojas', cargo: 'AUXILIAR DE PANADERIA', seccion: 'PANADERIA', docs: [...DOCS_COMPLETOS, 'manipulacion'] }, foto), hace(1, 2));
+    recibidos.poner('1062887766_VALENTINA_RIOS_AUXILIAR_DE_BODEGA.zip',
+      await zipDeEjemplo({ cedula: '1062887766', nombre: 'Valentina Ríos', cargo: 'AUXILIAR DE BODEGA', seccion: 'BODEGA', primerEmpleo: true, docs: DOCS_PRIMER, conClave: 'adres' }, foto), hace(0, 5));
+    recibidos.poner('1144556677_SEBASTIAN_TORRES_SURTIDOR.zip',
+      await zipDeEjemplo({ cedula: '1144556677', nombre: 'Sebastián Torres', cargo: 'SURTIDOR', seccion: 'PGC', docs: DOCS_COMPLETOS }, foto), hace(0, 1));
+    return raiz;
+  }
+
+  // ---- PEOR CASO: datos reales pero difíciles ----
+  const largos = [
+    'María de los Ángeles Villegas-Restrepo de la Ossa', 'Jo', 'Ana', 'JHON JAIRO MONTOYA VALENCIA III',
+    'Luz Dary Bermúdez Castañeda de Ocampo', 'Ñañez Ñustes Ximena', 'Óscar Iván Peña Úsuga',
+  ];
+  const cargos = [
+    ['AUXILIAR DE SERVICIO AL CLIENTE Y DOMICILIOS', 'SERVICIO AL CLIENTE'], ['SURTIDOR', 'PGC'],
+    ['AUXILIAR DE FRUVER', 'FRUVER'], ['COORDINADOR DE PREVENCIÓN DE PÉRDIDAS Y SEGURIDAD', 'ADMINISTRATIVO'],
+  ];
+  const estados = ['recibido', 'revision', 'correcciones', 'completo', 'contratado', 'no_contratado'];
+  for (let i = 0; i < 40; i++) {
+    const [cargo, seccion] = cargos[i % cargos.length];
+    await sembrar({ cedula: String(1000000000 + i * 7919), nombre: largos[i % largos.length] + (i >= largos.length ? ` ${i}` : ''),
+                    cargo, seccion, primerEmpleo: i % 3 === 0, docs: i % 3 === 0 ? DOCS_PRIMER : DOCS_COMPLETOS, diplomas: (i % 4) + 1 },
+                  [0, 1, 4, 5, 9, 31, 412][i % 7], estados[i % estados.length], i % 6);
+  }
+  const candidatos = await subcarpeta(raiz, C.candidatos);
+  await subcarpeta(candidatos, '1112223334_CARPETA_HECHA_A_MANO');                    // sin expediente
+  const rota = await subcarpeta(candidatos, '1113334445_EXPEDIENTE_DANADO');
+  rota.poner(ARCHIVO_EXPEDIENTE, new Blob(['{"cedula": "11133']));                     // expediente dañado
+
+  recibidos.poner('1000000000_MARIA_DE_LOS_ANGELES_VILLEGAS_RESTREPO.zip',              // re-envío de alguien que ya existe
+    await zipDeEjemplo({ cedula: '1000000000', nombre: largos[0], cargo: cargos[0][0], seccion: cargos[0][1], docs: DOCS_COMPLETOS, diplomas: 4 }, foto), hace(0, 1));
+  recibidos.poner('1203040506_JO.zip',
+    await zipDeEjemplo({ cedula: '1203040506', nombre: 'Jo', cargo: 'SURTIDOR', seccion: 'PGC', docs: DOCS_COMPLETOS }, foto), hace(9));
+  recibidos.poner('sin_datos.zip', await zipDeEjemplo({ cedula: '1', nombre: 'x', docs: ['cedula'], sinJson: true }, foto), hace(2));
+  recibidos.poner('1209876543_JSON_ROTO.zip', await zipDeEjemplo({ cedula: '1', nombre: 'x', docs: ['cedula'], jsonRoto: true }, foto), hace(2));
+  recibidos.poner('cedula escaneada.pdf', pdfDeEjemplo('Cedula'), hace(1));
+  recibidos.poner('paquete.zip', new Blob(['esto no es un zip']), hace(1));
+  recibidos.poner('1062887766_VALENTINA_RIOS_CORRECCION_1.zip',
+    await zipDeEjemplo({ cedula: '1062887766', nombre: 'Valentina Ríos', tipo: 'correccion', docs: ['adres'] }, foto), hace(0, 4));
+  recibidos.poner('1300000001_FALTA_UN_ARCHIVO.zip',
+    await zipDeEjemplo({ cedula: '1300000001', nombre: 'Paula Andrea Zúñiga Henao', cargo: 'SURTIDOR', seccion: 'PGC', docs: DOCS_COMPLETOS, faltante: 'pension', conClave: 'adres' }, foto), hace(3));
+  const sub = await subcarpeta(recibidos, 'Archivos de Bartholomew Fitzgerald Northwind');
+  sub.poner('1400000002_BARTHOLOMEW_FITZGERALD.zip',
+    await zipDeEjemplo({ cedula: '1400000002', nombre: 'Bartholomew Fitzgerald Northwind-Holdings', cargo: 'AUXILIAR DE SERVICIO AL CLIENTE Y DOMICILIOS', seccion: 'SERVICIO AL CLIENTE', docs: DOCS_COMPLETOS }, foto), hace(0, 6));
+  return raiz;
+}
+
+/* ==========================================================================
+   9. PANTALLAS
+   ========================================================================== */
+
+/** Íconos dibujados a mano (trazos simples, 20 px). */
+const Icono = ({ nombre, tamano = 20 }) => {
+  const trazos = {
+    bandeja: <><path d="M3 12h4l2 3h6l2-3h4" /><path d="M5 5h14l2 7v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z" /></>,
+    personas: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 19c.8-3.4 3.4-5 6.5-5s5.7 1.6 6.5 5" /><path d="M15.5 4.8a3.5 3.5 0 0 1 0 6.4M18 14.4c1.8.7 3 2.3 3.5 4.6" /></>,
+    archivo: <><path d="M6 3h8l5 5v13H6z" /><path d="M14 3v5h5" /></>,
+    paquete: <><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z" /><path d="M4 7.5 12 12l8-4.5M12 12v9" /></>,
+    alerta: <><path d="M12 4 2.5 20h19z" /><path d="M12 10v4M12 17v.5" /></>,
+    corregir: <><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></>,
+    historial: <><path d="M4 12a8 8 0 1 0 2.4-5.7" /><path d="M4 4v4h4M12 8v4l3 2" /></>,
+    ajustes: <><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" /></>,
+    carpeta: <><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" /></>,
+    recargar: <><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 4v7h-7" /></>,
+    cerrar: <><path d="M6 6l12 12M18 6 6 18" /></>,
+    listo: <><path d="M5 12.5l4.5 4.5L19 7" /></>,
+    subir: <><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" /></>,
+    cargando: <><path d="M12 3a9 9 0 1 0 9 9" /></>,
+  };
+  return (
+    <svg width={tamano} height={tamano} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{trazos[nombre]}</svg>
+  );
+};
+
+/* ---------- Arranque: elegir carpeta y escribir quién usa el panel ---------- */
+function PantallaArranque({ onCarpeta, onEjemplo, carpetaRecordada, onReabrir, error }) {
+  const [usuario, setUsuario] = useState('');
+  const [ocupado, setOcupado] = useState(false);
+
+  useEffect(() => { recuperar('usuario').then((u) => u && setUsuario(u)); }, []);
+
+  async function elegir() {
+    if (!usuario.trim()) return;
+    setOcupado(true);
+    try {
+      const carpeta = await window.showDirectoryPicker({ id: 'hojas-de-vida', mode: 'readwrite' });
+      await onCarpeta(carpeta, usuario.trim());
+    } catch (e) {
+      if (e.name !== 'AbortError') onCarpeta(null, usuario.trim(), e);
+    } finally { setOcupado(false); }
+  }
+
+  return (
+    <main className="inicio">
+      {/* Portada: igual que la de la app del candidato */}
+      <section className="portada">
+        <img className="logo" src={LOGO} alt="Supertiendas Cañaveral" />
+        <h1>Panel de ingreso</h1>
+        <p>Aquí llegan los paquetes de los candidatos. Los pasas a su carpeta, los revisas y llevas el avance de cada uno.</p>
+      </section>
+
+      {carpetaRecordada ? (
+        <section className="grupo">
+          <h3 className="grupo-titulo">Seguir donde ibas</h3>
+          <button className="boton boton-principal boton-grande" onClick={onReabrir}>
+            <Icono nombre="carpeta" /> Abrir “{carpetaRecordada}”
+          </button>
+          <p className="grupo-pie">Por seguridad, el navegador pide permiso cada vez que se abre el panel.</p>
+          <div style={{ textAlign: 'center', marginTop: 10 }}>
+            <button className="boton boton-texto" onClick={() => onReabrir('otra')}>Usar otra carpeta</button>
+          </div>
+        </section>
+      ) : (
+        <>
+          <section className="grupo">
+            <h3 className="grupo-titulo">Para empezar</h3>
+            <ol className="pasos-arranque tarjeta">
+              <li><span aria-hidden="true" /><span>Abre la carpeta <strong>Hojas de vida</strong> de OneDrive en este computador y verifica que esté sincronizada.</span></li>
+              <li><span aria-hidden="true" /><span>Escribe tu nombre: queda en la bitácora de cada cosa que hagas.</span></li>
+              <li><span aria-hidden="true" /><span>Toca <strong>Elegir carpeta</strong>, busca “Hojas de vida” y acepta el permiso para ver y editar.</span></li>
+            </ol>
+          </section>
+          <section className="grupo">
+            <h3 className="grupo-titulo">Quién usa el panel</h3>
+            <div className="tarjeta fila-campo">
+              <label htmlFor="usuario">Tu nombre</label>
+              <input id="usuario" value={usuario} maxLength={60} autoComplete="name"
+                     onChange={(e) => setUsuario(e.target.value)} placeholder="Ej. Natalia Restrepo" />
+            </div>
+          </section>
+          {puedeAbrirCarpetas ? (
+            <button className="boton boton-principal boton-grande" disabled={!usuario.trim() || ocupado} onClick={elegir}>
+              <Icono nombre="carpeta" /> Elegir carpeta
+            </button>
+          ) : (
+            <div className="alerta aviso">Este navegador no puede abrir carpetas. Abre el panel en <strong>Chrome</strong> o <strong>Edge</strong> desde un computador.</div>
+          )}
+        </>
+      )}
+      {error && <div className="alerta error">{error}</div>}
+      <p className="nota">
+        ¿Solo quieres conocerlo?{' '}
+        <button className="boton boton-texto" style={{ padding: 0, minHeight: 0, fontSize: 13 }} onClick={() => onEjemplo(usuario.trim() || 'Analista de ejemplo')}>
+          Abrir carpeta de ejemplo
+        </button>{' '}(no toca tu computador).
+      </p>
+
+      <section className="grupo" style={{ marginTop: 32 }}>
+        <h3 className="grupo-titulo">Carpetas que usa el panel</h3>
+        <div className="tarjeta" aria-label="Carpetas que usa el panel">
+          <div className="arbol-fila"><Icono nombre="carpeta" /> Hojas de vida</div>
+          <div className="arbol-fila sangria"><Icono nombre="bandeja" /> Recibidos <small>lo que suben los candidatos</small></div>
+          <div className="arbol-fila sangria"><Icono nombre="personas" /> Candidatos <small>una carpeta por cédula</small></div>
+          <div className="arbol-fila sangria"><Icono nombre="historial" /> Historial <small>no contratados</small></div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+/* ---------- Barra lateral ---------- */
+function BarraLateral({ vista, setVista, pendientes, totalCandidatos, usuario, carpeta, esEjemplo, onCambiarUsuario, onSalir }) {
+  const Item = ({ id, icono, texto, cifra, pronto }) => (
+    <button className="menu-item" aria-current={vista === id ? 'page' : undefined} disabled={pronto} onClick={() => setVista(id)}>
+      <Icono nombre={icono} /><span className="etiqueta">{texto}</span>
+      {pronto ? <span className="pronto">{pronto}</span> : cifra > 0 && <span className="contador">{cifra > 99 ? '99+' : cifra}</span>}
+    </button>
+  );
+  return (
+    <nav className="lateral" aria-label="Menú del panel">
+      <img className="logo" src={LOGO} alt="Supertiendas Cañaveral" />
+      <Item id="bandeja" icono="bandeja" texto="Bandeja" cifra={pendientes} />
+      <Item id="candidatos" icono="personas" texto="Candidatos" cifra={0} />
+      <Item id="historial" icono="historial" texto="Historial" pronto="Parte 5" />
+      <Item id="ajustes" icono="ajustes" texto="Ajustes" pronto="Parte 5" />
+      <div className="lateral-pie">
+        <span>Trabajando como</span>
+        <strong>{usuario}</strong>
+        <button onClick={onCambiarUsuario}>Cambiar nombre</button>
+        <span className="carpeta-nombre" style={{ marginTop: 8 }}>{esEjemplo ? 'Carpeta de ejemplo' : `Carpeta: ${carpeta}`}</span>
+        <button onClick={onSalir}>{esEjemplo ? 'Salir del ejemplo' : 'Cambiar carpeta'}</button>
+      </div>
+    </nav>
+  );
+}
+
+/* ---------- Bandeja de entrada ---------- */
+function Bandeja({ items, cargando, onRecargar, onProcesar, onProcesarTodos, procesando, lote, onAgregar }) {
+  const listos = items.filter((x) => x.analisis && x.analisis.tipo === 'envio');
+  const selector = useRef(null);          // campo oculto para elegir ZIP del computador
+  const [encima, setEncima] = useState(false); // ¿están arrastrando un archivo encima?
+
+  // Arrastrar y soltar: los ZIP soltados se copian a Recibidos
+  const alArrastrar = (e) => { e.preventDefault(); setEncima(true); };
+  const alSalir = (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setEncima(false); };
+  const alSoltar = (e) => { e.preventDefault(); setEncima(false); onAgregar([...e.dataTransfer.files]); };
+  return (
+    <div onDragOver={alArrastrar} onDragLeave={alSalir} onDrop={alSoltar} className={encima ? 'zona-soltar activa' : 'zona-soltar'}>
+      <input ref={selector} type="file" accept=".zip,application/zip" multiple hidden
+             onChange={(e) => { onAgregar([...e.target.files]); e.target.value = ''; }} />
+      <header className="encabezado">
+        <div>
+          <h1>Bandeja</h1>
+          <p>{cargando ? 'Revisando la carpeta Recibidos…'
+            : items.length ? `${plural(items.length, 'archivo', 'archivos')} en Recibidos; ${plural(listos.length, 'listo', 'listos')} para procesar.`
+            : 'Recibidos está al día.'}</p>
+        </div>
+        <div className="acciones">
+          <button className="boton boton-secundario" onClick={onRecargar} disabled={cargando || procesando}>
+            <Icono nombre="recargar" tamano={18} /> Actualizar
+          </button>
+          <button className="boton boton-secundario" onClick={() => selector.current.click()} disabled={procesando}>
+            <Icono nombre="subir" tamano={18} /> Agregar ZIP
+          </button>
+          <button className="boton boton-principal" onClick={onProcesarTodos} disabled={!listos.length || procesando || cargando}>
+            <Icono nombre="paquete" tamano={18} /> Procesar {listos.length > 1 ? `los ${listos.length}` : ''}
+          </button>
+        </div>
+      </header>
+      {lote && (
+        <div className="alerta aviso" style={{ marginBottom: 14 }} role="status">
+          Procesando {lote.hechos + 1} de {lote.total}…
+          <div className="progreso-lote"><div style={{ width: `${(lote.hechos / lote.total) * 100}%` }} /></div>
+        </div>
+      )}
+      <div className="tarjeta">
+        {cargando && !items.length ? (
+          <div className="vacio"><Icono nombre="cargando" /><p>Leyendo archivos…</p></div>
+        ) : !items.length ? (
+          <div className="vacio">
+            <div className="icono-caja"><Icono nombre="listo" tamano={28} /></div>
+            <h3>No hay paquetes nuevos</h3>
+            <p>Cuando un candidato suba su ZIP con el link de OneDrive, aparecerá aquí (OneDrive puede tardar unos minutos: toca Actualizar). Si te lo mandaron por otro medio, toca <strong>Agregar ZIP</strong> o arrástralo aquí.</p>
+          </div>
+        ) : items.map((item) => <FilaBandeja key={item.id} item={item} onProcesar={onProcesar} procesando={procesando} />)}
+      </div>
+      {encima && <div className="aviso-soltar">Suelta el ZIP para agregarlo a Recibidos</div>}
+    </div>
+  );
+}
+
+function FilaBandeja({ item, onProcesar, procesando }) {
+  const a = item.analisis;
+  const d = a && a.datos;
+  const tipo = !a ? 'cargando' : a.tipo;
+  const icono = { envio: ['paquete', ''], correccion: ['corregir', 'info'], invalido: ['alerta', 'malo'], cargando: ['cargando', ''] }[tipo];
+  const titulo = d && d.nombre && tipo !== 'invalido' ? nombreBonito(d.nombre) : item.nombre;
+  return (
+    <div className="fila">
+      <div className={`icono-caja ${icono[1]}`}><Icono nombre={icono[0]} /></div>
+      <div className="fila-texto">
+        <span className="fila-titulo">{titulo}</span>
+        {d && tipo !== 'invalido' && (
+          <span className="fila-sub">
+            <span className="numeros">C.C. {d.cedula}</span>{d.cargo ? ` — ${d.cargo}` : ''}{d.seccion ? `, ${d.seccion}` : ''}
+            {d.primerEmpleo ? ' — primer empleo' : ''}
+          </span>
+        )}
+        <span className="fila-pista">
+          {tipo !== 'invalido' && d ? `${item.nombre} — ` : ''}{a && a.archivos.length ? `${plural(a.archivos.length, 'documento', 'documentos')}, ` : ''}
+          {tamanoLegible(item.tamano)}, llegó {fechaCorta(item.fecha)}{item.ruta.length ? ` — en ${item.ruta.join(' / ')}` : ''}
+        </span>
+        {a && (a.errores.length > 0 || a.avisos.length > 0) && (
+          <div className="mensajes">
+            {a.errores.map((m, i) => <div key={'e' + i} className={`mensaje ${tipo === 'correccion' ? 'info' : 'error'}`}>{m}</div>)}
+            {a.avisos.map((m, i) => <div key={'a' + i} className="mensaje aviso">{m}</div>)}
+          </div>
+        )}
+      </div>
+      <div className="fila-lado">
+        {tipo === 'envio' && (
+          <button className="boton boton-suave" disabled={procesando} onClick={() => onProcesar(item)}>Procesar</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Listado de candidatos ---------- */
+const FILTRO_ACTIVOS = 'activos';
+
+function Candidatos({ lista, cargando, onAbrir, onRecargar }) {
+  const [busqueda, setBusqueda] = useState('');
+  const [filtro, setFiltro] = useState(FILTRO_ACTIVOS);
+
+  const visibles = useMemo(() => {
+    const q = paraBuscar(busqueda.trim());
+    return lista
+      .filter((c) => {
+        const estado = c.expediente ? c.expediente.estado : null;
+        if (filtro === FILTRO_ACTIVOS && (estado === 'contratado' || estado === 'no_contratado')) return false;
+        if (filtro !== FILTRO_ACTIVOS && filtro !== 'todos' && estado !== filtro) return false;
+        if (!q) return true;
+        return paraBuscar(`${c.nombre} ${c.cedula} ${c.expediente ? c.expediente.cargo : ''}`).includes(q);
+      })
+      // Orden: en proceso (los que llevan más días primero), luego cerrados, y los dañados al final
+      .sort((a, b) => {
+        const grupo = (c) => !c.expediente ? 2 : (c.expediente.estado === 'contratado' || c.expediente.estado === 'no_contratado') ? 1 : 0;
+        const fecha = (c) => c.expediente ? new Date(c.expediente.creado).getTime() : 0;
+        return grupo(a) - grupo(b) || fecha(a) - fecha(b);
+      });
+  }, [lista, busqueda, filtro]);
+
+  const cuenta = (id) => lista.filter((c) => c.expediente && c.expediente.estado === id).length;
+
+  return (
+    <>
+      <header className="encabezado">
+        <div>
+          <h1>Candidatos</h1>
+          <p>{plural(lista.length, 'candidato', 'candidatos')} en la carpeta. Los que llevan más días esperando aparecen primero.</p>
+        </div>
+        <button className="boton boton-secundario" onClick={onRecargar} disabled={cargando}><Icono nombre="recargar" tamano={18} /> Actualizar</button>
+      </header>
+      <div className="filtros">
+        <input className="buscador" type="search" value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+               placeholder="Buscar por nombre, cédula o cargo" aria-label="Buscar candidato" />
+        <select className="selector" value={filtro} onChange={(e) => setFiltro(e.target.value)} aria-label="Filtrar por estado">
+          <option value={FILTRO_ACTIVOS}>En proceso</option>
+          <option value="todos">Todos ({lista.length})</option>
+          {CONFIG.estados.map((e) => <option key={e.id} value={e.id}>{e.nombre} ({cuenta(e.id)})</option>)}
+        </select>
+      </div>
+      {visibles.length > 0 && (
+        <div className="cand-cabecera" aria-hidden="true">
+          <span>Candidato</span><span>Cargo y sección</span><span>Estado</span><span>Avance</span><span style={{ textAlign: 'right' }}>Esperando</span>
+        </div>
+      )}
+      <div className="tarjeta">
+        {!visibles.length ? (
+          <div className="vacio">
+            <div className="icono-caja"><Icono nombre="personas" tamano={28} /></div>
+            <h3>{lista.length ? 'Ningún candidato coincide' : 'Aún no hay candidatos'}</h3>
+            <p>{lista.length ? 'Prueba con otra búsqueda o cambia el filtro de estado.' : 'Procesa un paquete de la bandeja y el candidato aparecerá aquí.'}</p>
+          </div>
+        ) : (
+          visibles.map((c) => <FilaCandidato key={c.nombreCarpeta} c={c} onAbrir={onAbrir} />)
+        )}
+      </div>
+    </>
+  );
+}
+
+function FilaCandidato({ c, onAbrir }) {
+  const e = c.expediente;
+  const av = avanceDe(e);
+  const dias = e ? diasDesde(e.creado) : 0;
+  const cerrado = e && (e.estado === 'contratado' || e.estado === 'no_contratado');
+  return (
+    <div className="cand fila-tocable" role="button" tabIndex={0} onClick={() => onAbrir(c)}
+         onKeyDown={(ev) => (ev.key === 'Enter' || ev.key === ' ') && (ev.preventDefault(), onAbrir(c))}>
+      <div className="fila-texto">
+        <span className="fila-titulo">{nombreBonito(c.nombre)}</span>
+        <span className="fila-sub numeros">C.C. {c.cedula || '—'}{e && e.primerEmpleo ? ' — primer empleo' : ''}</span>
+      </div>
+      <div className="fila-texto c-cargo">
+        {e ? <><span className="fila-sub" style={{ color: 'var(--texto)' }}>{e.cargo || 'Sin cargo'}</span><span className="fila-pista">{e.seccion}</span></>
+           : <span className="mensaje error">{c.problema}</span>}
+      </div>
+      <div className="c-estado">{e && <span className={`etiqueta-estado e-${e.estado}`}>{nombreEstado(e.estado)}</span>}</div>
+      <div className="c-avance">
+        {e && <>
+          <div className="cana" aria-hidden="true">{av.nudos.map((n, i) => <span key={i} className={`nudo ${n}`} />)}</div>
+          <div className="avance-texto">{av.hechos} de {av.total} listos</div>
+        </>}
+      </div>
+      <div className={`cand-dias c-dias ${!cerrado && dias >= CONFIG.diasAlerta ? 'viejo' : ''}`}>
+        {e && !cerrado && <><strong>{dias === 0 ? 'Hoy' : dias.toLocaleString('es-CO')}</strong><span>{dias === 0 ? 'llegó' : dias === 1 ? 'día' : 'días'}</span></>}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Ficha del candidato: revisar documentos y completar el checklist ---------- */
+
+/** Revisa que el archivo que sube GH sea PDF, JPG o PNG de verdad (por sus primeros bytes). */
+async function tipoDeArchivo(archivo) {
+  const b = new Uint8Array(await archivo.slice(0, 8).arrayBuffer());
+  if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return 'pdf';
+  if (b[0] === 0xFF && b[1] === 0xD8) return 'jpg';
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return 'png';
+  return null;
+}
+
+/** Motivos de rechazo rápidos (se puede escribir otro). */
+const MOTIVOS_RAPIDOS = ['No se lee bien', 'No es el documento pedido', 'Está incompleto', 'Está vencido'];
+
+function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
+  const [exp, setExp] = useState(c.expediente);
+  const [archivosCandidato, setArchivosCandidato] = useState({});  // nombre → handle
+  const [archivosGH, setArchivosGH] = useState({});                // nombre → handle
+  const [guardando, setGuardando] = useState(false);
+  const [rechazando, setRechazando] = useState(null);              // { id, motivo } mientras escribe el motivo
+  const campoArchivo = useRef(null);
+  const destino = useRef(null);                                    // a qué ítem va el archivo que se está subiendo
+
+  /** Lee qué archivos hay en la carpeta del candidato y en su subcarpeta de GH. */
+  const leerArchivos = useCallback(async () => {
+    const enCarpeta = await listar(c.carpeta);
+    setArchivosCandidato(Object.fromEntries(enCarpeta.filter((x) => x.tipo === 'file').map((x) => [x.nombre, x.handle])));
+    const gh = enCarpeta.find((x) => x.tipo === 'directory' && x.nombre === C.gestionHumana);
+    setArchivosGH(gh ? Object.fromEntries((await listar(gh.handle)).filter((x) => x.tipo === 'file').map((x) => [x.nombre, x.handle])) : {});
+  }, [c]);
+
+  useEffect(() => {
+    leerArchivos();
+    const alTeclear = (ev) => ev.key === 'Escape' && !rechazando && onCerrar();
+    window.addEventListener('keydown', alTeclear);
+    return () => window.removeEventListener('keydown', alTeclear);
+  }, [c, rechazando]);
+
+  /**
+   * Hace un cambio en el expediente y lo guarda en la carpeta.
+   * - modificar(copia): función que cambia la copia del expediente.
+   * - accion: texto para la bitácora.
+   * - avanzarEstado: si el candidato está en "Recibido", pasa a "En revisión".
+   */
+  async function cambiar(modificar, accion, avanzarEstado = true) {
+    if (guardando) return false;
+    setGuardando(true);
+    try {
+      const copia = JSON.parse(JSON.stringify(exp));
+      copia.documentos = copia.documentos || {};
+      copia.gestionHumana = copia.gestionHumana || {};
+      modificar(copia);
+      if (avanzarEstado && copia.estado === 'recibido') copia.estado = 'revision';
+      anotar(copia, usuario, accion);
+      setExp(await guardarExpediente(c.carpeta, copia));
+      onCambio();
+      return true;
+    } catch (e) {
+      console.error(e);
+      if (e instanceof ErrorChoque) {
+        avisar(e.message, 'error');
+        try { setExp(await leerExpediente(c.carpeta)); } catch (x) { /* se queda con lo que tenía */ }
+      } else avisar(`No se pudo guardar: ${e.message}`, 'error');
+      return false;
+    } finally { setGuardando(false); }
+  }
+
+  /* ----- Documentos del candidato ----- */
+  function revisar(id, revision, motivo = '') {
+    const doc = nombreDocumento(id);
+    const texto = revision === 'aprobado' ? `Aprobó ${doc}` : revision === 'rechazado' ? `Rechazó ${doc}: ${motivo}` : `Dejó ${doc} sin revisar`;
+    cambiar((e) => { e.documentos[id].revision = revision; e.documentos[id].motivo = motivo; }, texto)
+      .then((ok) => ok && setRechazando(null));
+  }
+
+  /* ----- Archivos de Gestión Humana ----- */
+  function elegirArchivo(itemId) { destino.current = itemId; campoArchivo.current.click(); }
+
+  /** Pasa los archivos actuales de un ítem a _anteriores (para reemplazar o quitar sin perder nada). */
+  async function guardarAnteriores(nombres) {
+    if (!nombres.length) return;
+    const carpetaGH = await subcarpeta(c.carpeta, C.gestionHumana);
+    const anteriores = await subcarpeta(await subcarpeta(c.carpeta, C.anteriores), marcaDeTiempo());
+    for (const n of nombres) {
+      if (archivosGH[n]) await moverArchivo(archivosGH[n], carpetaGH, anteriores);
+    }
+  }
+
+  async function subirArchivo(archivo) {
+    const itemId = destino.current;
+    const item = ITEMS_GH[itemId];
+    if (!archivo || !item) return;
+    const tipo = await tipoDeArchivo(archivo);
+    if (!tipo) { avisar(`"${archivo.name}" no es PDF ni imagen JPG/PNG`, 'error'); return; }
+    if (archivo.size > CONFIG.tamanoMaximoGHMB * 1024 * 1024) { avisar(`Pesa ${tamanoLegible(archivo.size)}; el máximo es ${CONFIG.tamanoMaximoGHMB} MB`, 'error'); return; }
+    setGuardando(true);
+    try {
+      const anteriores = ((exp.gestionHumana || {})[itemId] || {}).archivos || [];
+      await guardarAnteriores(anteriores);
+      const nombre = `${exp.cedula}_GH_${textoParaArchivo(itemId)}.${tipo}`;
+      await escribir(await subcarpeta(c.carpeta, C.gestionHumana), nombre, archivo);
+    } catch (e) {
+      avisar(`No se pudo subir: ${e.message}`, 'error'); setGuardando(false); return;
+    }
+    setGuardando(false);
+    const nombre = `${exp.cedula}_GH_${textoParaArchivo(itemId)}.${tipo}`;
+    const reemplazo = (((exp.gestionHumana || {})[itemId] || {}).archivos || []).length > 0;
+    const ok = await cambiar((e) => {
+      e.gestionHumana[itemId] = { ...(e.gestionHumana[itemId] || {}), archivos: [nombre], fecha: new Date().toISOString(), por: usuario };
+    }, `${reemplazo ? 'Reemplazó' : 'Subió'} ${item.nombre}`);
+    if (ok) { await leerArchivos(); avisar(`${item.nombre}: guardado en la carpeta del candidato`); }
+  }
+
+  async function quitarArchivo(itemId) {
+    const item = ITEMS_GH[itemId];
+    setGuardando(true);
+    try { await guardarAnteriores(((exp.gestionHumana || {})[itemId] || {}).archivos || []); }
+    catch (e) { avisar(`No se pudo quitar: ${e.message}`, 'error'); setGuardando(false); return; }
+    setGuardando(false);
+    if (await cambiar((e) => { e.gestionHumana[itemId] = { ...(e.gestionHumana[itemId] || {}), archivos: [] }; }, `Quitó ${item.nombre} (quedó en ${C.anteriores})`)) leerArchivos();
+  }
+
+  function marcar(itemId, campo, valor, texto) {
+    cambiar((e) => { e.gestionHumana[itemId] = { ...(e.gestionHumana[itemId] || {}), [campo]: valor, fecha: new Date().toISOString(), por: usuario }; }, texto);
+  }
+
+  function cambiarModoInduccion(modo) {
+    cambiar((e) => { e.gestionHumana._induccion = { modo }; }, `Paquete de inducción: ${modo === 'unico' ? 'un solo PDF' : 'archivos separados'}`);
+  }
+
+  function cambiarEstado(estado) {
+    cambiar((e) => { e.estado = estado; }, `Cambió el estado a "${nombreEstado(estado)}"`, false);
+  }
+
+  /* ----- Piezas de la ficha ----- */
+  const gh = (exp && exp.gestionHumana) || {};
+  const modoInduccion = (gh._induccion || {}).modo || 'unico';
+  const av = avanceDe(exp);
+
+  /** Fila de un ítem con archivo: nombre, estado, y botones Subir / Ver / Quitar. */
+  const FilaArchivo = ({ itemId, titulo, pista, children }) => {
+    const archivos = (gh[itemId] || {}).archivos || [];
+    const tiene = archivos.length > 0;
+    return (
+      <div className="item-ficha">
+        <span className={`punto ${tiene ? 'hecho' : ''}`} aria-hidden="true">{tiene && <Icono nombre="listo" tamano={13} />}</span>
+        <div className="fila-texto">
+          <span className="item-titulo">{titulo || ITEMS_GH[itemId].nombre}</span>
+          <span className="nombre-archivo">{tiene ? `${archivos[0]} — ${(gh[itemId].por || '')}, ${fechaCorta(gh[itemId].fecha)}` : (pista || 'Falta subir el archivo')}</span>
+          {children}
+        </div>
+        <div className="item-botones">
+          {tiene && <button className="boton boton-texto" disabled={!archivosGH[archivos[0]]} onClick={() => abrirArchivo(archivosGH[archivos[0]])}>Ver</button>}
+          {tiene && <button className="boton boton-texto" disabled={guardando} onClick={() => quitarArchivo(itemId)}>Quitar</button>}
+          <button className={`boton ${tiene ? 'boton-secundario' : 'boton-suave'}`} disabled={guardando} onClick={() => elegirArchivo(itemId)}>
+            <Icono nombre="subir" tamano={16} /> {tiene ? 'Cambiar' : 'Subir'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  /** Casilla de chequeo (hecho / no hecho). */
+  const Casilla = ({ itemId, texto }) => {
+    const hecho = !!(gh[itemId] || {}).hecho;
+    return (
+      <label className="casilla">
+        <span>{texto || ITEMS_GH[itemId].nombre}
+          {hecho && gh[itemId].por && <small>{gh[itemId].por}, {fechaCorta(gh[itemId].fecha)}</small>}</span>
+        {/* Interruptor de iOS (es una casilla de chequeo con otro aspecto) */}
+        <input type="checkbox" role="switch" className="interruptor" checked={hecho} disabled={guardando}
+               onChange={() => marcar(itemId, 'hecho', !hecho, `${hecho ? 'Desmarcó' : 'Marcó'} "${texto || ITEMS_GH[itemId].nombre}"`)} />
+      </label>
+    );
+  };
+
+  if (!exp) {
+    return (
+      <>
+        <div className="velo" onClick={onCerrar} />
+        <aside className="detalle" role="dialog" aria-modal="true" aria-label="Candidato">
+          <div className="agarre" aria-hidden="true" />
+          <div className="detalle-cabeza"><h2>{nombreBonito(c.nombre)}</h2></div>
+          <div className="detalle-cuerpo"><div className="alerta error">{c.problema} Revisa la carpeta “{c.nombreCarpeta}” en OneDrive.</div>
+            <button className="boton boton-secundario" onClick={onCerrar}>Cerrar</button></div>
+        </aside>
+      </>
+    );
+  }
+
+  const docsOrdenados = Object.entries(exp.documentos || {})
+    .sort(([a], [b]) => CONFIG.documentos.findIndex((d) => d.id === a) - CONFIG.documentos.findIndex((d) => d.id === b));
+  const cerrado = exp.estado === 'contratado' || exp.estado === 'no_contratado';
+  const todoListo = av.total > 0 && av.hechos === av.total;
+
+  return (
+    <>
+      <div className="velo" onClick={onCerrar} />
+      <aside className="detalle ficha" role="dialog" aria-modal="true" aria-label={`Ficha de ${exp.nombre}`}>
+        <input ref={campoArchivo} type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" hidden
+               onChange={(e) => { subirArchivo(e.target.files[0]); e.target.value = ''; }} />
+
+        {/* Cabeza: nombre, estado y avance (barra de título de la hoja de iOS) */}
+        <div className="agarre" aria-hidden="true" />
+        <div className="detalle-cabeza">
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+            <div className="fila-texto">
+              <h2 style={{ overflowWrap: 'anywhere' }}>{nombreBonito(exp.nombre)}</h2>
+              <span className="fila-sub numeros">C.C. {exp.cedula} — {exp.cargo || 'sin cargo'}{exp.seccion ? `, ${exp.seccion}` : ''}{exp.primerEmpleo ? ' — primer empleo' : ''}</span>
+            </div>
+            <button className="boton boton-texto" style={{ fontWeight: 600, fontSize: 17 }} onClick={onCerrar}>Listo</button>
+          </div>
+          <div className="cabeza-estado">
+            <select className={`selector selector-estado e-${exp.estado}`} value={exp.estado} disabled={guardando}
+                    onChange={(e) => cambiarEstado(e.target.value)} aria-label="Estado del candidato">
+              {CONFIG.estados.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+            </select>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="cana cana-ancha" aria-hidden="true">{av.nudos.map((n, i) => <span key={i} className={`nudo ${n}`} />)}</div>
+              <div className="avance-texto">{av.hechos} de {av.total} listos{guardando ? ' — guardando…' : ''}</div>
+            </div>
+          </div>
+          {todoListo && !cerrado && exp.estado !== 'completo' && (
+            <div className="mensaje info listo-banner">
+              Todo está completo.
+              <button className="boton boton-principal" onClick={() => cambiarEstado('completo')}>Marcar como Completo</button>
+            </div>
+          )}
+        </div>
+
+        <div className="detalle-cuerpo">
+          {/* 1. Documentos que mandó el candidato */}
+          <section>
+            <h3>Documentos del candidato</h3>
+            <p className="nota-seccion">Ábrelos con Ver y marca cada uno. Lo rechazado se le pedirá corregir (parte 3).</p>
+            <div className="tarjeta">
+              {docsOrdenados.map(([id, doc]) => (
+                <div key={id} className="item-ficha">
+                  <span className={`punto ${doc.revision === 'aprobado' ? 'hecho' : doc.revision === 'rechazado' ? 'malo' : ''}`} aria-hidden="true">
+                    {doc.revision === 'aprobado' && <Icono nombre="listo" tamano={13} />}{doc.revision === 'rechazado' && <Icono nombre="cerrar" tamano={12} />}
+                  </span>
+                  <div className="fila-texto">
+                    <span className="item-titulo">{nombreDocumento(id)}</span>
+                    <span className="nombre-archivo">
+                      {doc.archivos.map((n, i) => (
+                        <button key={n} className="enlace-archivo" disabled={!archivosCandidato[n]} onClick={() => abrirArchivo(archivosCandidato[n])}>
+                          Ver{doc.archivos.length > 1 ? ` ${i + 1}` : ''}
+                        </button>
+                      ))}
+                      {doc.conContrasena ? ' — tiene contraseña' : ''}{!doc.revisadoAutomaticamente ? ' — revísalo con cuidado' : ''}
+                    </span>
+                    {doc.revision === 'rechazado' && doc.motivo && <span className="motivo-texto">Motivo: {doc.motivo}</span>}
+                    {rechazando && rechazando.id === id && (
+                      <div className="caja-motivo">
+                        <div className="chips">
+                          {MOTIVOS_RAPIDOS.map((m) => <button key={m} className="chip" onClick={() => setRechazando({ id, motivo: m })}>{m}</button>)}
+                        </div>
+                        <input autoFocus value={rechazando.motivo} maxLength={160} placeholder="¿Por qué se rechaza? El candidato lo verá"
+                               onChange={(e) => setRechazando({ id, motivo: e.target.value })}
+                               onKeyDown={(e) => { if (e.key === 'Enter' && rechazando.motivo.trim()) revisar(id, 'rechazado', rechazando.motivo.trim()); if (e.key === 'Escape') setRechazando(null); }} />
+                        <div className="acciones">
+                          <button className="boton boton-secundario" onClick={() => setRechazando(null)}>Cancelar</button>
+                          <button className="boton boton-principal" disabled={!rechazando.motivo.trim() || guardando} onClick={() => revisar(id, 'rechazado', rechazando.motivo.trim())}>Rechazar</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="segmento" role="group" aria-label={`Revisión de ${nombreDocumento(id)}`}>
+                    <button aria-pressed={doc.revision === 'aprobado'} disabled={guardando}
+                            onClick={() => revisar(id, doc.revision === 'aprobado' ? 'pendiente' : 'aprobado')}>Aprobar</button>
+                    <button aria-pressed={doc.revision === 'rechazado'} className="rechazar" disabled={guardando}
+                            onClick={() => doc.revision === 'rechazado' ? revisar(id, 'pendiente') : setRechazando({ id, motivo: '' })}>Rechazar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* 2. Archivos que sube Gestión Humana */}
+          <section>
+            <h3>Documentos de Gestión Humana</h3>
+            <p className="nota-seccion">Descárgalos de cada plataforma y súbelos aquí. Quedan en la carpeta del candidato, en “{C.gestionHumana}”.</p>
+            <div className="tarjeta">
+              {CONFIG.checklistGH.filter((i) => i.tipo === 'archivo').map((i) => <FilaArchivo key={i.id} itemId={i.id} />)}
+              {exp.primerEmpleo ? (
+                <FilaArchivo itemId="pension" pista="Primer empleo: sube la afiliación al fondo de pensión" />
+              ) : (
+                <FilaArchivo itemId="pension" titulo="Pensión" pista="Ya trabajó antes: marca si ya está afiliado (subir el certificado es opcional)">
+                  <Casilla itemId="pension" texto="Ya está afiliado a un fondo de pensión" />
+                </FilaArchivo>
+              )}
+            </div>
+          </section>
+
+          {/* 3. Paquete de inducción */}
+          <section>
+            <h3>Paquete de inducción</h3>
+            <div className="segmento segmento-ancho" role="group" aria-label="Cómo llegó el paquete de inducción">
+              <button aria-pressed={modoInduccion === 'unico'} disabled={guardando} onClick={() => modoInduccion !== 'unico' && cambiarModoInduccion('unico')}>Un solo PDF</button>
+              <button aria-pressed={modoInduccion === 'separado'} disabled={guardando} onClick={() => modoInduccion !== 'separado' && cambiarModoInduccion('separado')}>Archivos separados</button>
+            </div>
+            <div className="tarjeta" style={{ marginTop: 10 }}>
+              {modoInduccion === 'unico' ? (
+                <FilaArchivo itemId="paquete_induccion">
+                  <div className="casillas">
+                    {CONFIG.checklistGH.filter((i) => i.tipo === 'induccion').map((i) => <Casilla key={i.id} itemId={i.id} texto={`${i.nombre}: revisado`} />)}
+                  </div>
+                </FilaArchivo>
+              ) : CONFIG.checklistGH.filter((i) => i.tipo === 'induccion').map((i) => (
+                <FilaArchivo key={i.id} itemId={i.id}><Casilla itemId={i.id} texto="Revisado" /></FilaArchivo>
+              ))}
+            </div>
+          </section>
+
+          {/* 4. Chequeos */}
+          <section>
+            <h3>Chequeos</h3>
+            <div className="tarjeta">
+              {CONFIG.checklistGH.filter((i) => i.tipo === 'apto').map((i) => {
+                const valor = (gh[i.id] || {}).valor || '';
+                return (
+                  <div key={i.id} className="item-ficha">
+                    <span className={`punto ${valor === 'apto' ? 'hecho' : valor === 'no_apto' ? 'malo' : ''}`} aria-hidden="true">{valor === 'apto' && <Icono nombre="listo" tamano={13} />}</span>
+                    <div className="fila-texto"><span className="item-titulo">{i.nombre}</span>
+                      {valor && <span className="nombre-archivo">{gh[i.id].por}, {fechaCorta(gh[i.id].fecha)}</span>}</div>
+                    <div className="segmento" role="group" aria-label={i.nombre}>
+                      <button aria-pressed={valor === 'apto'} disabled={guardando} onClick={() => marcar(i.id, 'valor', valor === 'apto' ? '' : 'apto', `${i.nombre}: ${valor === 'apto' ? 'sin dato' : 'apto'}`)}>Apto</button>
+                      <button aria-pressed={valor === 'no_apto'} className="rechazar" disabled={guardando} onClick={() => marcar(i.id, 'valor', valor === 'no_apto' ? '' : 'no_apto', `${i.nombre}: ${valor === 'no_apto' ? 'sin dato' : 'no apto'}`)}>No apto</button>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="item-ficha"><div className="casillas" style={{ gridColumn: '1 / -1' }}>
+                {CONFIG.checklistGH.filter((i) => i.tipo === 'chequeo').map((i) => <Casilla key={i.id} itemId={i.id} />)}
+              </div></div>
+            </div>
+          </section>
+
+          {/* 5. Bitácora */}
+          <section>
+            <h3>Bitácora</h3>
+            <ul className="bitacora" style={{ marginTop: 10 }}>
+              {[...(exp.bitacora || [])].reverse().map((b, i) => (
+                <li key={i}><div>{b.accion}<span>{b.usuario}, {fechaCorta(b.fecha)}</span></div></li>
+              ))}
+            </ul>
+            <p className="nota-seccion" style={{ marginTop: 12 }}>Carpeta: {C.candidatos} / {c.nombreCarpeta}</p>
+          </section>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+/* ---------- Diálogo para cambiar el nombre ---------- */
+function DialogoNombre({ actual, onGuardar, onCancelar }) {
+  const [valor, setValor] = useState(actual);
+  return (
+    <div className="dialogo-fondo" onClick={onCancelar}>
+      <div className="dialogo" role="dialog" aria-modal="true" aria-labelledby="titulo-nombre" onClick={(e) => e.stopPropagation()}>
+        <h2 id="titulo-nombre">¿Quién está usando el panel?</h2>
+        <p>Este nombre queda en la bitácora de cada candidato que toques.</p>
+        <div className="campo">
+          <label htmlFor="nuevo-nombre">Tu nombre</label>
+          <input id="nuevo-nombre" autoFocus value={valor} maxLength={60} onChange={(e) => setValor(e.target.value)}
+                 onKeyDown={(e) => e.key === 'Enter' && valor.trim() && onGuardar(valor.trim())} />
+        </div>
+        <div className="acciones" style={{ justifyContent: 'flex-end' }}>
+          <button className="boton boton-secundario" onClick={onCancelar}>Cancelar</button>
+          <button className="boton boton-principal" disabled={!valor.trim()} onClick={() => onGuardar(valor.trim())}>Guardar nombre</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ==========================================================================
+   10. APP PRINCIPAL
+   ========================================================================== */
+function App() {
+  const [fase, setFase] = useState('cargando');      // cargando | arranque | listo
+  const [raiz, setRaiz] = useState(null);             // carpeta "Hojas de vida"
+  const [usuario, setUsuario] = useState('');
+  const [modoEjemplo, setModoEjemplo] = useState(null); // null = carpeta real
+  const [recordada, setRecordada] = useState(null);   // carpeta recordada (pide permiso)
+  const [errorArranque, setErrorArranque] = useState('');
+  const [vista, setVista] = useState('bandeja');
+  const [bandeja, setBandeja] = useState([]);
+  const [candidatos, setCandidatos] = useState([]);
+  const [cargando, setCargando] = useState(false);
+  const [procesando, setProcesando] = useState(false);
+  const [lote, setLote] = useState(null);
+  const [abierto, setAbierto] = useState(null);
+  const [aviso, setAviso] = useState(null);
+  const [editarNombre, setEditarNombre] = useState(false);
+  const temporizador = useRef(null);
+
+  /** Muestra un aviso abajo por unos segundos. */
+  const avisar = useCallback((texto, tipo = 'ok') => {
+    setAviso({ texto, tipo });
+    clearTimeout(temporizador.current);
+    temporizador.current = setTimeout(() => setAviso(null), tipo === 'error' ? 7000 : 3500);
+  }, []);
+
+  // Al abrir: ¿hay una carpeta recordada?
+  useEffect(() => {
+    (async () => {
+      const [carpeta, u] = await Promise.all([recuperar('carpeta'), recuperar('usuario')]);
+      if (u) setUsuario(u);
+      if (carpeta && u) setRecordada(carpeta);
+      setFase('arranque');
+    })();
+  }, []);
+
+  /** Lee de nuevo la bandeja y los candidatos. */
+  const recargar = useCallback(async (carpeta = raiz) => {
+    if (!carpeta) return;
+    setCargando(true);
+    try {
+      const items = await buscarEnRecibidos(carpeta);
+      setBandeja(items);
+      setCandidatos(await leerCandidatos(carpeta));
+      // Revisa cada archivo de la bandeja (se van mostrando a medida que terminan)
+      const revisados = [];
+      for (const item of items) revisados.push({ ...item, analisis: await analizarArchivo(item, carpeta) });
+      setBandeja(revisados);
+    } catch (e) {
+      console.error(e);
+      avisar(`No se pudo leer la carpeta: ${e.message}`, 'error');
+    } finally { setCargando(false); }
+  }, [raiz, avisar]);
+
+  /** Lee de nuevo solo el listado de candidatos (después de cambiar una ficha). */
+  const recargarCandidatos = useCallback(async () => {
+    if (raiz) setCandidatos(await leerCandidatos(raiz));
+  }, [raiz]);
+
+  /** Empieza a trabajar con una carpeta (real o de ejemplo). */
+  async function entrar(carpeta, nombreUsuario, ejemplo = null) {
+    const creadas = await prepararEstructura(carpeta);
+    setRaiz(carpeta); setUsuario(nombreUsuario); setModoEjemplo(ejemplo);
+    setVista('bandeja'); setFase('listo'); setErrorArranque('');
+    if (!ejemplo) {
+      await recordar('carpeta', carpeta);
+      await recordar('usuario', nombreUsuario);
+      if (creadas.length) avisar(`Se crearon las carpetas: ${creadas.join(', ')}`);
+    }
+    await recargar(carpeta);
+  }
+
+  async function alElegirCarpeta(carpeta, nombreUsuario, error) {
+    if (error || !carpeta) {
+      setErrorArranque(error && error.name === 'SecurityError'
+        ? 'El navegador no deja abrir carpetas desde esta vista previa. Abre el panel en su propia pestaña (GitHub Pages).'
+        : `No se pudo abrir la carpeta: ${error ? error.message : ''}`);
+      return;
+    }
+    try { await entrar(carpeta, nombreUsuario); }
+    catch (e) { setErrorArranque(`No se pudo preparar la carpeta: ${e.message}`); }
+  }
+
+  async function reabrir(opcion) {
+    if (opcion === 'otra') { setRecordada(null); return; }
+    try {
+      const permiso = await recordada.requestPermission({ mode: 'readwrite' });
+      if (permiso !== 'granted') { setErrorArranque('Sin permiso no se puede leer la carpeta. Vuelve a intentarlo y acepta.'); return; }
+      await entrar(recordada, usuario);
+    } catch (e) {
+      setErrorArranque('No se encontró la carpeta. Puede que la hayan movido o renombrado: elígela de nuevo.');
+      setRecordada(null);
+    }
+  }
+
+  async function abrirEjemplo(nombreUsuario, modo = 'normal') {
+    setFase('cargando');
+    const carpeta = await crearCarpetaDeEjemplo(modo);
+    await entrar(carpeta, nombreUsuario, modo);
+  }
+
+  /** Procesa un paquete de la bandeja. */
+  async function procesar(item, silencioso = false) {
+    setProcesando(true);
+    try {
+      const r = await procesarZip(raiz, item, usuario);
+      if (!silencioso) avisar(r.esNuevo ? `${nombreBonito(r.nombre)} ya está en Candidatos` : `Se actualizó a ${nombreBonito(r.nombre)}`);
+      return true;
+    } catch (e) {
+      console.error(e);
+      avisar(e instanceof ErrorChoque ? e.message : `No se pudo procesar ${item.nombre}: ${e.message}`, 'error');
+      return false;
+    } finally {
+      setProcesando(false);
+      if (!silencioso) await recargar();
+    }
+  }
+
+  async function procesarTodos() {
+    const listos = bandeja.filter((x) => x.analisis && x.analisis.tipo === 'envio');
+    let bien = 0;
+    for (let i = 0; i < listos.length; i++) {
+      setLote({ hechos: i, total: listos.length });
+      if (await procesar(listos[i], true)) bien++;
+    }
+    setLote(null);
+    await recargar();
+    avisar(bien === listos.length ? `Se procesaron ${plural(bien, 'paquete', 'paquetes')}` : `Se procesaron ${bien} de ${listos.length}; revisa los que quedaron`, bien === listos.length ? 'ok' : 'error');
+  }
+
+  /**
+   * Agrega ZIP a mano (botón "Agregar ZIP" o arrastrando): los copia a la
+   * carpeta Recibidos, como si hubieran llegado por el link de OneDrive.
+   */
+  async function agregarArchivos(archivos) {
+    const zips = archivos.filter((f) => /\.zip$/i.test(f.name));
+    if (!zips.length) { avisar('Solo se pueden agregar archivos .zip', 'error'); return; }
+    try {
+      const recibidos = await subcarpeta(raiz, C.recibidos);
+      for (const f of zips) await escribir(recibidos, await nombreLibre(recibidos, f.name), f);
+      avisar(`${plural(zips.length, 'ZIP agregado', 'ZIP agregados')} a Recibidos`);
+      if (zips.length < archivos.length) avisar(`Se agregaron ${zips.length}; los que no eran .zip se ignoraron`, 'error');
+    } catch (e) {
+      avisar(`No se pudo agregar: ${e.message}`, 'error');
+    }
+    await recargar();
+  }
+
+  async function guardarNombre(nombre) {
+    setUsuario(nombre); setEditarNombre(false);
+    if (!modoEjemplo) await recordar('usuario', nombre);
+  }
+
+  function salir() {
+    setRaiz(null); setBandeja([]); setCandidatos([]); setAbierto(null);
+    if (!modoEjemplo) setRecordada(null);
+    setModoEjemplo(null); setFase('arranque');
+  }
+
+  if (fase === 'cargando') {
+    return <div className="vacio" style={{ minHeight: '100vh', justifyContent: 'center' }}><span className="girando"><Icono nombre="cargando" tamano={28} /></span><p>Preparando…</p></div>;
+  }
+  if (fase === 'arranque') {
+    return <PantallaArranque onCarpeta={alElegirCarpeta} onEjemplo={(u) => abrirEjemplo(u)}
+                             carpetaRecordada={recordada && recordada.name} onReabrir={reabrir} error={errorArranque} />;
+  }
+
+  const pendientes = bandeja.filter((x) => !x.analisis || x.analisis.tipo !== 'invalido').length;
+  return (
+    <div className="marco">
+      <BarraLateral vista={vista} setVista={setVista} pendientes={pendientes} usuario={usuario}
+                    carpeta={raiz && raiz.name} esEjemplo={!!modoEjemplo}
+                    onCambiarUsuario={() => setEditarNombre(true)} onSalir={salir} />
+      <main className="trabajo">
+        {vista === 'bandeja' && (
+          <Bandeja items={bandeja} cargando={cargando} onRecargar={() => recargar()} onProcesar={(i) => procesar(i)}
+                   onProcesarTodos={procesarTodos} procesando={procesando} lote={lote} onAgregar={agregarArchivos} />
+        )}
+        {vista === 'candidatos' && (
+          <Candidatos lista={candidatos} cargando={cargando} onAbrir={setAbierto} onRecargar={() => recargar()} />
+        )}
+      </main>
+      {abierto && <Ficha c={abierto} usuario={usuario} avisar={avisar} onCambio={recargarCandidatos} onCerrar={() => setAbierto(null)} />}
+      {editarNombre && <DialogoNombre actual={usuario} onGuardar={guardarNombre} onCancelar={() => setEditarNombre(false)} />}
+      {aviso && (
+        <div className={`aviso-flotante ${aviso.tipo === 'error' ? 'error' : ''} ${modoEjemplo ? 'sobre-selector' : ''}`} role="status">
+          {aviso.tipo !== 'error' && <Icono nombre="listo" tamano={18} />}{aviso.texto}
+        </div>
+      )}
+      {modoEjemplo && (
+        <div className="selector-prueba" role="group" aria-label="Datos de ejemplo">
+          {[['normal', 'Normal'], ['peor', 'Peor caso'], ['vacio', 'Vacío'], ['uno', 'Uno']].map(([id, texto]) => (
+            <button key={id} aria-pressed={modoEjemplo === id} onClick={() => abrirEjemplo(usuario, id)}>{texto}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('raiz')).render(<App />);
+</script>
+</body>
+</html>

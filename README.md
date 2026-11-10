@@ -7,6 +7,7 @@ Página para que los candidatos de **Supertiendas Cañaveral S.A.S.** preparen y
 | Archivo | Qué es |
 |---|---|
 | [`index.html`](index.html) | La página de documentos de ingreso (todo en un solo archivo). |
+| [`panel-gh.html`](panel-gh.html) | **Panel de Gestión Humana**: recibe los ZIP de los candidatos desde la carpeta de OneDrive, los revisa y lleva el avance de cada uno. Se abre en Chrome o Edge de computador: https://felipeanali.github.io/GuiadearchivosHV/panel-gh.html |
 | [`manual/Manual_candidato_Documentos_de_ingreso.pdf`](manual/Manual_candidato_Documentos_de_ingreso.pdf) | Manual del candidato, paso a paso con imágenes. |
 | [`src/app.jsx`](src/app.jsx) | Código fuente de la app (se compila dentro de `index.html`). |
 | [`herramientas/compilar.js`](herramientas/compilar.js) | Compila `src/app.jsx` y lo pone en `index.html`. |
