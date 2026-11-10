@@ -18,13 +18,18 @@
     3. PROCESAR: saca los archivos del ZIP a la carpeta del candidato
        (Candidatos/1144123456_LAURA_GOMEZ), crea su "expediente.json" y mueve
        el ZIP a "Recibidos/Procesados". No se borra nada.
-    4. CANDIDATOS: listado con búsqueda, estado, avance y días esperando.
+    4. CANDIDATOS: listado con búsqueda, estado, avance y días esperando. Solo
+       muestra a los que están EN PROCESO (Recibido, En revisión, Con correcciones).
+       LISTOS: cuando un candidato pasa a "Completo" o "Contratado", sale de
+       Candidatos y aparece en "Listos" (su carpeta no se mueve: sigue en Candidatos).
     5. FICHA: aprobar o rechazar (con motivo) cada documento del candidato,
        subir los archivos de GH (SAGRILAFT, ARL, EPS, caja, pensión, paquete
        de inducción), marcar los chequeos (examen médico, ERP, Cronoseg) y
        cambiar el estado. Todo queda en expediente.json y en la bitácora.
        Los archivos de GH se guardan en Candidatos/<cédula>_<NOMBRE>/Gestion_Humana.
        Muestra el celular y el correo del candidato si los mandó.
+       "Descargar ZIP" arma un solo ZIP con todo el candidato: sus documentos,
+       los de Gestión Humana, un resumen en texto y el expediente.json.
     6. CORRECCIONES: desde la ficha, "Pedir correcciones" arma un link a la app
        del candidato (solo con los documentos rechazados o faltantes) y un mensaje
        para copiar, mandar por WhatsApp o por correo. Cuando el candidato sube su
@@ -34,7 +39,7 @@
        sección 6 (CONTRATO con la app del candidato).
 
   LO QUE LLEGA EN LAS SIGUIENTES PARTES:
-    4. Entrega final en ZIP o en un solo PDF.
+    4. Entrega final en un solo PDF (el ZIP ya está: "Descargar ZIP" en la ficha).
     5. Historial, conservación y ajustes.
 
   PRIVACIDAD:
@@ -64,8 +69,8 @@
                        link y el mensaje, y procesar los ZIP de corrección.
     7. CANDIDATOS      Leer el listado y calcular el avance.
     8. EJEMPLO         Carpeta falsa en memoria con datos de prueba.
-    9. PANTALLAS       Inicio, Bandeja, Candidatos, Ficha del candidato y la
-                       hoja "Pedir correcciones".
+    9. PANTALLAS       Inicio, Bandeja, Candidatos (en proceso), Listos, Ficha
+                       del candidato (con "Descargar ZIP") y la hoja "Pedir correcciones".
    10. APP PRINCIPAL   Decide qué pantalla mostrar.
   ============================================================================
 -->
@@ -1340,6 +1345,37 @@ function avanceDe(expediente) {
   return { total: nudos.length, hechos: nudos.filter((n) => n === 'aprobado').length, nudos };
 }
 
+/**
+ * Resumen en texto del candidato (va como 00_RESUMEN.txt en el ZIP de "Descargar ZIP"):
+ * datos, estado de cada documento y de cada ítem del checklist de Gestión Humana.
+ */
+function resumenDelCandidato(exp) {
+  const marcaDoc = { aprobado: 'APROBADO', rechazado: 'RECHAZADO', pendiente: 'pendiente' };
+  const marcaGH = { hecho: 'listo', malo: 'NO APTO', pendiente: 'pendiente' };
+  const lineas = [
+    'EXPEDIENTE DE INGRESO — Supertiendas Cañaveral S.A.S.',
+    '',
+    `Nombre:        ${nombreBonito(exp.nombre)}`,
+    `Cédula:        ${exp.cedula}`,
+    `Cargo:         ${exp.cargo || '—'}${exp.seccion ? `, ${exp.seccion}` : ''}`,
+    `Celular:       ${exp.celular || '—'}`,
+    `Correo:        ${exp.correo || '—'}`,
+    `Primer empleo: ${exp.primerEmpleo ? 'Sí' : 'No'}`,
+    `Estado:        ${nombreEstado(exp.estado)}`,
+    `Descargado:    ${fechaCorta(new Date())}`,
+    '',
+    'DOCUMENTOS DEL CANDIDATO (carpeta 1_Documentos_del_candidato)',
+    ...CONFIG.documentos.filter((d) => (exp.documentos || {})[d.id]).map((d) => {
+      const doc = exp.documentos[d.id];
+      return `  - ${d.nombre}: ${marcaDoc[doc.revision] || doc.revision}${doc.motivo ? ` (${doc.motivo})` : ''} — ${doc.archivos.join(', ')}`;
+    }),
+    '',
+    'GESTIÓN HUMANA (carpeta 2_Gestion_Humana)',
+    ...CONFIG.checklistGH.map((i) => `  - ${i.nombre}: ${marcaGH[estadoItemGH(exp, i)]}`),
+  ];
+  return lineas.join('\r\n');
+}
+
 /* ==========================================================================
    8. CARPETA DE EJEMPLO (en memoria)
    Imita una carpeta del computador con las mismas funciones (entries,
@@ -1675,6 +1711,7 @@ function PantallaArranque({ onCarpeta, onEjemplo, carpetaRecordada, onReabrir, e
 
 /* ---------- Barra lateral ---------- */
 function BarraLateral({ vista, setVista, pendientes, totalCandidatos, usuario, carpeta, esEjemplo, onCambiarUsuario, onSalir }) {
+  // "Listos" va debajo de Candidatos: ahí pasan los que llegan a Completo o Contratado
   const Item = ({ id, icono, texto, cifra, pronto }) => (
     <button className="menu-item" aria-current={vista === id ? 'page' : undefined} disabled={pronto} onClick={() => setVista(id)}>
       <Icono nombre={icono} /><span className="etiqueta">{texto}</span>
@@ -1686,6 +1723,7 @@ function BarraLateral({ vista, setVista, pendientes, totalCandidatos, usuario, c
       <img className="logo" src={LOGO} alt="Supertiendas Cañaveral" />
       <Item id="bandeja" icono="bandeja" texto="Bandeja" cifra={pendientes} />
       <Item id="candidatos" icono="personas" texto="Candidatos" cifra={0} />
+      <Item id="listos" icono="listo" texto="Listos" cifra={0} />
       <Item id="historial" icono="historial" texto="Historial" pronto="Parte 5" />
       <Item id="ajustes" icono="ajustes" texto="Ajustes" pronto="Parte 5" />
       <div className="lateral-pie">
@@ -1797,8 +1835,16 @@ function FilaBandeja({ item, onProcesar, procesando }) {
 
 /* ---------- Listado de candidatos ---------- */
 const FILTRO_ACTIVOS = 'activos';
+/** Estados que cuentan como "listo": salen de Candidatos y pasan a la vista Listos. */
+const ESTADOS_LISTOS = ['completo', 'contratado'];
 
-function Candidatos({ lista, cargando, onAbrir, onRecargar }) {
+/**
+ * Listado con búsqueda. Se usa para dos vistas:
+ *   modo 'proceso' → Candidatos: solo los que siguen en proceso (por defecto).
+ *   modo 'listos'  → Listos: los que llegaron a "Completo" o "Contratado".
+ */
+function Candidatos({ lista, cargando, onAbrir, onRecargar, modo = 'proceso' }) {
+  const enListos = modo === 'listos';
   const [busqueda, setBusqueda] = useState('');
   const [filtro, setFiltro] = useState(FILTRO_ACTIVOS);
 
@@ -1807,7 +1853,9 @@ function Candidatos({ lista, cargando, onAbrir, onRecargar }) {
     return lista
       .filter((c) => {
         const estado = c.expediente ? c.expediente.estado : null;
-        if (filtro === FILTRO_ACTIVOS && (estado === 'contratado' || estado === 'no_contratado')) return false;
+        // Cada vista solo muestra lo suyo; los listos nunca se mezclan con los que están en proceso
+        if (enListos !== ESTADOS_LISTOS.includes(estado)) return false;
+        if (filtro === FILTRO_ACTIVOS && estado === 'no_contratado') return false;
         if (filtro !== FILTRO_ACTIVOS && filtro !== 'todos' && estado !== filtro) return false;
         if (!q) return true;
         return paraBuscar(`${c.nombre} ${c.cedula} ${c.expediente ? c.expediente.cargo : ''}`).includes(q);
@@ -1818,16 +1866,19 @@ function Candidatos({ lista, cargando, onAbrir, onRecargar }) {
         const fecha = (c) => c.expediente ? new Date(c.expediente.creado).getTime() : 0;
         return grupo(a) - grupo(b) || fecha(a) - fecha(b);
       });
-  }, [lista, busqueda, filtro]);
+  }, [lista, busqueda, filtro, enListos]);
 
   const cuenta = (id) => lista.filter((c) => c.expediente && c.expediente.estado === id).length;
+  const deEstaVista = lista.filter((c) => enListos === ESTADOS_LISTOS.includes(c.expediente && c.expediente.estado));
 
   return (
     <>
       <header className="encabezado">
         <div>
-          <h1>Candidatos</h1>
-          <p>{plural(lista.length, 'candidato', 'candidatos')} en la carpeta. Los que llevan más días esperando aparecen primero.</p>
+          <h1>{enListos ? 'Listos' : 'Candidatos'}</h1>
+          <p>{enListos
+            ? `${plural(deEstaVista.length, 'candidato listo', 'candidatos listos')} (Completo o Contratado).`
+            : `${plural(deEstaVista.length, 'candidato', 'candidatos')} en proceso. Los que llevan más días esperando aparecen primero.`}</p>
         </div>
         <button className="boton boton-secundario" onClick={onRecargar} disabled={cargando}><Icono nombre="recargar" tamano={18} /> Actualizar</button>
       </header>
@@ -1835,9 +1886,10 @@ function Candidatos({ lista, cargando, onAbrir, onRecargar }) {
         <input className="buscador" type="search" value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
                placeholder="Buscar por nombre, cédula o cargo" aria-label="Buscar candidato" />
         <select className="selector" value={filtro} onChange={(e) => setFiltro(e.target.value)} aria-label="Filtrar por estado">
-          <option value={FILTRO_ACTIVOS}>En proceso</option>
-          <option value="todos">Todos ({lista.length})</option>
-          {CONFIG.estados.map((e) => <option key={e.id} value={e.id}>{e.nombre} ({cuenta(e.id)})</option>)}
+          <option value={FILTRO_ACTIVOS}>{enListos ? 'Todos los listos' : 'En proceso'}</option>
+          {!enListos && <option value="todos">Incluir no contratados</option>}
+          {CONFIG.estados.filter((e) => enListos === ESTADOS_LISTOS.includes(e.id))
+            .map((e) => <option key={e.id} value={e.id}>{e.nombre} ({cuenta(e.id)})</option>)}
         </select>
       </div>
       {visibles.length > 0 && (
@@ -1849,8 +1901,10 @@ function Candidatos({ lista, cargando, onAbrir, onRecargar }) {
         {!visibles.length ? (
           <div className="vacio">
             <div className="icono-caja"><Icono nombre="personas" tamano={28} /></div>
-            <h3>{lista.length ? 'Ningún candidato coincide' : 'Aún no hay candidatos'}</h3>
-            <p>{lista.length ? 'Prueba con otra búsqueda o cambia el filtro de estado.' : 'Procesa un paquete de la bandeja y el candidato aparecerá aquí.'}</p>
+            <h3>{deEstaVista.length ? 'Ningún candidato coincide' : enListos ? 'Aún no hay candidatos listos' : 'No hay candidatos en proceso'}</h3>
+            <p>{deEstaVista.length ? 'Prueba con otra búsqueda o cambia el filtro de estado.'
+              : enListos ? 'Cuando marques a un candidato como Completo, pasa aquí.'
+              : 'Procesa un paquete de la bandeja y el candidato aparecerá aquí.'}</p>
           </div>
         ) : (
           visibles.map((c) => <FilaCandidato key={c.nombreCarpeta} c={c} onAbrir={onAbrir} />)
@@ -1911,6 +1965,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
   const [guardando, setGuardando] = useState(false);
   const [rechazando, setRechazando] = useState(null);              // { id, motivo } mientras escribe el motivo
   const [pidiendo, setPidiendo] = useState(false);                 // hoja "Pedir correcciones" abierta
+  const [descargando, setDescargando] = useState(false);           // armando el ZIP del expediente
   const campoArchivo = useRef(null);
   const destino = useRef(null);                                    // a qué ítem va el archivo que se está subiendo
 
@@ -2022,7 +2077,42 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
   }
 
   function cambiarEstado(estado) {
-    cambiar((e) => { e.estado = estado; }, `Cambió el estado a "${nombreEstado(estado)}"`, false);
+    cambiar((e) => { e.estado = estado; }, `Cambió el estado a "${nombreEstado(estado)}"`, false)
+      .then((ok) => ok && ESTADOS_LISTOS.includes(estado) && !ESTADOS_LISTOS.includes(exp.estado)
+        && avisar(`${nombreBonito(exp.nombre)} pasó a Listos`));
+  }
+
+  /**
+   * Arma y descarga UN solo ZIP con todo el candidato:
+   *   1_Documentos_del_candidato/  los archivos actuales de cada documento (no los de _anteriores)
+   *   2_Gestion_Humana/            lo que subió Gestión Humana
+   *   00_RESUMEN.txt               estado de cada documento y del checklist, para leerlo rápido
+   *   expediente.json              el expediente completo
+   * No cambia nada en la carpeta; solo anota en la bitácora que se descargó.
+   */
+  async function descargarZip() {
+    setDescargando(true);
+    try {
+      const zip = new JSZip();
+      for (const [, doc] of docsOrdenados) {
+        for (const n of doc.archivos) {
+          if (archivosCandidato[n]) zip.file(`1_Documentos_del_candidato/${n}`, await archivosCandidato[n].getFile());
+        }
+      }
+      for (const [n, handle] of Object.entries(archivosGH)) zip.file(`2_Gestion_Humana/${n}`, await handle.getFile());
+      zip.file('00_RESUMEN.txt', resumenDelCandidato(exp));
+      zip.file('expediente.json', JSON.stringify(exp, null, 2));
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+      const url = URL.createObjectURL(blob);
+      const enlace = document.createElement('a');
+      enlace.href = url;
+      enlace.download = `${exp.cedula}_${textoParaArchivo(exp.nombre, 40)}_EXPEDIENTE.zip`;
+      document.body.appendChild(enlace); enlace.click(); enlace.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+      await cambiar(() => {}, 'Descargó el expediente completo en ZIP', false);
+    } catch (e) {
+      avisar(`No se pudo armar el ZIP: ${e.message}`, 'error');
+    } finally { setDescargando(false); }
   }
 
   /** Registra en el expediente la corrección pedida (la llama la hoja "Pedir correcciones"). */
@@ -2119,7 +2209,12 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
                 </span>
               )}
             </div>
-            <button className="boton boton-texto" style={{ fontWeight: 600, fontSize: 17 }} onClick={onCerrar}>Listo</button>
+            <div className="acciones">
+              <button className="boton boton-secundario" disabled={descargando || guardando} onClick={descargarZip}>
+                <Icono nombre={descargando ? 'cargando' : 'paquete'} tamano={16} /> {descargando ? 'Armando…' : 'Descargar ZIP'}
+              </button>
+              <button className="boton boton-texto" style={{ fontWeight: 600, fontSize: 17 }} onClick={onCerrar}>Listo</button>
+            </div>
           </div>
           <div className="cabeza-estado">
             <select className={`selector selector-estado e-${exp.estado}`} value={exp.estado} disabled={guardando}
@@ -2599,6 +2694,9 @@ function App() {
         {vista === 'bandeja' && (
           <Bandeja items={bandeja} cargando={cargando} onRecargar={() => recargar()} onProcesar={(i) => procesar(i)}
                    onProcesarTodos={procesarTodos} procesando={procesando} lote={lote} onAgregar={agregarArchivos} />
+        )}
+        {vista === 'listos' && (
+          <Candidatos lista={candidatos} cargando={cargando} onAbrir={setAbierto} onRecargar={() => recargar()} modo="listos" />
         )}
         {vista === 'candidatos' && (
           <Candidatos lista={candidatos} cargando={cargando} onAbrir={setAbierto} onRecargar={() => recargar()} />
