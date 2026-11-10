@@ -10,7 +10,7 @@
   Página para la analista de Gestión Humana. Trabaja directamente sobre la
   carpeta "Hojas de vida" sincronizada con OneDrive en el computador.
 
-  QUÉ HACE (PARTES 1 y 2 de 6):
+  QUÉ HACE (PARTES 1, 2 y 3 de 6):
     1. ARRANQUE: elegir la carpeta "Hojas de vida" y escribir quién la usa.
        Si faltan las subcarpetas (Recibidos, Candidatos, Historial), las crea.
     2. BANDEJA: muestra los ZIP que llegaron a "Recibidos" (los que suben los
@@ -24,9 +24,16 @@
        de inducción), marcar los chequeos (examen médico, ERP, Cronoseg) y
        cambiar el estado. Todo queda en expediente.json y en la bitácora.
        Los archivos de GH se guardan en Candidatos/<cédula>_<NOMBRE>/Gestion_Humana.
+       Muestra el celular y el correo del candidato si los mandó.
+    6. CORRECCIONES: desde la ficha, "Pedir correcciones" arma un link a la app
+       del candidato (solo con los documentos rechazados o faltantes) y un mensaje
+       para copiar, mandar por WhatsApp o por correo. Cuando el candidato sube su
+       ZIP de corrección, la bandeja lo procesa: guarda los archivos viejos de
+       esos documentos en "_anteriores", pone los nuevos como "pendiente" y
+       anota todo en la bitácora. El formato del link y del ZIP está en la
+       sección 6 (CONTRATO con la app del candidato).
 
   LO QUE LLEGA EN LAS SIGUIENTES PARTES:
-    3. Correcciones (pedirlas y procesar los ZIP de corrección).
     4. Entrega final en ZIP o en un solo PDF.
     5. Historial, conservación y ajustes.
 
@@ -52,10 +59,13 @@
     3. ARCHIVOS        Leer, escribir y mover archivos en la carpeta.
     4. EXPEDIENTE      Leer y guardar expediente.json (con aviso de choques).
     5. BANDEJA         Buscar los ZIP en Recibidos y revisarlos.
-    6. PROCESAR        Pasar un ZIP a la carpeta del candidato.
+    6. PROCESAR        Pasar un ZIP a la carpeta del candidato (envío normal).
+    6B. CORRECCIONES   Contrato con la app del candidato (link y ZIP), armar el
+                       link y el mensaje, y procesar los ZIP de corrección.
     7. CANDIDATOS      Leer el listado y calcular el avance.
     8. EJEMPLO         Carpeta falsa en memoria con datos de prueba.
-    9. PANTALLAS       Inicio, Bandeja, Candidatos, Ficha del candidato.
+    9. PANTALLAS       Inicio, Bandeja, Candidatos, Ficha del candidato y la
+                       hoja "Pedir correcciones".
    10. APP PRINCIPAL   Decide qué pantalla mostrar.
   ============================================================================
 -->
@@ -532,6 +542,25 @@
     .item-ficha > .segmento, .item-ficha > .item-botones { grid-column: 2; justify-content: flex-start; justify-self: start; }
   }
 
+  /* Hoja "Pedir correcciones": otra hoja de iOS encima de la ficha */
+  .velo.encima { z-index: 45; }
+  .detalle.hoja-encima { z-index: 46; height: auto; max-height: calc(100vh - 56px); }
+  .detalle.hoja-encima .detalle-cuerpo { padding-bottom: 84px; } /* que el selector de ejemplo no tape los botones */
+  .item-ficha.sin-punto { grid-template-columns: minmax(0, 1fr) auto; --sangria: 16px; align-items: center; cursor: pointer; }
+  .mensaje-previo {
+    margin: 0; padding: 12px 16px; border-radius: var(--radio); background: var(--celda);
+    font: inherit; font-size: 15px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--texto);
+  }
+  .acciones-hoja { display: flex; gap: 8px; flex-wrap: wrap; }
+  .acciones-hoja .boton { text-decoration: none; }
+  .acciones-hoja .boton[aria-disabled="true"] { opacity: 0.35; pointer-events: none; }
+  .contacto { display: flex; gap: 4px 14px; flex-wrap: wrap; font-size: 15px; color: var(--texto-2); }
+  .contacto a { color: var(--tinte); text-decoration: none; overflow-wrap: anywhere; }
+  @media (max-width: 600px) {
+    .item-ficha.sin-punto { grid-template-columns: minmax(0, 1fr) auto; }
+    .acciones-hoja .boton { flex: 1 1 auto; }
+  }
+
   @keyframes aparecer { from { opacity: 0; } }
   @keyframes subirHoja { from { transform: translate(-50%, 100%); } }
   @keyframes subirAviso { from { opacity: 0; transform: translate(-50%, 12px); } }
@@ -553,6 +582,10 @@
      ========================================================================= -->
 <script>
 window.CONFIG_PANEL = {
+  // Dirección pública de la app del candidato en GitHub Pages. Los links de
+  // corrección que arma el panel ("Pedir correcciones") abren esta dirección.
+  enlaceAppCandidato: 'https://felipeanali.github.io/GuiadearchivosHV/',
+
   // Nombre de las subcarpetas dentro de "Hojas de vida"
   carpetas: {
     recibidos: 'Recibidos',        // aquí llegan los ZIP del link de OneDrive
@@ -860,6 +893,8 @@ function expedienteNuevo(datos, usuario) {
     cargo: datos.cargo || '',
     seccion: datos.seccion || '',
     primerEmpleo: !!datos.primerEmpleo,
+    celular: datos.celular || '',
+    correo: datos.correo || '',
     autorizacionDatos: datos.autorizacionDatos || null,
     estado: 'recibido',
     creado: ahora,
@@ -868,6 +903,7 @@ function expedienteNuevo(datos, usuario) {
     documentos: {},      // { cedula: { archivos: [...], revision: 'pendiente', motivo: '' } }
     gestionHumana: {},   // checklist de GH (parte 2)
     envios: [],          // cada ZIP procesado
+    correcciones: [],    // { n, fecha, por, documentos: [{ id, motivo }], recibida } (sección 6B)
     bitacora: [],        // qué se hizo, quién y cuándo
   };
 }
@@ -947,8 +983,14 @@ async function analizarArchivo(item, raiz) {
   }
 
   const d = r.datos;
+  // Corrección: lo dice el JSON (tipo "correccion") o el nombre del ZIP (…_CORRECCION_1.zip)
+  const esCorreccion = d.tipo === 'correccion' || /CORRECCION/i.test(item.nombre);
   if (!/^\d{5,12}$/.test(String(d.cedula || ''))) r.errores.push('La cédula del paquete no es válida.');
-  if (!String(d.nombre || '').trim()) r.errores.push('El paquete no trae el nombre del candidato.');
+  // El JSON de una corrección no trae el nombre: se toma del expediente del candidato
+  if (!esCorreccion && !String(d.nombre || '').trim()) r.errores.push('El paquete no trae el nombre del candidato.');
+  if (esCorreccion && !(Number.isInteger(Number(d.correccion)) && Number(d.correccion) >= 1)) {
+    r.errores.push('El paquete de corrección no dice qué número de corrección es.');
+  }
   if (!Array.isArray(d.archivos)) d.archivos = [];
 
   // Solo se aceptan archivos con el nombre estándar y que de verdad estén en el ZIP
@@ -969,17 +1011,17 @@ async function analizarArchivo(item, raiz) {
   const sinRevisar = r.archivos.filter((a) => !a.revisadoAutomaticamente).length;
   if (sinRevisar) r.avisos.push(`${plural(sinRevisar, 'archivo', 'archivos')} sin revisión automática (escaneado o protegido).`);
 
-  const esCorreccion = d.tipo === 'correccion' || /CORRECCION/i.test(item.nombre);
-  r.tipo = r.errores.length ? 'invalido' : (esCorreccion ? 'correccion' : 'envio');
-  if (esCorreccion) r.errores.push('Es una corrección. Procesar correcciones llega en la parte 3; por ahora queda en la bandeja.');
+  // Corrección: el candidato debe existir en Candidatos (de ahí sale el nombre)
+  if (esCorreccion && !r.errores.length) await revisarCorreccion(r, raiz);
 
   // ¿Ya existe este candidato?
-  if (!r.errores.length) {
+  if (!esCorreccion && !r.errores.length) {
     const existente = await buscarCarpetaCandidato(raiz, d.cedula);
     if (existente) r.avisos.push('Este candidato ya tiene carpeta: es un envío nuevo. Los archivos actuales se guardan en "_anteriores".');
     const enHistorial = await buscarCarpetaCandidato(raiz, d.cedula, C.historial);
     if (enHistorial) r.avisos.push('Esta cédula está en el Historial (no contratado antes).');
   }
+  r.tipo = r.errores.length ? 'invalido' : (esCorreccion ? 'correccion' : 'envio');
   return r;
 }
 
@@ -1043,6 +1085,9 @@ async function procesarZip(raiz, item, usuario) {
     ...expediente,
     nombre: d.nombre, cargo: d.cargo || '', seccion: d.seccion || '',
     primerEmpleo: !!d.primerEmpleo,
+    // Celular y correo: llegan en los envíos nuevos; si no vienen, se deja lo que había
+    celular: d.celular || expediente.celular || '',
+    correo: d.correo || expediente.correo || '',
     autorizacionDatos: d.autorizacionDatos || expediente.autorizacionDatos,
     documentos,
     envios: [...(expediente.envios || []), {
@@ -1062,6 +1107,173 @@ async function procesarZip(raiz, item, usuario) {
   await moverArchivo(item.handle, item.carpeta, procesados);
 
   return { esNuevo, nombre: d.nombre };
+}
+
+/* ==========================================================================
+   6B. CORRECCIONES
+   --------------------------------------------------------------------------
+   CONTRATO con la app del candidato (no cambiarlo sin cambiar también la app):
+     Link:  <enlaceAppCandidato>?c=<código>
+            código = JSON → texto UTF-8 → base64url (sin "=").
+            JSON   = { "v": 1, "n": 1, "h": "<16 primeros hex de SHA-256 de la cédula>",
+                       "d": [ { "id": "adres", "m": "No se lee bien" } ] }
+            "id" es el de CONFIG.documentos; "m" tiene máximo 160 caracteres.
+            El link NUNCA lleva el nombre ni la cédula a la vista: solo la huella "h".
+     ZIP:   <cedula>_CORRECCION_<n>.zip, con los archivos de siempre
+            (<cedula>_<codigo>_<ID>[_n].pdf|jpg) y un datos_candidato.json:
+            { "version": 1, "tipo": "correccion", "correccion": 1, "cedula": "...",
+              "generado": "<ISO>", "archivos": [ { "documento", "archivo", "nombreOriginal",
+              "revisadoAutomaticamente", "conContrasena", "contrasenaEsCedula" } ] }
+   ========================================================================== */
+
+/** Versión del contrato del link de corrección. */
+const VERSION_LINK_CORRECCION = 1;
+/** Largo máximo del motivo que va en el link. */
+const MAXIMO_MOTIVO = 160;
+
+/** Huella de la cédula para el link: 16 primeros caracteres hex de SHA-256 (solo dígitos). */
+async function huellaCedula(cedula) {
+  const digitos = String(cedula || '').replace(/\D/g, '');
+  const resumen = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(digitos));
+  return Array.from(new Uint8Array(resumen)).map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+}
+
+/** Texto → UTF-8 → base64url sin "=" (para que el código quepa en un link). */
+function aBase64Url(texto) {
+  let binario = '';
+  new TextEncoder().encode(texto).forEach((b) => { binario += String.fromCharCode(b); });
+  return btoa(binario).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Arma el link de corrección para el candidato.
+ * n: número de la corrección; huella: huellaCedula(); documentos: [{ id, motivo }].
+ */
+function linkDeCorreccion(n, huella, documentos) {
+  const datos = {
+    v: VERSION_LINK_CORRECCION, n, h: huella,
+    d: documentos.map((x) => ({ id: x.id, m: String(x.motivo || '').slice(0, MAXIMO_MOTIVO) })),
+  };
+  const base = CONFIG.enlaceAppCandidato || '';
+  return `${base}${base.includes('?') ? '&' : '?'}c=${aBase64Url(JSON.stringify(datos))}`;
+}
+
+/** Mensaje que se le manda al candidato (WhatsApp, correo o copiado). */
+function mensajeDeCorreccion(nombre, documentos, link) {
+  return [
+    `Hola ${nombreBonito(nombre)}, en Gestión Humana de Supertiendas Cañaveral revisamos tus documentos y necesitamos que corrijas:`,
+    ...documentos.map((x) => `• ${nombreDocumento(x.id)}: ${x.motivo}`),
+    `Entra aquí desde tu celular: ${link}`,
+  ].join('\n');
+}
+
+/** Número de la próxima corrección de un expediente (empieza en 1). */
+function siguienteCorreccion(expediente) {
+  return Math.max(0, ...(expediente.correcciones || []).map((x) => Number(x.n) || 0)) + 1;
+}
+
+/**
+ * Revisa un ZIP de corrección en la bandeja (lo llama analizarArchivo).
+ * Agrega a "r" los errores/avisos y, si todo está bien, el nombre del candidato
+ * (sale del expediente) y el número de corrección.
+ */
+async function revisarCorreccion(r, raiz) {
+  const d = r.datos;
+  r.numeroCorreccion = Number(d.correccion);
+  const carpeta = await buscarCarpetaCandidato(raiz, d.cedula);
+  if (!carpeta) {
+    r.errores.push('No hay un candidato con esta cédula en Candidatos. Revisa que el candidato ya haya mandado su paquete.');
+    if (await buscarCarpetaCandidato(raiz, d.cedula, C.historial)) r.avisos.push('Esta cédula está en el Historial (no contratado antes).');
+    return;
+  }
+  let expediente = null;
+  try { expediente = await leerExpediente(carpeta); } catch (e) { expediente = null; }
+  if (!expediente) { r.errores.push('La carpeta de este candidato no tiene un expediente.json válido.'); return; }
+  r.nombreCandidato = expediente.nombre;
+  const pedida = (expediente.correcciones || []).find((x) => Number(x.n) === r.numeroCorreccion);
+  if (pedida && pedida.recibida) {
+    r.avisos.push(`La corrección ${r.numeroCorreccion} ya se había recibido (${fechaCorta(pedida.recibida)}). Si la procesas, reemplaza lo que llegó esa vez.`);
+  } else if (!pedida) {
+    r.avisos.push(`No hay registro de que se haya pedido la corrección ${r.numeroCorreccion} a este candidato.`);
+  }
+}
+
+/**
+ * Procesa un ZIP de corrección. Mismo orden seguro que procesarZip:
+ *   1) guardar en _anteriores/<fecha>/ los archivos actuales de los documentos que llegan,
+ *   2) escribir los nuevos, 3) guardar el expediente, 4) mover el ZIP a Procesados.
+ * No toca los documentos que no vienen en la corrección ni la carpeta Gestion_Humana.
+ */
+async function procesarCorreccion(raiz, item, usuario) {
+  const analisis = await analizarArchivo(item, raiz);
+  if (analisis.errores.length) throw new Error(analisis.errores[0]);
+  if (analisis.tipo !== 'correccion') throw new Error('Este paquete no es una corrección.');
+  const d = analisis.datos;
+  const n = analisis.numeroCorreccion;
+  const carpeta = await buscarCarpetaCandidato(raiz, d.cedula);
+  let expediente = await leerExpediente(carpeta);
+  const revLeida = expediente.rev;
+
+  // Archivos del ZIP agrupados por documento
+  const porDocumento = {};
+  analisis.archivos.forEach((a) => { (porDocumento[a.documento] = porDocumento[a.documento] || []).push(a); });
+
+  // 1) Los archivos actuales de ESOS documentos pasan a _anteriores/<fecha>/
+  const enCarpeta = Object.fromEntries((await listar(carpeta)).filter((x) => x.tipo === 'file').map((x) => [x.nombre, x.handle]));
+  let carpetaAnterior = null;
+  let destino = null;
+  for (const id of Object.keys(porDocumento)) {
+    for (const nombre of ((expediente.documentos || {})[id] || {}).archivos || []) {
+      if (!enCarpeta[nombre]) continue;
+      if (!destino) {
+        const anteriores = await subcarpeta(carpeta, C.anteriores);
+        carpetaAnterior = await nombreLibre(anteriores, marcaDeTiempo());
+        destino = await subcarpeta(anteriores, carpetaAnterior);
+      }
+      await moverArchivo(enCarpeta[nombre], carpeta, destino);
+    }
+  }
+
+  // 2) Escribir los archivos nuevos; cada documento corregido vuelve a "pendiente"
+  const documentos = { ...(expediente.documentos || {}) };
+  for (const [id, lista] of Object.entries(porDocumento)) {
+    const doc = { archivos: [], revision: 'pendiente', motivo: '', conContrasena: false, revisadoAutomaticamente: true, correccion: n };
+    for (const a of lista) {
+      await escribir(carpeta, a.archivo, await analisis.zip.file(a.archivo).async('blob'));
+      doc.archivos.push(a.archivo);
+      doc.conContrasena = doc.conContrasena || !!a.conContrasena;
+      doc.revisadoAutomaticamente = doc.revisadoAutomaticamente && !!a.revisadoAutomaticamente;
+    }
+    documentos[id] = doc;
+  }
+
+  // 3) Expediente: corrección recibida, estado "En revisión" y bitácora
+  const ahora = new Date().toISOString();
+  const correcciones = [...(expediente.correcciones || [])];
+  const i = correcciones.findIndex((x) => Number(x.n) === n);
+  if (i >= 0) correcciones[i] = { ...correcciones[i], recibida: ahora };
+  else correcciones.push({ n, fecha: null, por: null, documentos: Object.keys(porDocumento).map((id) => ({ id, motivo: '' })), recibida: ahora });
+  const cuantos = Object.keys(porDocumento).length;
+  expediente = {
+    ...expediente,
+    documentos,
+    correcciones,
+    estado: 'revision',
+    envios: [...(expediente.envios || []), {
+      tipo: 'correccion', correccion: n, zip: item.nombre, generado: d.generado || null,
+      procesado: ahora, procesadoPor: usuario, archivos: analisis.archivos.map((a) => a.archivo),
+      anteriores: carpetaAnterior ? `${C.anteriores}/${carpetaAnterior}` : null,
+    }],
+  };
+  expediente.rev = revLeida;
+  anotar(expediente, usuario, `Recibió la corrección ${n} (${plural(cuantos, 'documento', 'documentos')})`);
+  await guardarExpediente(carpeta, expediente);
+
+  // 4) Mover el ZIP a Recibidos/Procesados
+  const procesados = await subcarpeta(await subcarpeta(raiz, C.recibidos), C.procesados);
+  await moverArchivo(item.handle, item.carpeta, procesados);
+
+  return { nombre: expediente.nombre, n, cuantos };
 }
 
 /* ==========================================================================
@@ -1222,9 +1434,13 @@ async function zipDeEjemplo(c, foto) {
     }
   });
   if (!c.sinJson) {
-    const datos = { version: 1, tipo: c.tipo, cedula: c.cedula, nombre: c.nombre, cargo: c.cargo, seccion: c.seccion,
-                    primerEmpleo: !!c.primerEmpleo, autorizacionDatos: { aceptada: true, fecha: new Date().toISOString() },
-                    generado: new Date().toISOString(), archivos: lista };
+    // Corrección: el JSON del contrato (sin nombre). Envío normal: con celular y correo si los hay.
+    const datos = c.tipo === 'correccion'
+      ? { version: 1, tipo: 'correccion', correccion: c.n || 1, cedula: c.cedula, generado: new Date().toISOString(), archivos: lista }
+      : { version: 1, tipo: c.tipo, cedula: c.cedula, nombre: c.nombre, cargo: c.cargo, seccion: c.seccion,
+          primerEmpleo: !!c.primerEmpleo, celular: c.celular || undefined, correo: c.correo || undefined,
+          autorizacionDatos: { aceptada: true, fecha: new Date().toISOString() },
+          generado: new Date().toISOString(), archivos: lista };
     zip.file('datos_candidato.json', c.jsonRoto ? '{"cedula": "114' : JSON.stringify(datos, null, 2));
   }
   return zip.generateAsync({ type: 'blob', compression: 'STORE' });
@@ -1287,8 +1503,8 @@ async function crearCarpetaDeEjemplo(modo) {
   }
 
   if (modo === 'normal') {
-    await sembrar({ cedula: '1144098765', nombre: 'Laura Gómez', cargo: 'AUXILIAR DE FRUVER', seccion: 'FRUVER', docs: DOCS_COMPLETOS, diplomas: 2 }, 6, 'revision', 4);
-    await sembrar({ cedula: '1006223344', nombre: 'Camilo Andrés Mejía', cargo: 'AUXILIAR DE BODEGA', seccion: 'BODEGA', docs: DOCS_COMPLETOS }, 3, 'correcciones', 3);
+    await sembrar({ cedula: '1144098765', nombre: 'Laura Gómez', cargo: 'AUXILIAR DE FRUVER', seccion: 'FRUVER', docs: DOCS_COMPLETOS, diplomas: 2, celular: '3104567890' }, 6, 'revision', 4);
+    await sembrar({ cedula: '1006223344', nombre: 'Camilo Andrés Mejía', cargo: 'AUXILIAR DE BODEGA', seccion: 'BODEGA', docs: DOCS_COMPLETOS, celular: '3001234567', correo: 'camilo.mejia@ejemplo.com' }, 3, 'correcciones', 3);
     await sembrar({ cedula: '1193456712', nombre: 'Daniela Ospina', cargo: 'AUXILIAR DE CARNES', seccion: 'CARNES', docs: [...DOCS_COMPLETOS, 'manipulacion'] }, 12, 'completo', 7);
     await sembrar({ cedula: '31945220', nombre: 'Martha Lucía Cárdenas', cargo: 'AUXILIAR DE ASEO', seccion: 'ASEO', docs: DOCS_COMPLETOS }, 20, 'contratado', 6);
     recibidos.poner('1107554433_ANDRES_ROJAS_AUXILIAR_DE_PANADERIA.zip',
@@ -1296,7 +1512,10 @@ async function crearCarpetaDeEjemplo(modo) {
     recibidos.poner('1062887766_VALENTINA_RIOS_AUXILIAR_DE_BODEGA.zip',
       await zipDeEjemplo({ cedula: '1062887766', nombre: 'Valentina Ríos', cargo: 'AUXILIAR DE BODEGA', seccion: 'BODEGA', primerEmpleo: true, docs: DOCS_PRIMER, conClave: 'adres' }, foto), hace(0, 5));
     recibidos.poner('1144556677_SEBASTIAN_TORRES_SURTIDOR.zip',
-      await zipDeEjemplo({ cedula: '1144556677', nombre: 'Sebastián Torres', cargo: 'SURTIDOR', seccion: 'PGC', docs: DOCS_COMPLETOS }, foto), hace(0, 1));
+      await zipDeEjemplo({ cedula: '1144556677', nombre: 'Sebastián Torres', cargo: 'SURTIDOR', seccion: 'PGC', docs: DOCS_COMPLETOS, celular: '3157654321' }, foto), hace(0, 1));
+    // Corrección 1 de Camilo (tiene la cédula rechazada): lo que mandaría la app del candidato
+    recibidos.poner('1006223344_CORRECCION_1.zip',
+      await zipDeEjemplo({ cedula: '1006223344', tipo: 'correccion', n: 1, docs: ['cedula'] }, foto), hace(0, 0.5));
     return raiz;
   }
 
@@ -1329,8 +1548,9 @@ async function crearCarpetaDeEjemplo(modo) {
   recibidos.poner('1209876543_JSON_ROTO.zip', await zipDeEjemplo({ cedula: '1', nombre: 'x', docs: ['cedula'], jsonRoto: true }, foto), hace(2));
   recibidos.poner('cedula escaneada.pdf', pdfDeEjemplo('Cedula'), hace(1));
   recibidos.poner('paquete.zip', new Blob(['esto no es un zip']), hace(1));
-  recibidos.poner('1062887766_VALENTINA_RIOS_CORRECCION_1.zip',
-    await zipDeEjemplo({ cedula: '1062887766', nombre: 'Valentina Ríos', tipo: 'correccion', docs: ['adres'] }, foto), hace(0, 4));
+  // Corrección de una cédula que no existe en Candidatos (debe salir como error)
+  recibidos.poner('1062887766_CORRECCION_1.zip',
+    await zipDeEjemplo({ cedula: '1062887766', tipo: 'correccion', n: 1, docs: ['adres'] }, foto), hace(0, 4));
   recibidos.poner('1300000001_FALTA_UN_ARCHIVO.zip',
     await zipDeEjemplo({ cedula: '1300000001', nombre: 'Paula Andrea Zúñiga Henao', cargo: 'SURTIDOR', seccion: 'PGC', docs: DOCS_COMPLETOS, faltante: 'pension', conClave: 'adres' }, foto), hace(3));
   const sub = await subcarpeta(recibidos, 'Archivos de Bartholomew Fitzgerald Northwind');
@@ -1481,7 +1701,7 @@ function BarraLateral({ vista, setVista, pendientes, totalCandidatos, usuario, c
 
 /* ---------- Bandeja de entrada ---------- */
 function Bandeja({ items, cargando, onRecargar, onProcesar, onProcesarTodos, procesando, lote, onAgregar }) {
-  const listos = items.filter((x) => x.analisis && x.analisis.tipo === 'envio');
+  const listos = items.filter((x) => x.analisis && (x.analisis.tipo === 'envio' || x.analisis.tipo === 'correccion'));
   const selector = useRef(null);          // campo oculto para elegir ZIP del computador
   const [encima, setEncima] = useState(false); // ¿están arrastrando un archivo encima?
 
@@ -1539,7 +1759,9 @@ function FilaBandeja({ item, onProcesar, procesando }) {
   const d = a && a.datos;
   const tipo = !a ? 'cargando' : a.tipo;
   const icono = { envio: ['paquete', ''], correccion: ['corregir', 'info'], invalido: ['alerta', 'malo'], cargando: ['cargando', ''] }[tipo];
-  const titulo = d && d.nombre && tipo !== 'invalido' ? nombreBonito(d.nombre) : item.nombre;
+  // En una corrección el nombre no viene en el ZIP: sale del expediente (a.nombreCandidato)
+  const nombre = d && (d.nombre || (a && a.nombreCandidato));
+  const titulo = nombre && tipo !== 'invalido' ? nombreBonito(nombre) : item.nombre;
   return (
     <div className="fila">
       <div className={`icono-caja ${icono[1]}`}><Icono nombre={icono[0]} /></div>
@@ -1548,7 +1770,7 @@ function FilaBandeja({ item, onProcesar, procesando }) {
         {d && tipo !== 'invalido' && (
           <span className="fila-sub">
             <span className="numeros">C.C. {d.cedula}</span>{d.cargo ? ` — ${d.cargo}` : ''}{d.seccion ? `, ${d.seccion}` : ''}
-            {d.primerEmpleo ? ' — primer empleo' : ''}
+            {d.primerEmpleo ? ' — primer empleo' : ''}{tipo === 'correccion' ? ` — corrección ${a.numeroCorreccion}` : ''}
           </span>
         )}
         <span className="fila-pista">
@@ -1557,14 +1779,16 @@ function FilaBandeja({ item, onProcesar, procesando }) {
         </span>
         {a && (a.errores.length > 0 || a.avisos.length > 0) && (
           <div className="mensajes">
-            {a.errores.map((m, i) => <div key={'e' + i} className={`mensaje ${tipo === 'correccion' ? 'info' : 'error'}`}>{m}</div>)}
+            {a.errores.map((m, i) => <div key={'e' + i} className="mensaje error">{m}</div>)}
             {a.avisos.map((m, i) => <div key={'a' + i} className="mensaje aviso">{m}</div>)}
           </div>
         )}
       </div>
       <div className="fila-lado">
-        {tipo === 'envio' && (
-          <button className="boton boton-suave" disabled={procesando} onClick={() => onProcesar(item)}>Procesar</button>
+        {(tipo === 'envio' || tipo === 'correccion') && (
+          <button className="boton boton-suave" disabled={procesando} onClick={() => onProcesar(item)}>
+            {tipo === 'correccion' ? 'Procesar corrección' : 'Procesar'}
+          </button>
         )}
       </div>
     </div>
@@ -1686,6 +1910,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
   const [archivosGH, setArchivosGH] = useState({});                // nombre → handle
   const [guardando, setGuardando] = useState(false);
   const [rechazando, setRechazando] = useState(null);              // { id, motivo } mientras escribe el motivo
+  const [pidiendo, setPidiendo] = useState(false);                 // hoja "Pedir correcciones" abierta
   const campoArchivo = useRef(null);
   const destino = useRef(null);                                    // a qué ítem va el archivo que se está subiendo
 
@@ -1699,10 +1924,10 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
 
   useEffect(() => {
     leerArchivos();
-    const alTeclear = (ev) => ev.key === 'Escape' && !rechazando && onCerrar();
+    const alTeclear = (ev) => ev.key === 'Escape' && !rechazando && !pidiendo && onCerrar();
     window.addEventListener('keydown', alTeclear);
     return () => window.removeEventListener('keydown', alTeclear);
-  }, [c, rechazando]);
+  }, [c, rechazando, pidiendo]);
 
   /**
    * Hace un cambio en el expediente y lo guarda en la carpeta.
@@ -1800,6 +2025,15 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
     cambiar((e) => { e.estado = estado; }, `Cambió el estado a "${nombreEstado(estado)}"`, false);
   }
 
+  /** Registra en el expediente la corrección pedida (la llama la hoja "Pedir correcciones"). */
+  function registrarCorreccion(correccion) {
+    const lista = correccion.documentos.map((x) => nombreDocumento(x.id)).join(', ');
+    return cambiar((e) => {
+      e.correcciones = [...(e.correcciones || []), correccion];
+      e.estado = 'correcciones';
+    }, `Pidió la corrección ${correccion.n}: ${lista}`, false);
+  }
+
   /* ----- Piezas de la ficha ----- */
   const gh = (exp && exp.gestionHumana) || {};
   const modoInduccion = (gh._induccion || {}).modo || 'unico';
@@ -1860,6 +2094,9 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
     .sort(([a], [b]) => CONFIG.documentos.findIndex((d) => d.id === a) - CONFIG.documentos.findIndex((d) => d.id === b));
   const cerrado = exp.estado === 'contratado' || exp.estado === 'no_contratado';
   const todoListo = av.total > 0 && av.hechos === av.total;
+  // Para "Pedir correcciones": documentos rechazados y documentos que no mandó
+  const rechazados = docsOrdenados.filter(([, doc]) => doc.revision === 'rechazado').map(([id, doc]) => ({ id, motivo: doc.motivo || 'No se acepta' }));
+  const faltantes = CONFIG.documentos.filter((d) => !(exp.documentos || {})[d.id]).map((d) => d.id);
 
   return (
     <>
@@ -1875,6 +2112,12 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
             <div className="fila-texto">
               <h2 style={{ overflowWrap: 'anywhere' }}>{nombreBonito(exp.nombre)}</h2>
               <span className="fila-sub numeros">C.C. {exp.cedula} — {exp.cargo || 'sin cargo'}{exp.seccion ? `, ${exp.seccion}` : ''}{exp.primerEmpleo ? ' — primer empleo' : ''}</span>
+              {(exp.celular || exp.correo) && (
+                <span className="contacto">
+                  {exp.celular && <a className="numeros" href={`tel:+57${exp.celular}`}>Cel. {exp.celular}</a>}
+                  {exp.correo && <a href={`mailto:${exp.correo}`}>{exp.correo}</a>}
+                </span>
+              )}
             </div>
             <button className="boton boton-texto" style={{ fontWeight: 600, fontSize: 17 }} onClick={onCerrar}>Listo</button>
           </div>
@@ -1887,6 +2130,11 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
               <div className="cana cana-ancha" aria-hidden="true">{av.nudos.map((n, i) => <span key={i} className={`nudo ${n}`} />)}</div>
               <div className="avance-texto">{av.hechos} de {av.total} listos{guardando ? ' — guardando…' : ''}</div>
             </div>
+            <button className="boton boton-secundario" disabled={guardando || (!rechazados.length && !faltantes.length)}
+                    title={!rechazados.length && !faltantes.length ? 'No hay documentos rechazados ni faltantes' : undefined}
+                    onClick={() => setPidiendo(true)}>
+              <Icono nombre="corregir" tamano={16} /> Pedir correcciones
+            </button>
           </div>
           {todoListo && !cerrado && exp.estado !== 'completo' && (
             <div className="mensaje info listo-banner">
@@ -1900,7 +2148,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
           {/* 1. Documentos que mandó el candidato */}
           <section>
             <h3>Documentos del candidato</h3>
-            <p className="nota-seccion">Ábrelos con Ver y marca cada uno. Lo rechazado se le pedirá corregir (parte 3).</p>
+            <p className="nota-seccion">Ábrelos con Ver y marca cada uno. Lo rechazado se le pide corregir con “Pedir correcciones”, arriba.</p>
             <div className="tarjeta">
               {docsOrdenados.map(([id, doc]) => (
                 <div key={id} className="item-ficha">
@@ -1916,6 +2164,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
                         </button>
                       ))}
                       {doc.conContrasena ? ' — tiene contraseña' : ''}{!doc.revisadoAutomaticamente ? ' — revísalo con cuidado' : ''}
+                      {doc.correccion ? ` — llegó en la corrección ${doc.correccion}` : ''}
                     </span>
                     {doc.revision === 'rechazado' && doc.motivo && <span className="motivo-texto">Motivo: {doc.motivo}</span>}
                     {rechazando && rechazando.id === id && (
@@ -2014,6 +2263,130 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
             </ul>
             <p className="nota-seccion" style={{ marginTop: 12 }}>Carpeta: {C.candidatos} / {c.nombreCarpeta}</p>
           </section>
+        </div>
+      </aside>
+      {pidiendo && (
+        <HojaCorrecciones exp={exp} rechazados={rechazados} faltantes={faltantes} guardando={guardando}
+                          avisar={avisar} usuario={usuario} onRegistrar={registrarCorreccion} onCerrar={() => setPidiendo(false)} />
+      )}
+    </>
+  );
+}
+
+/* ---------- Hoja "Pedir correcciones" (sale encima de la ficha) ---------- */
+
+/**
+ * Elige qué documentos pedir corregir, arma el link (sección 6B) y el mensaje, y deja
+ * copiarlo o mandarlo por WhatsApp o correo. La primera vez que se copia o se manda,
+ * la corrección queda registrada en el expediente (onRegistrar) y ya no se puede cambiar.
+ *   rechazados: [{ id, motivo }] (vienen activados) · faltantes: [id] (vienen apagados)
+ */
+function HojaCorrecciones({ exp, rechazados, faltantes, guardando, avisar, usuario, onRegistrar, onCerrar }) {
+  const [eleccion, setEleccion] = useState(() => Object.fromEntries([
+    ...rechazados.map((x) => [x.id, { activo: true, motivo: x.motivo }]),
+    ...faltantes.map((id) => [id, { activo: false, motivo: 'Falta este documento' }]),
+  ]));
+  const [huella, setHuella] = useState('');
+  const [registrada, setRegistrada] = useState(null); // número de la corrección ya registrada
+  const n = registrada || siguienteCorreccion(exp);
+
+  useEffect(() => { huellaCedula(exp.cedula).then(setHuella); }, [exp.cedula]);
+  useEffect(() => {
+    const alTeclear = (ev) => ev.key === 'Escape' && onCerrar();
+    window.addEventListener('keydown', alTeclear);
+    return () => window.removeEventListener('keydown', alTeclear);
+  }, []);
+
+  const elegidos = Object.entries(eleccion).filter(([, v]) => v.activo).map(([id, v]) => ({ id, motivo: v.motivo.slice(0, MAXIMO_MOTIVO) }));
+  const listo = elegidos.length > 0 && !!huella;
+  const link = listo ? linkDeCorreccion(n, huella, elegidos) : '';
+  const mensaje = listo ? mensajeDeCorreccion(exp.nombre, elegidos, link) : '';
+  const celular = String(exp.celular || '').replace(/\D/g, '');
+
+  /** Registra la corrección la primera vez (copiar o enviar cuenta como "pedirla"). */
+  async function registrarSiFalta() {
+    if (registrada) return true;
+    const ok = await onRegistrar({ n, fecha: new Date().toISOString(), por: usuario, documentos: elegidos, recibida: null });
+    if (ok) setRegistrada(n);
+    return ok;
+  }
+
+  async function copiar() {
+    try { await navigator.clipboard.writeText(mensaje); }
+    catch (e) { avisar('No se pudo copiar automáticamente: selecciona el mensaje y cópialo a mano', 'error'); return; }
+    if (await registrarSiFalta()) avisar(`Mensaje copiado. Corrección ${n} registrada`);
+  }
+  /** WhatsApp y correo son enlaces normales (así el navegador no los bloquea); al tocarlos se registra. */
+  const alEnviar = (ev) => { if (!listo || guardando) { ev.preventDefault(); return; } registrarSiFalta(); };
+
+  const Fila = ({ id }) => {
+    const v = eleccion[id];
+    return (
+      <label className="item-ficha sin-punto">
+        <span className="fila-texto">
+          <span className="item-titulo">{nombreDocumento(id)}</span>
+          <span className={v.motivo === 'Falta este documento' ? 'nombre-archivo' : 'motivo-texto'}>{v.motivo}</span>
+        </span>
+        <input type="checkbox" role="switch" className="interruptor" checked={v.activo} disabled={!!registrada || guardando}
+               onChange={() => setEleccion({ ...eleccion, [id]: { ...v, activo: !v.activo } })}
+               aria-label={`Pedir ${nombreDocumento(id)}`} />
+      </label>
+    );
+  };
+
+  return (
+    <>
+      <div className="velo encima" onClick={onCerrar} />
+      <aside className="detalle hoja-encima" role="dialog" aria-modal="true" aria-label="Pedir correcciones">
+        <div className="agarre" aria-hidden="true" />
+        <div className="detalle-cabeza">
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+            <div className="fila-texto">
+              <h2>Pedir correcciones</h2>
+              <span className="fila-sub">{nombreBonito(exp.nombre)} — corrección {n}</span>
+            </div>
+            <button className="boton boton-texto" style={{ fontWeight: 600, fontSize: 17 }} onClick={onCerrar}>{registrada ? 'Listo' : 'Cancelar'}</button>
+          </div>
+        </div>
+        <div className="detalle-cuerpo">
+          {rechazados.length > 0 && (
+            <section>
+              <h3>Rechazados</h3>
+              <div className="tarjeta">{rechazados.map((x) => <Fila key={x.id} id={x.id} />)}</div>
+            </section>
+          )}
+          {faltantes.length > 0 && (
+            <section>
+              <h3>No los mandó</h3>
+              <div className="tarjeta">{faltantes.map((id) => <Fila key={id} id={id} />)}</div>
+              <p className="nota-seccion">Actívalos solo si este candidato los necesita.</p>
+            </section>
+          )}
+          <section>
+            <h3>Mensaje para el candidato</h3>
+            {listo ? <pre className="mensaje-previo">{mensaje}</pre>
+                   : <p className="nota-seccion">{elegidos.length ? 'Preparando el link…' : 'Activa al menos un documento.'}</p>}
+            <p className="nota-seccion">
+              {registrada
+                ? `La corrección ${registrada} quedó registrada en la bitácora y el candidato pasó a “Con correcciones”.`
+                : 'Al copiar o enviar el mensaje, la corrección queda registrada en el expediente.'}
+            </p>
+          </section>
+          <div className="acciones-hoja">
+            <button className="boton boton-principal" disabled={!listo || guardando} onClick={copiar}>Copiar mensaje</button>
+            {celular && (
+              <a className="boton boton-secundario" aria-disabled={!listo || guardando} onClick={alEnviar}
+                 href={listo ? `https://wa.me/57${celular}?text=${encodeURIComponent(mensaje)}` : undefined}
+                 target="_blank" rel="noopener noreferrer">Abrir WhatsApp</a>
+            )}
+            {exp.correo && (
+              <a className="boton boton-secundario" aria-disabled={!listo || guardando} onClick={alEnviar}
+                 href={listo ? `mailto:${exp.correo}?subject=${encodeURIComponent('Corrección de tus documentos de ingreso — Supertiendas Cañaveral')}&body=${encodeURIComponent(mensaje)}` : undefined}>
+                Abrir correo
+              </a>
+            )}
+          </div>
+          {!celular && !exp.correo && <p className="nota-seccion">Este candidato no dejó celular ni correo: copia el mensaje y mándaselo por otro medio.</p>}
         </div>
       </aside>
     </>
@@ -2145,10 +2518,15 @@ function App() {
     await entrar(carpeta, nombreUsuario, modo);
   }
 
-  /** Procesa un paquete de la bandeja. */
+  /** Procesa un paquete de la bandeja (envío normal o corrección). */
   async function procesar(item, silencioso = false) {
     setProcesando(true);
     try {
+      if (item.analisis && item.analisis.tipo === 'correccion') {
+        const r = await procesarCorreccion(raiz, item, usuario);
+        if (!silencioso) avisar(`Se recibió la corrección ${r.n} de ${nombreBonito(r.nombre)}`);
+        return true;
+      }
       const r = await procesarZip(raiz, item, usuario);
       if (!silencioso) avisar(r.esNuevo ? `${nombreBonito(r.nombre)} ya está en Candidatos` : `Se actualizó a ${nombreBonito(r.nombre)}`);
       return true;
@@ -2163,7 +2541,7 @@ function App() {
   }
 
   async function procesarTodos() {
-    const listos = bandeja.filter((x) => x.analisis && x.analisis.tipo === 'envio');
+    const listos = bandeja.filter((x) => x.analisis && (x.analisis.tipo === 'envio' || x.analisis.tipo === 'correccion'));
     let bien = 0;
     for (let i = 0; i < listos.length; i++) {
       setLote({ hechos: i, total: listos.length });
@@ -2226,7 +2604,8 @@ function App() {
           <Candidatos lista={candidatos} cargando={cargando} onAbrir={setAbierto} onRecargar={() => recargar()} />
         )}
       </main>
-      {abierto && <Ficha c={abierto} usuario={usuario} avisar={avisar} onCambio={recargarCandidatos} onCerrar={() => setAbierto(null)} />}
+      {/* Al cerrar la ficha se revisa otra vez la bandeja: una corrección recién pedida cambia los avisos */}
+      {abierto && <Ficha c={abierto} usuario={usuario} avisar={avisar} onCambio={recargarCandidatos} onCerrar={() => { setAbierto(null); recargar(); }} />}
       {editarNombre && <DialogoNombre actual={usuario} onGuardar={guardarNombre} onCancelar={() => setEditarNombre(false)} />}
       {aviso && (
         <div className={`aviso-flotante ${aviso.tipo === 'error' ? 'error' : ''} ${modoEjemplo ? 'sobre-selector' : ''}`} role="status">
