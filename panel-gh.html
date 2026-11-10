@@ -22,9 +22,12 @@
        muestra a los que están EN PROCESO (Recibido, En revisión, Con correcciones).
        LISTOS: cuando un candidato pasa a "Completo" o "Contratado", sale de
        Candidatos y aparece en "Listos" (su carpeta no se mueve: sigue en Candidatos).
-       NO CONTRATADO: no se guarda nada. Al elegir "No contratado" (y confirmar),
-       se borra la carpeta completa del candidato y sus ZIP de Recibidos/Procesados.
-       No hay historial de no contratados.
+       NO CONTRATADO: al elegir "No contratado" (y confirmar), la carpeta completa
+       del candidato y sus ZIP de Recibidos/Procesados pasan a la PAPELERA.
+    7. PAPELERA: guarda a los no contratados 7 días (CONFIG_PANEL.diasPapelera) por
+       si fue un error: "Recuperar" lo devuelve a Candidatos tal como estaba;
+       "Eliminar ya" lo borra. Cumplido el plazo, se eliminan solos la próxima vez
+       que alguien abra el panel. No hay historial más largo que eso.
     5. FICHA: aprobar o rechazar (con motivo) cada documento del candidato,
        subir los archivos de GH (SAGRILAFT, ARL, EPS, caja, pensión, paquete
        de inducción), marcar los chequeos (examen médico, ERP, Cronoseg) y
@@ -65,15 +68,16 @@
     1. UTILIDADES      Textos, fechas, plurales.
     2. RECORDAR        Guarda en el navegador cuál carpeta y quién la usa.
     3. ARCHIVOS        Leer, escribir y mover archivos en la carpeta.
-    4. EXPEDIENTE      Leer y guardar expediente.json (con aviso de choques) y
-                       borrar todo lo de un candidato no contratado.
+    4. EXPEDIENTE      Leer y guardar expediente.json (con aviso de choques).
+    4B. PAPELERA       Mover un no contratado a la Papelera, recuperarlo y
+                       eliminar lo que ya cumplió los 7 días.
     5. BANDEJA         Buscar los ZIP en Recibidos y revisarlos.
     6. PROCESAR        Pasar un ZIP a la carpeta del candidato (envío normal).
     6B. CORRECCIONES   Contrato con la app del candidato (link y ZIP), armar el
                        link y el mensaje, y procesar los ZIP de corrección.
     7. CANDIDATOS      Leer el listado y calcular el avance.
     8. EJEMPLO         Carpeta falsa en memoria con datos de prueba.
-    9. PANTALLAS       Inicio, Bandeja, Candidatos (en proceso), Listos, Ficha
+    9. PANTALLAS       Inicio, Bandeja, Candidatos (en proceso), Listos, Papelera, Ficha
                        del candidato (con "Descargar ZIP") y la hoja "Pedir correcciones".
    10. APP PRINCIPAL   Decide qué pantalla mostrar.
   ============================================================================
@@ -603,9 +607,13 @@ window.CONFIG_PANEL = {
     candidatos: 'Candidatos',      // una carpeta por candidato
     anteriores: '_anteriores',     // dentro del candidato: versiones reemplazadas
     gestionHumana: 'Gestion_Humana', // dentro del candidato: archivos que sube GH
+    papelera: 'Papelera',          // no contratados, por unos días (ver diasPapelera)
+    zipsEnPapelera: '_zips_recibidos', // dentro de cada candidato en la Papelera: sus ZIP de Procesados
   },
   // Días esperando a partir de los cuales el número se pone en rojo
   diasAlerta: 5,
+  // Días que un no contratado queda en la Papelera antes de eliminarse del todo
+  diasPapelera: 7,
   // Peso máximo de los archivos que sube Gestión Humana (MB)
   tamanoMaximoGHMB: 15,
 
@@ -650,8 +658,8 @@ window.CONFIG_PANEL = {
     { id: 'correcciones',  nombre: 'Con correcciones' },
     { id: 'completo',      nombre: 'Completo' },
     { id: 'contratado',    nombre: 'Contratado' },
-    // "No contratado" no es un estado que se guarde: al elegirlo se borra todo el candidato
-    { id: 'no_contratado', nombre: 'No contratado (borrar todo)' },
+    // "No contratado": al elegirlo, el candidato pasa a la Papelera (sección 4B)
+    { id: 'no_contratado', nombre: 'No contratado (a la Papelera)' },
   ],
 };
 </script>
@@ -918,32 +926,156 @@ function expedienteNuevo(datos, usuario) {
   };
 }
 
+/* ==========================================================================
+   4B. PAPELERA (no contratados, por CONFIG.diasPapelera días)
+   El navegador no puede "mover" una carpeta de una vez: se copia todo y,
+   solo si la copia quedó completa, se borra la original.
+   ========================================================================== */
+
+/** Cuenta los archivos de una carpeta y sus subcarpetas (para revisar que una copia quedó completa). */
+async function contarArchivos(carpeta) {
+  let total = 0;
+  for (const item of await listar(carpeta)) total += item.tipo === 'directory' ? await contarArchivos(item.handle) : 1;
+  return total;
+}
+
+/** Copia todo lo de una carpeta (con subcarpetas) dentro de otra. */
+async function copiarContenido(origen, destino) {
+  for (const item of await listar(origen)) {
+    if (item.tipo === 'directory') await copiarContenido(item.handle, await subcarpeta(destino, item.nombre));
+    else await escribir(destino, item.nombre, await item.handle.getFile());
+  }
+}
+
+/** Mueve una carpeta completa a otra carpeta: copia, revisa la copia y borra la original. */
+async function moverCarpeta(padreOrigen, nombre, padreDestino) {
+  const origen = await padreOrigen.getDirectoryHandle(nombre);
+  const destino = await subcarpeta(padreDestino, await nombreLibre(padreDestino, nombre));
+  await copiarContenido(origen, destino);
+  if ((await contarArchivos(destino)) !== (await contarArchivos(origen))) {
+    throw new Error('La copia no quedó completa; no se borró nada. Intenta de nuevo.');
+  }
+  await padreOrigen.removeEntry(nombre, { recursive: true });
+  return destino;
+}
+
+/** Abre la Papelera sin crearla (devuelve null si todavía no existe). */
+async function abrirPapelera(raiz) {
+  try { return await raiz.getDirectoryHandle(C.papelera); } catch (e) { return null; }
+}
+
+/** ¿Hay un candidato con esta cédula en la Papelera? */
+async function estaEnPapelera(raiz, cedula) {
+  const papelera = await abrirPapelera(raiz);
+  if (!papelera) return false;
+  return (await listar(papelera)).some((x) => x.tipo === 'directory' && x.nombre.startsWith(`${cedula}_`));
+}
+
 /**
- * Candidato NO contratado: no se guarda nada. Borra su carpeta completa en Candidatos
- * (documentos, Gestion_Humana, _anteriores y expediente.json) y sus ZIP en
- * Recibidos/Procesados, que tienen copia de todos sus documentos.
- * OneDrive guarda lo borrado en su papelera por un tiempo (lo maneja sistemas).
- * Devuelve cuántos ZIP borró.
+ * "No contratado": pasa la carpeta completa del candidato a la Papelera, junto con
+ * sus ZIP de Recibidos/Procesados (quedan dentro, en _zips_recibidos). En el expediente
+ * anota cuándo, quién y desde qué fecha se puede eliminar. Devuelve cuántos ZIP movió.
  */
-async function borrarCandidato(raiz, c) {
+async function enviarAPapelera(raiz, c, usuario) {
   const cedula = String((c.expediente && c.expediente.cedula) || c.cedula || '').replace(/\D/g, '');
   const zipsDelExpediente = new Set(((c.expediente && c.expediente.envios) || []).map((e) => e.zip));
   const candidatos = await subcarpeta(raiz, C.candidatos);
-  await candidatos.removeEntry(c.nombreCarpeta, { recursive: true });
-  let zips = 0;
+  const destino = await moverCarpeta(candidatos, c.nombreCarpeta, await subcarpeta(raiz, C.papelera));
+
+  // Sus ZIP: los que registró el expediente o los que llevan "<cédula>_" en el nombre
+  // (OneDrive le pone adelante el nombre de quien sube: "Laura Gomez_1144098765_...zip")
+  const zips = [];
   if (cedula) {
-    // ZIP de este candidato: los que registró el expediente o los que llevan "<cédula>_" en el nombre
-    // (OneDrive le pone adelante el nombre de quien sube: "Laura Gomez_1144098765_...zip")
     const deEsteCandidato = new RegExp(`(^|[^0-9])${cedula}_`);
     const procesados = await subcarpeta(await subcarpeta(raiz, C.recibidos), C.procesados);
     for (const item of await listar(procesados)) {
       if (item.tipo === 'file' && (zipsDelExpediente.has(item.nombre) || deEsteCandidato.test(item.nombre))) {
-        await procesados.removeEntry(item.nombre);
-        zips++;
+        zips.push(await moverArchivo(item.handle, procesados, await subcarpeta(destino, C.zipsEnPapelera)));
       }
     }
   }
-  return { zips };
+
+  let expediente = null;
+  try { expediente = await leerExpediente(destino); } catch (e) { expediente = null; }
+  if (expediente) {
+    const ahora = new Date();
+    expediente.estado = 'no_contratado';
+    expediente.enPapelera = {
+      fecha: ahora.toISOString(), por: usuario, zips,
+      eliminarDesde: new Date(ahora.getTime() + CONFIG.diasPapelera * MS_POR_DIA).toISOString(),
+    };
+    anotar(expediente, usuario, `No contratado: pasó a la Papelera por ${plural(CONFIG.diasPapelera, 'día', 'días')}`);
+    await guardarExpediente(destino, expediente);
+  }
+  return { zips: zips.length };
+}
+
+/** Lee lo que hay en la Papelera: [{ carpeta, nombreCarpeta, expediente, nombre, cedula, eliminarDesde }]. */
+async function leerPapelera(raiz) {
+  const papelera = await abrirPapelera(raiz);
+  if (!papelera) return [];
+  const lista = [];
+  for (const item of await listar(papelera)) {
+    if (item.tipo !== 'directory') continue;
+    let expediente = null;
+    try { expediente = await leerExpediente(item.handle); } catch (e) { expediente = null; }
+    lista.push({
+      carpeta: item.handle,
+      nombreCarpeta: item.nombre,
+      expediente,
+      cedula: expediente ? expediente.cedula : (item.nombre.match(/^\d+/) || [''])[0],
+      nombre: expediente ? expediente.nombre : item.nombre.replace(/^\d+_?/, '').replace(/_/g, ' '),
+      eliminarDesde: expediente && expediente.enPapelera ? expediente.enPapelera.eliminarDesde : null,
+    });
+  }
+  return lista.sort((a, b) => String(a.eliminarDesde).localeCompare(String(b.eliminarDesde)));
+}
+
+/**
+ * Elimina de la Papelera lo que ya cumplió el plazo. Se llama cada vez que se lee
+ * la carpeta (al abrir el panel o tocar Actualizar). Devuelve cuántos eliminó.
+ * Una carpeta sin fecha (sin expediente) no se toca: se elimina a mano con "Eliminar ya".
+ */
+async function limpiarPapelera(raiz) {
+  const papelera = await abrirPapelera(raiz);
+  if (!papelera) return 0;
+  let eliminados = 0;
+  for (const item of await leerPapelera(raiz)) {
+    if (item.eliminarDesde && new Date(item.eliminarDesde) <= new Date()) {
+      await papelera.removeEntry(item.nombreCarpeta, { recursive: true });
+      eliminados++;
+    }
+  }
+  return eliminados;
+}
+
+/** "Recuperar": devuelve la carpeta a Candidatos y sus ZIP a Procesados, en "En revisión". */
+async function recuperarDePapelera(raiz, item, usuario) {
+  const papelera = await abrirPapelera(raiz);
+  if (await buscarCarpetaCandidato(raiz, item.cedula)) {
+    throw new Error('Ya hay una carpeta con esta cédula en Candidatos (volvió a postularse). Revísala antes de recuperar.');
+  }
+  const destino = await moverCarpeta(papelera, item.nombreCarpeta, await subcarpeta(raiz, C.candidatos));
+  if (await existe(destino, C.zipsEnPapelera)) {
+    const carpetaZips = await destino.getDirectoryHandle(C.zipsEnPapelera);
+    const procesados = await subcarpeta(await subcarpeta(raiz, C.recibidos), C.procesados);
+    for (const z of await listar(carpetaZips)) if (z.tipo === 'file') await moverArchivo(z.handle, carpetaZips, procesados);
+    await destino.removeEntry(C.zipsEnPapelera, { recursive: true });
+  }
+  let expediente = null;
+  try { expediente = await leerExpediente(destino); } catch (e) { expediente = null; }
+  if (expediente) {
+    expediente.estado = 'revision';
+    delete expediente.enPapelera;
+    anotar(expediente, usuario, 'Lo recuperó de la Papelera (vuelve a "En revisión")');
+    await guardarExpediente(destino, expediente);
+  }
+}
+
+/** "Eliminar ya": borra de una vez lo que está en la Papelera. */
+async function eliminarDePapelera(raiz, item) {
+  const papelera = await abrirPapelera(raiz);
+  await papelera.removeEntry(item.nombreCarpeta, { recursive: true });
 }
 
 /** Agrega una línea a la bitácora del expediente. */
@@ -1056,6 +1188,7 @@ async function analizarArchivo(item, raiz) {
   if (!esCorreccion && !r.errores.length) {
     const existente = await buscarCarpetaCandidato(raiz, d.cedula);
     if (existente) r.avisos.push('Este candidato ya tiene carpeta: es un envío nuevo. Los archivos actuales se guardan en "_anteriores".');
+    if (await estaEnPapelera(raiz, d.cedula)) r.avisos.push('Esta cédula está en la Papelera (la marcaron como no contratada hace poco).');
   }
   r.tipo = r.errores.length ? 'invalido' : (esCorreccion ? 'correccion' : 'envio');
   return r;
@@ -1219,6 +1352,7 @@ async function revisarCorreccion(r, raiz) {
   const carpeta = await buscarCarpetaCandidato(raiz, d.cedula);
   if (!carpeta) {
     r.errores.push('No hay un candidato con esta cédula en Candidatos. Revisa que el candidato ya haya mandado su paquete.');
+    if (await estaEnPapelera(raiz, d.cedula)) r.avisos.push('Está en la Papelera (no contratado). Si fue un error, recupéralo desde la Papelera y procesa la corrección.');
     return;
   }
   let expediente = null;
@@ -1573,6 +1707,14 @@ async function crearCarpetaDeEjemplo(modo) {
     await sembrar({ cedula: '1006223344', nombre: 'Camilo Andrés Mejía', cargo: 'AUXILIAR DE BODEGA', seccion: 'BODEGA', docs: DOCS_COMPLETOS, celular: '3001234567', correo: 'camilo.mejia@ejemplo.com' }, 3, 'correcciones', 3);
     await sembrar({ cedula: '1193456712', nombre: 'Daniela Ospina', cargo: 'AUXILIAR DE CARNES', seccion: 'CARNES', docs: [...DOCS_COMPLETOS, 'manipulacion'] }, 12, 'completo', 7);
     await sembrar({ cedula: '31945220', nombre: 'Martha Lucía Cárdenas', cargo: 'AUXILIAR DE ASEO', seccion: 'ASEO', docs: DOCS_COMPLETOS }, 20, 'contratado', 6);
+    // Un no contratado que lleva 2 días en la Papelera (le quedan 5)
+    await sembrar({ cedula: '1088112233', nombre: 'Jhon Fredy Arango', cargo: 'SURTIDOR', seccion: 'PGC', docs: DOCS_COMPLETOS }, 9, 'revision', 2);
+    const jhon = (await leerCandidatos(raiz)).find((x) => x.cedula === '1088112233');
+    await enviarAPapelera(raiz, jhon, 'Analista de ejemplo');
+    const enPapelera = (await leerPapelera(raiz)).find((x) => x.cedula === '1088112233');
+    enPapelera.expediente.enPapelera.fecha = new Date(hace(2)).toISOString();
+    enPapelera.expediente.enPapelera.eliminarDesde = new Date(hace(2) + CONFIG.diasPapelera * MS_POR_DIA).toISOString();
+    await guardarExpediente(enPapelera.carpeta, enPapelera.expediente);
     recibidos.poner('1107554433_ANDRES_ROJAS_AUXILIAR_DE_PANADERIA.zip',
       await zipDeEjemplo({ cedula: '1107554433', nombre: 'Andrés Rojas', cargo: 'AUXILIAR DE PANADERIA', seccion: 'PANADERIA', docs: [...DOCS_COMPLETOS, 'manipulacion'] }, foto), hace(1, 2));
     recibidos.poner('1062887766_VALENTINA_RIOS_AUXILIAR_DE_BODEGA.zip',
@@ -1646,6 +1788,7 @@ const Icono = ({ nombre, tamano = 20 }) => {
     listo: <><path d="M5 12.5l4.5 4.5L19 7" /></>,
     subir: <><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" /></>,
     cargando: <><path d="M12 3a9 9 0 1 0 9 9" /></>,
+    papelera: <><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /><path d="M10 11v6M14 11v6" /></>,
   };
   return (
     <svg width={tamano} height={tamano} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
@@ -1739,7 +1882,7 @@ function PantallaArranque({ onCarpeta, onEjemplo, carpetaRecordada, onReabrir, e
 }
 
 /* ---------- Barra lateral ---------- */
-function BarraLateral({ vista, setVista, pendientes, totalCandidatos, usuario, carpeta, esEjemplo, onCambiarUsuario, onSalir }) {
+function BarraLateral({ vista, setVista, pendientes, totalCandidatos, enPapelera = 0, usuario, carpeta, esEjemplo, onCambiarUsuario, onSalir }) {
   // "Listos" va debajo de Candidatos: ahí pasan los que llegan a Completo o Contratado
   const Item = ({ id, icono, texto, cifra, pronto }) => (
     <button className="menu-item" aria-current={vista === id ? 'page' : undefined} disabled={pronto} onClick={() => setVista(id)}>
@@ -1753,6 +1896,7 @@ function BarraLateral({ vista, setVista, pendientes, totalCandidatos, usuario, c
       <Item id="bandeja" icono="bandeja" texto="Bandeja" cifra={pendientes} />
       <Item id="candidatos" icono="personas" texto="Candidatos" cifra={0} />
       <Item id="listos" icono="listo" texto="Listos" cifra={0} />
+      <Item id="papelera" icono="papelera" texto="Papelera" cifra={enPapelera} />
       <Item id="ajustes" icono="ajustes" texto="Ajustes" pronto="Parte 5" />
       <div className="lateral-pie">
         <span>Trabajando como</span>
@@ -2521,25 +2665,74 @@ function HojaCorrecciones({ exp, rechazados, faltantes, guardando, avisar, usuar
   );
 }
 
-/* ---------- Diálogo para confirmar el borrado de un no contratado ---------- */
+/* ---------- Papelera: no contratados por unos días ---------- */
 
 /**
- * Alerta de iOS: "¿Borrar a <nombre>?". Explica que no queda nada guardado.
- * El botón rojo llama onBorrar(c); mientras borra, los botones quedan inactivos.
+ * Lista de no contratados en la Papelera, con los días que les quedan.
+ * Recuperar → vuelve a Candidatos; Eliminar ya → se borra (pide confirmación).
  */
-function DialogoBorrar({ c, onBorrar, onCancelar }) {
-  const [borrando, setBorrando] = useState(false);
+function Papelera({ lista, cargando, onRecuperar, onEliminar, onRecargar, ocupado }) {
+  const diasQueQuedan = (fecha) => Math.max(0, Math.ceil((new Date(fecha) - Date.now()) / MS_POR_DIA));
   return (
-    <div className="dialogo-fondo" onClick={() => !borrando && onCancelar()}>
-      <div className="dialogo" role="alertdialog" aria-modal="true" aria-labelledby="titulo-borrar" onClick={(e) => e.stopPropagation()}>
-        <h2 id="titulo-borrar">¿No fue contratado(a)? Se borra {nombreBonito(c.nombre)}</h2>
-        <p>Se borran <strong>todos</strong> sus documentos, los de Gestión Humana, el expediente y sus ZIP recibidos.
-           No queda historial. Desde el panel no se puede deshacer.</p>
+    <>
+      <header className="encabezado">
+        <div>
+          <h1>Papelera</h1>
+          <p>Los no contratados quedan aquí {plural(CONFIG.diasPapelera, 'día', 'días')} por si hubo un error. Después se eliminan solos.</p>
+        </div>
+        <button className="boton boton-secundario" onClick={onRecargar} disabled={cargando}><Icono nombre="recargar" tamano={18} /> Actualizar</button>
+      </header>
+      <div className="tarjeta">
+        {!lista.length ? (
+          <div className="vacio">
+            <div className="icono-caja"><Icono nombre="papelera" tamano={28} /></div>
+            <h3>La Papelera está vacía</h3>
+            <p>Cuando marques a alguien como “No contratado”, queda aquí {plural(CONFIG.diasPapelera, 'día', 'días')} antes de eliminarse.</p>
+          </div>
+        ) : lista.map((item) => {
+          const quedan = item.eliminarDesde ? diasQueQuedan(item.eliminarDesde) : null;
+          const e = item.expediente;
+          return (
+            <div className="fila" key={item.nombreCarpeta}>
+              <div className="icono-caja ojo"><Icono nombre="papelera" /></div>
+              <div className="fila-texto">
+                <span className="fila-titulo">{nombreBonito(item.nombre)}</span>
+                <span className="fila-sub"><span className="numeros">C.C. {item.cedula || '—'}</span>{e && e.cargo ? ` — ${e.cargo}` : ''}</span>
+                <span className="fila-pista">
+                  {e && e.enPapelera ? `${e.enPapelera.por || '—'} lo marcó como no contratado el ${fechaCorta(e.enPapelera.fecha)} — ` : ''}
+                  {quedan === null ? 'Sin fecha: elimínalo a mano.' : quedan === 0 ? 'Se elimina la próxima vez que se actualice.' : `Se elimina en ${plural(quedan, 'día', 'días')} (${fechaCorta(item.eliminarDesde)}).`}
+                </span>
+              </div>
+              <div className="fila-lado">
+                <button className="boton boton-suave" disabled={ocupado} onClick={() => onRecuperar(item)}>Recuperar</button>
+                <button className="boton boton-texto peligro" disabled={ocupado} onClick={() => onEliminar(item)}>Eliminar ya</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+/* ---------- Diálogo de confirmación (alerta de iOS con botón rojo) ---------- */
+
+/**
+ * titulo, texto y textoBoton se muestran tal cual. El botón rojo llama onConfirmar();
+ * mientras trabaja, los botones quedan inactivos.
+ */
+function DialogoConfirmar({ titulo, texto, textoBoton, textoTrabajando, onConfirmar, onCancelar }) {
+  const [trabajando, setTrabajando] = useState(false);
+  return (
+    <div className="dialogo-fondo" onClick={() => !trabajando && onCancelar()}>
+      <div className="dialogo" role="alertdialog" aria-modal="true" aria-labelledby="titulo-confirmar" onClick={(e) => e.stopPropagation()}>
+        <h2 id="titulo-confirmar">{titulo}</h2>
+        <p>{texto}</p>
         <div className="acciones">
-          <button className="boton boton-secundario" disabled={borrando} onClick={onCancelar}>Cancelar</button>
-          <button className="boton boton-peligro" disabled={borrando}
-                  onClick={async () => { setBorrando(true); await onBorrar(c); }}>
-            {borrando ? 'Borrando…' : 'Borrar todo'}
+          <button className="boton boton-secundario" disabled={trabajando} onClick={onCancelar}>Cancelar</button>
+          <button className="boton boton-peligro" disabled={trabajando}
+                  onClick={async () => { setTrabajando(true); await onConfirmar(); }}>
+            {trabajando ? textoTrabajando : textoBoton}
           </button>
         </div>
       </div>
@@ -2588,7 +2781,9 @@ function App() {
   const [abierto, setAbierto] = useState(null);
   const [aviso, setAviso] = useState(null);
   const [editarNombre, setEditarNombre] = useState(false);
-  const [porBorrar, setPorBorrar] = useState(null);   // candidato no contratado esperando confirmación
+  const [confirmar, setConfirmar] = useState(null);   // diálogo de confirmación abierto (props de DialogoConfirmar)
+  const [papelera, setPapelera] = useState([]);       // no contratados en la Papelera
+  const [ocupado, setOcupado] = useState(false);      // moviendo carpetas (Papelera)
   const temporizador = useRef(null);
 
   /** Muestra un aviso abajo por unos segundos. */
@@ -2613,6 +2808,12 @@ function App() {
     if (!carpeta) return;
     setCargando(true);
     try {
+      // Primero se elimina de la Papelera lo que ya cumplió el plazo
+      const eliminados = await limpiarPapelera(carpeta);
+      if (eliminados) avisar(eliminados === 1
+        ? `Se eliminó 1 no contratado que ya cumplió ${plural(CONFIG.diasPapelera, 'día', 'días')} en la Papelera`
+        : `Se eliminaron ${eliminados} no contratados que ya cumplieron ${plural(CONFIG.diasPapelera, 'día', 'días')} en la Papelera`);
+      setPapelera(await leerPapelera(carpeta));
       const items = await buscarEnRecibidos(carpeta);
       setBandeja(items);
       setCandidatos(await leerCandidatos(carpeta));
@@ -2725,18 +2926,58 @@ function App() {
     await recargar();
   }
 
-  /** "No contratado" confirmado: borra todo lo del candidato y cierra su ficha. */
-  async function borrarNoContratado(c) {
+  /** "No contratado": pide confirmar y pasa el candidato a la Papelera. */
+  function pedirNoContratado(c) {
+    setConfirmar({
+      titulo: `¿No fue contratado(a)? ${nombreBonito(c.nombre)} pasa a la Papelera`,
+      texto: `Sus documentos, los de Gestión Humana y sus ZIP quedan en la Papelera ${plural(CONFIG.diasPapelera, 'día', 'días')}. En ese tiempo puedes recuperarlo; después se elimina todo.`,
+      textoBoton: 'Mover a la Papelera', textoTrabajando: 'Moviendo…',
+      onConfirmar: async () => {
+        try {
+          await enviarAPapelera(raiz, c, usuario);
+          setAbierto(null);
+          avisar(`${nombreBonito(c.nombre)} pasó a la Papelera por ${plural(CONFIG.diasPapelera, 'día', 'días')}`);
+        } catch (e) {
+          console.error(e);
+          avisar(`No se pudo mover a la Papelera: ${e.message}`, 'error');
+        }
+        setConfirmar(null);
+        await recargar();
+      },
+    });
+  }
+
+  /** "Recuperar" de la Papelera. (Ojo: "recuperar" sin más es otra función: la que recuerda la carpeta.) */
+  async function recuperarCandidato(item) {
+    setOcupado(true);
     try {
-      const r = await borrarCandidato(raiz, c);
-      setPorBorrar(null); setAbierto(null);
-      avisar(`Se borró todo lo de ${nombreBonito(c.nombre)}${r.zips ? ` (y ${plural(r.zips, 'ZIP', 'ZIP')} de Procesados)` : ''}`);
+      await recuperarDePapelera(raiz, item, usuario);
+      avisar(`${nombreBonito(item.nombre)} volvió a Candidatos`);
     } catch (e) {
       console.error(e);
-      setPorBorrar(null);
-      avisar(`No se pudo borrar: ${e.message}`, 'error');
-    }
+      avisar(`No se pudo recuperar: ${e.message}`, 'error');
+    } finally { setOcupado(false); }
     await recargar();
+  }
+
+  /** "Eliminar ya" en la Papelera: pide confirmar y borra. */
+  function pedirEliminar(item) {
+    setConfirmar({
+      titulo: `¿Eliminar a ${nombreBonito(item.nombre)} definitivamente?`,
+      texto: 'Se borran todos sus documentos, los de Gestión Humana y sus ZIP. Ya no se podrá recuperar desde el panel.',
+      textoBoton: 'Eliminar', textoTrabajando: 'Eliminando…',
+      onConfirmar: async () => {
+        try {
+          await eliminarDePapelera(raiz, item);
+          avisar(`Se eliminó todo lo de ${nombreBonito(item.nombre)}`);
+        } catch (e) {
+          console.error(e);
+          avisar(`No se pudo eliminar: ${e.message}`, 'error');
+        }
+        setConfirmar(null);
+        await recargar();
+      },
+    });
   }
 
   async function guardarNombre(nombre) {
@@ -2745,7 +2986,7 @@ function App() {
   }
 
   function salir() {
-    setRaiz(null); setBandeja([]); setCandidatos([]); setAbierto(null);
+    setRaiz(null); setBandeja([]); setCandidatos([]); setPapelera([]); setAbierto(null);
     if (!modoEjemplo) setRecordada(null);
     setModoEjemplo(null); setFase('arranque');
   }
@@ -2761,13 +3002,17 @@ function App() {
   const pendientes = bandeja.filter((x) => !x.analisis || x.analisis.tipo !== 'invalido').length;
   return (
     <div className="marco">
-      <BarraLateral vista={vista} setVista={setVista} pendientes={pendientes} usuario={usuario}
+      <BarraLateral vista={vista} setVista={setVista} pendientes={pendientes} enPapelera={papelera.length} usuario={usuario}
                     carpeta={raiz && raiz.name} esEjemplo={!!modoEjemplo}
                     onCambiarUsuario={() => setEditarNombre(true)} onSalir={salir} />
       <main className="trabajo">
         {vista === 'bandeja' && (
           <Bandeja items={bandeja} cargando={cargando} onRecargar={() => recargar()} onProcesar={(i) => procesar(i)}
                    onProcesarTodos={procesarTodos} procesando={procesando} lote={lote} onAgregar={agregarArchivos} />
+        )}
+        {vista === 'papelera' && (
+          <Papelera lista={papelera} cargando={cargando} ocupado={ocupado} onRecargar={() => recargar()}
+                    onRecuperar={recuperarCandidato} onEliminar={pedirEliminar} />
         )}
         {vista === 'listos' && (
           <Candidatos lista={candidatos} cargando={cargando} onAbrir={setAbierto} onRecargar={() => recargar()} modo="listos" />
@@ -2778,8 +3023,8 @@ function App() {
       </main>
       {/* Al cerrar la ficha se revisa otra vez la bandeja: una corrección recién pedida cambia los avisos */}
       {abierto && <Ficha c={abierto} usuario={usuario} avisar={avisar} onCambio={recargarCandidatos}
-                         onCerrar={() => { setAbierto(null); recargar(); }} onNoContratado={setPorBorrar} />}
-      {porBorrar && <DialogoBorrar c={porBorrar} onBorrar={borrarNoContratado} onCancelar={() => setPorBorrar(null)} />}
+                         onCerrar={() => { setAbierto(null); recargar(); }} onNoContratado={pedirNoContratado} />}
+      {confirmar && <DialogoConfirmar {...confirmar} onCancelar={() => setConfirmar(null)} />}
       {editarNombre && <DialogoNombre actual={usuario} onGuardar={guardarNombre} onCancelar={() => setEditarNombre(false)} />}
       {aviso && (
         <div className={`aviso-flotante ${aviso.tipo === 'error' ? 'error' : ''} ${modoEjemplo ? 'sobre-selector' : ''}`} role="status">
