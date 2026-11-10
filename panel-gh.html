@@ -1869,7 +1869,11 @@ function Candidatos({ lista, cargando, onAbrir, onRecargar, modo = 'proceso' }) 
   }, [lista, busqueda, filtro, enListos]);
 
   const cuenta = (id) => lista.filter((c) => c.expediente && c.expediente.estado === id).length;
-  const deEstaVista = lista.filter((c) => enListos === ESTADOS_LISTOS.includes(c.expediente && c.expediente.estado));
+  // Los que cuenta el encabezado: en Candidatos no se cuentan los "No contratados" (no se muestran por defecto)
+  const deEstaVista = lista.filter((c) => {
+    const estado = c.expediente && c.expediente.estado;
+    return enListos ? ESTADOS_LISTOS.includes(estado) : !ESTADOS_LISTOS.includes(estado) && estado !== 'no_contratado';
+  });
 
   return (
     <>
