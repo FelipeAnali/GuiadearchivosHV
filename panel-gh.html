@@ -10,7 +10,7 @@
   Página para la analista de Gestión Humana. Trabaja directamente sobre la
   carpeta "Hojas de vida" sincronizada con OneDrive en el computador.
 
-  QUÉ HACE (PARTES 1, 2 y 3 de 6):
+  QUÉ HACE (PARTES 1, 2, 3 y 5 de 6):
     1. ARRANQUE: elegir la carpeta "Hojas de vida" y escribir quién la usa.
        Si faltan las subcarpetas (Recibidos, Candidatos), las crea.
     2. BANDEJA: muestra los ZIP que llegaron a "Recibidos" (los que suben los
@@ -24,16 +24,6 @@
        Candidatos y aparece en "Listos" (su carpeta no se mueve: sigue en Candidatos).
        NO CONTRATADO: al elegir "No contratado" (y confirmar), la carpeta completa
        del candidato y sus ZIP de Recibidos/Procesados pasan a la PAPELERA.
-    7. PAPELERA: guarda a los no contratados 7 días (CONFIG_PANEL.diasPapelera) por
-       si fue un error: "Recuperar" lo devuelve a Candidatos tal como estaba;
-       "Eliminar ya" lo borra. Cumplido el plazo, se eliminan solos la próxima vez
-       que alguien abra el panel. No hay historial más largo que eso.
-    8. AJUSTES: cualquiera que use el panel puede cambiar el checklist de GH (con la
-       página de cada plataforma, que sale en la ficha como "Abrir página"), los
-       motivos rápidos de rechazo, los días de alerta, los días de la Papelera, el
-       peso máximo de los archivos de GH y el link de la app del candidato. Se
-       guardan en "ajustes.json" dentro de la carpeta: todo el equipo usa los mismos.
-       Lo que no esté en ajustes.json sale de CONFIG_PANEL (valores de fábrica).
     5. FICHA: aprobar o rechazar (con motivo) cada documento del candidato,
        subir los archivos de GH (SAGRILAFT, ARL, EPS, caja, pensión, paquete
        de inducción), marcar los chequeos (examen médico, ERP, Cronoseg) y
@@ -48,7 +38,24 @@
        ZIP de corrección, la bandeja lo procesa: guarda los archivos viejos de
        esos documentos en "_anteriores", pone los nuevos como "pendiente" y
        anota todo en la bitácora. El formato del link y del ZIP está en la
-       sección 6 (CONTRATO con la app del candidato).
+       sección 6B (CONTRATO con la app del candidato).
+
+    7. PAPELERA: guarda a los no contratados 7 días (CONFIG_PANEL.diasPapelera) por
+       si fue un error: "Recuperar" lo devuelve a Candidatos tal como estaba;
+       "Eliminar ya" lo borra. Cumplido el plazo, se eliminan solos la próxima vez
+       que alguien abra el panel. No hay historial más largo que eso.
+    8. AJUSTES: cualquiera que use el panel puede cambiar el checklist de GH (con la
+       página de cada plataforma, que sale en la ficha como "Abrir página"), los
+       motivos rápidos de rechazo, los días de alerta, los días de la Papelera, el
+       peso máximo de los archivos de GH y el link de la app del candidato. Se
+       guardan en "ajustes.json" dentro de la carpeta: todo el equipo usa los mismos.
+       Lo que no esté en ajustes.json sale de CONFIG_PANEL (valores de fábrica).
+    9. VARIAS PERSONAS A LA VEZ: al abrir una ficha queda la marca "en_uso.json"
+       (quién y desde cuándo). Si otra persona abre el mismo candidato ve "Natalia
+       tiene abierta esta ficha", y en la lista sale "Abierta por Natalia". Si aun así
+       OneDrive crea una copia en conflicto del expediente (expediente-NOMBREPC.json),
+       el panel la detecta y deja elegir con qué versión quedarse; la bitácora de
+       las dos se une y la copia sobrante va a _anteriores.
 
   LO QUE LLEGA EN LAS SIGUIENTES PARTES:
     4. Entrega final en un solo PDF (el ZIP ya está: "Descargar ZIP" en la ficha).
@@ -77,6 +84,8 @@
     4B. PAPELERA       Mover un no contratado a la Papelera, recuperarlo y
                        eliminar lo que ya cumplió los 7 días.
     4C. AJUSTES        Leer, revisar y guardar ajustes.json (valores del equipo).
+    4D. A LA VEZ       Marca "ficha abierta" (en_uso.json) y copias en conflicto
+                       de OneDrive (detectarlas y resolverlas).
     5. BANDEJA         Buscar los ZIP en Recibidos y revisarlos.
     6. PROCESAR        Pasar un ZIP a la carpeta del candidato (envío normal).
     6B. CORRECCIONES   Contrato con la app del candidato (link y ZIP), armar el
@@ -198,6 +207,12 @@
   .boton-texto { background: none; color: var(--tinte); padding: 0 6px; font-weight: 400; font-size: 16px; }
   .boton-texto.peligro { color: var(--rojo); }
   .boton-peligro { background: var(--rojo); color: #FFFFFF; }
+  /* Diálogo de versiones en conflicto (sale encima de la ficha) */
+  .dialogo-fondo.encima { z-index: 80; }
+  .dialogo.dialogo-ancho { width: min(520px, 100%); text-align: left; max-height: calc(100vh - 32px); overflow-y: auto; }
+  .version { position: relative; display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; cursor: pointer; }
+  .version + .version::before { content: ''; position: absolute; top: 0; right: 0; left: 16px; height: 0.5px; background: var(--separador); }
+  .version input { margin-top: 4px; accent-color: var(--lima); width: 18px; height: 18px; flex-shrink: 0; }
   .boton-grande { min-height: 50px; padding: 0 20px; border-radius: 14px; font-size: 17px; width: 100%; }
   @media (hover: hover) and (pointer: fine) { .boton:hover:not(:disabled) { opacity: 0.85; } }
 
@@ -1245,6 +1260,93 @@ async function guardarAjustes(raiz, valores, usuario, leidos) {
   return archivo;
 }
 
+/* ==========================================================================
+   4D. VARIAS PERSONAS A LA VEZ
+   - "en_uso.json" en la carpeta del candidato: quién tiene abierta su ficha y desde
+     cuándo. Es solo un aviso (no bloquea). Vence a los MINUTOS_EN_USO.
+   - Copias en conflicto: si dos computadores cambian el expediente sin estar
+     sincronizados, OneDrive guarda una copia aparte ("expediente-NOMBREPC.json").
+   ========================================================================== */
+const ARCHIVO_EN_USO = 'en_uso.json';
+/** Minutos que dura la marca "ficha abierta" si no se renueva (se renueva cada 5 min). */
+const MINUTOS_EN_USO = 15;
+/** expediente.json, o una copia en conflicto de OneDrive: "expediente-PC-DE-NATALIA.json". */
+const ES_COPIA_CONFLICTO = /^expediente.+\.json$/i;
+
+/** Lee la marca "ficha abierta" si todavía está vigente: { por, desde } o null. */
+async function leerEnUso(carpeta) {
+  try {
+    if (!(await existe(carpeta, ARCHIVO_EN_USO))) return null;
+    const marca = JSON.parse(await (await (await carpeta.getFileHandle(ARCHIVO_EN_USO)).getFile()).text());
+    return Date.now() - new Date(marca.desde).getTime() < MINUTOS_EN_USO * 60 * 1000 ? marca : null;
+  } catch (e) { return null; }
+}
+
+/** Deja la marca "<usuario> tiene abierta esta ficha" (o la renueva). */
+async function marcarEnUso(carpeta, usuario) {
+  try { await escribir(carpeta, ARCHIVO_EN_USO, JSON.stringify({ por: usuario, desde: new Date().toISOString() })); }
+  catch (e) { /* la marca es solo un aviso: si no se puede escribir, no pasa nada */ }
+}
+
+/** Deja la marca solo si nadie más tiene la ficha abierta (así no se pisa la marca de otra persona). */
+async function marcarSiLibre(carpeta, usuario) {
+  const marca = await leerEnUso(carpeta);
+  if (!marca || marca.por === usuario) await marcarEnUso(carpeta, usuario);
+}
+
+/** Quita la marca al cerrar la ficha, solo si es de este usuario. */
+async function quitarEnUso(carpeta, usuario) {
+  try {
+    if (!(await existe(carpeta, ARCHIVO_EN_USO))) return;
+    const marca = JSON.parse(await (await (await carpeta.getFileHandle(ARCHIVO_EN_USO)).getFile()).text());
+    if (marca.por === usuario) await carpeta.removeEntry(ARCHIVO_EN_USO);
+  } catch (e) { /* no pasa nada */ }
+}
+
+/** Nombres de las copias en conflicto del expediente que hay en la carpeta. */
+async function copiasEnConflicto(carpeta) {
+  return (await listar(carpeta)).filter((x) => x.tipo === 'file' && x.nombre !== ARCHIVO_EXPEDIENTE && ES_COPIA_CONFLICTO.test(x.nombre)).map((x) => x.nombre);
+}
+
+/**
+ * Lee el expediente principal y sus copias en conflicto, para compararlas:
+ * [{ nombre, expediente }] (el principal primero). Las copias dañadas se ignoran.
+ */
+async function leerVersiones(carpeta) {
+  const versiones = [];
+  for (const nombre of [ARCHIVO_EXPEDIENTE, ...(await copiasEnConflicto(carpeta))]) {
+    try {
+      const expediente = JSON.parse(await (await (await carpeta.getFileHandle(nombre)).getFile()).text());
+      versiones.push({ nombre, expediente });
+    } catch (e) { /* copia dañada: se ignora */ }
+  }
+  return versiones;
+}
+
+/**
+ * Resuelve el conflicto: se queda con la versión elegida, le une la bitácora de TODAS
+ * las versiones (sin repetir líneas), la guarda como expediente.json y pasa las copias
+ * en conflicto a _anteriores/<fecha>_conflicto/. Devuelve el expediente guardado.
+ */
+async function resolverConflicto(carpeta, versiones, nombreElegido, usuario) {
+  const elegida = versiones.find((v) => v.nombre === nombreElegido) || versiones[0];
+  const principal = versiones.find((v) => v.nombre === ARCHIVO_EXPEDIENTE);
+  const vistas = new Set();
+  const bitacora = versiones.flatMap((v) => v.expediente.bitacora || [])
+    .filter((b) => { const k = `${b.fecha}|${b.usuario}|${b.accion}`; if (vistas.has(k)) return false; vistas.add(k); return true; })
+    .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  const resultado = { ...elegida.expediente, bitacora, rev: principal ? principal.expediente.rev : elegida.expediente.rev };
+  anotar(resultado, usuario, `Resolvió una copia en conflicto de OneDrive: se quedó con la versión de ${elegida.expediente.actualizadoPor || '—'} (${fechaCorta(elegida.expediente.actualizado)})`);
+  const guardado = await guardarExpediente(carpeta, resultado);
+  const copias = versiones.filter((v) => v.nombre !== ARCHIVO_EXPEDIENTE).map((v) => v.nombre);
+  if (copias.length) {
+    const anteriores = await subcarpeta(carpeta, C.anteriores);
+    const destino = await subcarpeta(anteriores, await nombreLibre(anteriores, `${marcaDeTiempo()}_conflicto`));
+    for (const nombre of copias) await moverArchivo(await carpeta.getFileHandle(nombre), carpeta, destino);
+  }
+  return guardado;
+}
+
 /** Celular del ZIP: solo si son 10 números que empiezan por 3 (si no, ''). */
 function celularLimpio(valor) {
   const digitos = String(valor || '').replace(/\D/g, '');
@@ -1413,7 +1515,9 @@ async function procesarZip(raiz, item, usuario) {
   if (!expediente) expediente = expedienteNuevo(d, usuario);
 
   // 2) Si ya había documentos, se guardan en _anteriores/<fecha>/ antes de reemplazar
-  const actuales = (await listar(carpeta)).filter((x) => x.tipo === 'file' && x.nombre !== ARCHIVO_EXPEDIENTE);
+  // (la marca "en uso" y las copias en conflicto del expediente no son documentos: se quedan)
+  const actuales = (await listar(carpeta)).filter((x) => x.tipo === 'file' && x.nombre !== ARCHIVO_EXPEDIENTE
+    && x.nombre !== ARCHIVO_EN_USO && !ES_COPIA_CONFLICTO.test(x.nombre));
   let carpetaAnterior = null;
   if (actuales.length) {
     const anteriores = await subcarpeta(carpeta, C.anteriores);
@@ -1655,6 +1759,8 @@ async function leerCandidatos(raiz) {
       nombreCarpeta: item.nombre,
       expediente,
       problema,
+      enUso: await leerEnUso(item.handle),            // { por, desde } si alguien tiene abierta la ficha
+      conflictos: await copiasEnConflicto(item.handle), // copias en conflicto de OneDrive
       cedula: expediente ? expediente.cedula : cedula,
       nombre: expediente ? expediente.nombre : item.nombre.split('_').slice(1).join(' '),
     });
@@ -2207,7 +2313,7 @@ const ESTADOS_LISTOS = ['completo', 'contratado'];
  *   modo 'proceso' → Candidatos: solo los que siguen en proceso (por defecto).
  *   modo 'listos'  → Listos: los que llegaron a "Completo" o "Contratado".
  */
-function Candidatos({ lista, cargando, onAbrir, onRecargar, modo = 'proceso' }) {
+function Candidatos({ lista, cargando, onAbrir, onRecargar, modo = 'proceso', usuario }) {
   const enListos = modo === 'listos';
   const [busqueda, setBusqueda] = useState('');
   const [filtro, setFiltro] = useState(FILTRO_ACTIVOS);
@@ -2274,14 +2380,14 @@ function Candidatos({ lista, cargando, onAbrir, onRecargar, modo = 'proceso' }) 
               : 'Procesa un paquete de la bandeja y el candidato aparecerá aquí.'}</p>
           </div>
         ) : (
-          visibles.map((c) => <FilaCandidato key={c.nombreCarpeta} c={c} onAbrir={onAbrir} />)
+          visibles.map((c) => <FilaCandidato key={c.nombreCarpeta} c={c} onAbrir={onAbrir} usuario={usuario} />)
         )}
       </div>
     </>
   );
 }
 
-function FilaCandidato({ c, onAbrir }) {
+function FilaCandidato({ c, onAbrir, usuario }) {
   const e = c.expediente;
   const av = avanceDe(e);
   const dias = e ? diasDesde(e.creado) : 0;
@@ -2292,6 +2398,8 @@ function FilaCandidato({ c, onAbrir }) {
       <div className="fila-texto">
         <span className="fila-titulo">{nombreBonito(c.nombre)}</span>
         <span className="fila-sub numeros">{siglaDocumento(e && e.tipoDocumento)} {c.cedula || '—'}{e && e.primerEmpleo ? ' — primer empleo' : ''}</span>
+        {c.enUso && c.enUso.por !== usuario && <span className="fila-pista">Abierta por {c.enUso.por}</span>}
+        {c.conflictos && c.conflictos.length > 0 && <span className="mensaje aviso">OneDrive creó una copia en conflicto: ábrelo para resolverla.</span>}
       </div>
       <div className="fila-texto c-cargo">
         {e ? <><span className="fila-sub" style={{ color: 'var(--texto)' }}>{e.cargo || 'Sin cargo'}</span><span className="fila-pista">{e.seccion}</span></>
@@ -2332,6 +2440,9 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
   const [rechazando, setRechazando] = useState(null);              // { id, motivo } mientras escribe el motivo
   const [pidiendo, setPidiendo] = useState(false);                 // hoja "Pedir correcciones" abierta
   const [descargando, setDescargando] = useState(false);           // armando el ZIP del expediente
+  const [otraPersona, setOtraPersona] = useState(null);            // { por, desde } si alguien más la tiene abierta
+  const [conflicto, setConflicto] = useState(null);                // versiones del expediente si hay copias en conflicto
+  const [resolviendo, setResolviendo] = useState(false);           // diálogo para elegir versión abierto
   const campoArchivo = useRef(null);
   const destino = useRef(null);                                    // a qué ítem va el archivo que se está subiendo
 
@@ -2343,12 +2454,40 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
     setArchivosGH(gh ? Object.fromEntries((await listar(gh.handle)).filter((x) => x.tipo === 'file').map((x) => [x.nombre, x.handle])) : {});
   }, [c]);
 
+  // Al abrir: ¿alguien más la tiene abierta? ¿hay copias en conflicto? Luego deja la marca
+  // "en uso" (se renueva cada 5 minutos) y la quita al cerrar.
+  useEffect(() => {
+    let activa = true;
+    (async () => {
+      const marca = await leerEnUso(c.carpeta);
+      if (activa && marca && marca.por !== usuario) setOtraPersona(marca);
+      const versiones = await leerVersiones(c.carpeta);
+      if (activa && versiones.length > 1) setConflicto(versiones);
+      await marcarSiLibre(c.carpeta, usuario);
+    })();
+    const renovar = setInterval(() => marcarSiLibre(c.carpeta, usuario), 5 * 60 * 1000);
+    return () => { activa = false; clearInterval(renovar); quitarEnUso(c.carpeta, usuario); };
+  }, [c]);
+
+  /** Se queda con la versión elegida del expediente (diálogo de copias en conflicto). */
+  async function elegirVersion(nombre) {
+    try {
+      setExp(await resolverConflicto(c.carpeta, conflicto, nombre, usuario));
+      setConflicto(null); setResolviendo(false);
+      avisar('Listo: quedó una sola versión del expediente');
+      onCambio(); leerArchivos();
+    } catch (e) {
+      setResolviendo(false);
+      avisar(e instanceof ErrorChoque ? e.message : `No se pudo resolver: ${e.message}`, 'error');
+    }
+  }
+
   useEffect(() => {
     leerArchivos();
-    const alTeclear = (ev) => ev.key === 'Escape' && !rechazando && !pidiendo && onCerrar();
+    const alTeclear = (ev) => ev.key === 'Escape' && !rechazando && !pidiendo && !resolviendo && onCerrar();
     window.addEventListener('keydown', alTeclear);
     return () => window.removeEventListener('keydown', alTeclear);
-  }, [c, rechazando, pidiendo]);
+  }, [c, rechazando, pidiendo, resolviendo]);
 
   /**
    * Hace un cambio en el expediente y lo guarda en la carpeta.
@@ -2608,6 +2747,18 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
               <Icono nombre="corregir" tamano={16} /> Pedir correcciones
             </button>
           </div>
+          {otraPersona && (
+            <div className="mensaje aviso" role="status">
+              {otraPersona.por} tiene abierta esta ficha (desde las {new Date(otraPersona.desde).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}).
+              Si las dos hacen cambios al mismo tiempo se pueden cruzar: coordinen antes.
+            </div>
+          )}
+          {conflicto && (
+            <div className="mensaje aviso listo-banner" role="alert">
+              OneDrive guardó {conflicto.length === 2 ? 'otra versión' : `${conflicto.length - 1} versiones más`} de este expediente (alguien lo cambió sin estar sincronizado).
+              <button className="boton boton-principal" onClick={() => setResolviendo(true)}>Resolver</button>
+            </div>
+          )}
           {todoListo && !cerrado && exp.estado !== 'completo' && (
             <div className="mensaje info listo-banner">
               Todo está completo.
@@ -2737,6 +2888,9 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
           </section>
         </div>
       </aside>
+      {resolviendo && conflicto && (
+        <DialogoVersiones versiones={conflicto} onElegir={elegirVersion} onCancelar={() => setResolviendo(false)} />
+      )}
       {pidiendo && (
         <HojaCorrecciones exp={exp} rechazados={rechazados} faltantes={faltantes} guardando={guardando}
                           avisar={avisar} usuario={usuario} onRegistrar={registrarCorreccion} onCerrar={() => setPidiendo(false)} />
@@ -3028,6 +3182,52 @@ function Ajustes({ info, onGuardar, onRecargar, cargando }) {
         <p className="nota">Esto solo cambia lo que ves aquí: para que quede, toca “Guardar ajustes”.</p>
       </div>
     </>
+  );
+}
+
+/* ---------- Diálogo: elegir versión del expediente (copias en conflicto) ---------- */
+
+/**
+ * Muestra cada versión (quién la cambió, cuándo, estado, avance y su último cambio)
+ * para elegir con cuál quedarse. La bitácora de todas se une igual.
+ */
+function DialogoVersiones({ versiones, onElegir, onCancelar }) {
+  // Por defecto, la versión cambiada más recientemente
+  const masReciente = [...versiones].sort((a, b) => String(b.expediente.actualizado).localeCompare(String(a.expediente.actualizado)))[0].nombre;
+  const [elegida, setElegida] = useState(masReciente);
+  const [guardando, setGuardando] = useState(false);
+  return (
+    <div className="dialogo-fondo encima" onClick={() => !guardando && onCancelar()}>
+      <div className="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="titulo-versiones" onClick={(e) => e.stopPropagation()}>
+        <h2 id="titulo-versiones">¿Con qué versión te quedas?</h2>
+        <p>Elige la que tenga el trabajo correcto. La bitácora de todas se une para no perder el registro; la otra versión queda guardada en “{C.anteriores}”.</p>
+        <div className="tarjeta" role="radiogroup">
+          {versiones.map((v) => {
+            const e = v.expediente;
+            const av = avanceDe(e);
+            const ultimo = (e.bitacora || [])[(e.bitacora || []).length - 1];
+            return (
+              <label key={v.nombre} className="version">
+                <input type="radio" name="version" checked={elegida === v.nombre} onChange={() => setElegida(v.nombre)} />
+                <span className="fila-texto">
+                  <span className="fila-titulo">{e.actualizadoPor || '—'}, {fechaCorta(e.actualizado)}</span>
+                  <span className="fila-sub">{nombreEstado(e.estado)} — {av.hechos} de {av.total} listos</span>
+                  {ultimo && <span className="fila-pista">Último cambio: {ultimo.accion}</span>}
+                  <span className="fila-pista">{v.nombre === ARCHIVO_EXPEDIENTE ? 'Versión principal' : `Copia: ${v.nombre}`}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <div className="acciones">
+          <button className="boton boton-secundario" disabled={guardando} onClick={onCancelar}>Cancelar</button>
+          <button className="boton boton-principal" disabled={guardando}
+                  onClick={async () => { setGuardando(true); await onElegir(elegida); setGuardando(false); }}>
+            {guardando ? 'Guardando…' : 'Quedarme con esta'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -3355,10 +3555,10 @@ function App() {
                     onRecuperar={recuperarCandidato} onEliminar={pedirEliminar} />
         )}
         {vista === 'listos' && (
-          <Candidatos lista={candidatos} cargando={cargando} onAbrir={setAbierto} onRecargar={() => recargar()} modo="listos" />
+          <Candidatos lista={candidatos} cargando={cargando} onAbrir={setAbierto} onRecargar={() => recargar()} modo="listos" usuario={usuario} />
         )}
         {vista === 'candidatos' && (
-          <Candidatos lista={candidatos} cargando={cargando} onAbrir={setAbierto} onRecargar={() => recargar()} />
+          <Candidatos lista={candidatos} cargando={cargando} onAbrir={setAbierto} onRecargar={() => recargar()} usuario={usuario} />
         )}
       </main>
       {/* Al cerrar la ficha se revisa otra vez la bandeja: una corrección recién pedida cambia los avisos */}
