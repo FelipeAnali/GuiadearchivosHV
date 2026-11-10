@@ -423,7 +423,8 @@ async function revisarArchivo(archivo, doc, cedula, archivosActuales) {
       revisado: tieneTexto,        // true = se leyó y pasó la revisión automática
       // ¿El texto trae el número de documento del candidato? (los certificados de EPS y pensión lo traen)
       // Solo se mira en los documentos que siempre lo traen (revision.traeCedula)
-      mencionaCedula: tieneTexto && reglas.traeCedula ? texto.replace(/[^0-9]/g, '').includes(cedula) : null,
+      mencionaCedula: tieneTexto && reglas.traeCedula
+        ? texto.replace(/^\d+$/.test(cedula) ? /[^0-9]/g : /[^A-Z0-9]/g, '').includes(cedula) : null,
       protegido: !!lectura.protegido, // true = tiene contraseña que no es la cédula, no se pudo revisar
       claveEsCedula: !!lectura.claveEsCedula, // true = tenía contraseña y era la cédula (se revisó igual)
     },
@@ -622,6 +623,7 @@ async function armarZip(sesion) {
 
   zip.file('datos_candidato.json', JSON.stringify({
     version: 1,
+    tipoDocumento: datos.tipoDocumento || 'CC',
     cedula: datos.cedula,
     nombre: datos.nombre,
     celular: datos.celular || '',
@@ -650,7 +652,7 @@ function textoDeRevision(sesion, resumen) {
     'DOCUMENTOS DE INGRESO — Supertiendas Cañaveral S.A.S.',
     '',
     `Nombre:        ${datos.nombre}`,
-    `Documento:     ${datos.cedula}`,
+    `Documento:     ${datos.tipoDocumento || 'CC'} ${datos.cedula}`,
     `Celular:       ${datos.celular || '—'}`,
     `Correo:        ${datos.correo || '—'}`,
     `Cargo:         ${datos.cargo}`,
@@ -717,7 +719,7 @@ function sesionNueva(dispositivoPersonal, primerEmpleo) {
     dispositivoPersonal,
     primerEmpleo,   // respuesta a "¿Es tu primer empleo?" (se copia a datos al guardar los datos)
     autorizacion: { aceptada: true, fecha: new Date(ahora).toISOString() },
-    datos: null,    // { nombre, cedula, celular, correo, cargo, seccion, primerEmpleo }
+    datos: null,    // { nombre, tipoDocumento, cedula, celular, correo, cargo, seccion, primerEmpleo }
     archivos: {},   // { idDocumento: [ { nombre, tamano, blob, fecha } ] }
   };
 }
@@ -1132,6 +1134,26 @@ function PantallaInicio({ alComenzar, guardadoDisponible, avisoInicial }) {
   );
 }
 
+/** Tipos de documento que se aceptan. CC: solo números. Los demás pueden tener letras. */
+const TIPOS_DOCUMENTO = [
+  ['CC', 'Cédula de ciudadanía'],
+  ['CE', 'Cédula de extranjería'],
+  ['PPT', 'Permiso por Protección Temporal (PPT)'],
+  ['PA', 'Pasaporte'],
+];
+
+/** Número de documento limpio: la cédula queda solo con números; los demás, letras y números en mayúscula. */
+function normalizarDocumento(texto, tipo) {
+  return tipo === 'CC'
+    ? String(texto || '').replace(/\D/g, '')
+    : String(texto || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+}
+
+/** ¿El número tiene un largo razonable para su tipo? */
+function documentoValido(numero, tipo) {
+  return tipo === 'CC' ? /^\d{5,12}$/.test(numero) : /^[0-9A-Z]{3,15}$/.test(numero);
+}
+
 /** Celular colombiano: 10 números y empieza por 3. */
 const CELULAR_VALIDO = /^3\d{9}$/;
 /** Correo con forma nombre@dominio.algo (revisión sencilla, sin espacios). */
@@ -1141,6 +1163,7 @@ const CORREO_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 function PantallaDatos({ datosIniciales, primerEmpleoInicial, alGuardar }) {
   const [nombre, setNombre] = useState(datosIniciales?.nombre || '');
   const [cedula, setCedula] = useState(datosIniciales?.cedula || '');
+  const [tipoDocumento, setTipoDocumento] = useState(datosIniciales?.tipoDocumento || 'CC');
   const [celular, setCelular] = useState(datosIniciales?.celular || '');
   const [correo, setCorreo] = useState(datosIniciales?.correo || '');
   // Si hay datos guardados de antes, solo se reutilizan el cargo y la sección que SIGAN
@@ -1180,10 +1203,14 @@ function PantallaDatos({ datosIniciales, primerEmpleoInicial, alGuardar }) {
   function guardar(evento) {
     evento.preventDefault();
     const nombreLimpio = nombre.trim().replace(/\s+/g, ' ');
-    const cedulaLimpia = cedula.replace(/\D/g, ''); // solo números (quita puntos y espacios)
+    const cedulaLimpia = normalizarDocumento(cedula, tipoDocumento); // quita puntos, espacios y guiones
     const nuevosErrores = {};
     if (nombreLimpio.length < 3) nuevosErrores.nombre = 'Escribe tu nombre completo, como aparece en tu cédula.';
-    if (cedulaLimpia.length < 5 || cedulaLimpia.length > 12) nuevosErrores.cedula = 'Escribe tu número de documento, solo números.';
+    if (!documentoValido(cedulaLimpia, tipoDocumento)) {
+      nuevosErrores.cedula = tipoDocumento === 'CC'
+        ? 'Escribe tu número de cédula, solo números.'
+        : 'Escribe el número de tu documento tal como aparece (letras y números).';
+    }
     // Celular: obligatorio, 10 números y empieza por 3 (si lo escriben con +57 se le quita)
     const celularLimpio = celular.replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, '');
     if (!CELULAR_VALIDO.test(celularLimpio)) nuevosErrores.celular = 'Escribe tu celular: 10 números y empieza por 3.';
@@ -1208,7 +1235,7 @@ function PantallaDatos({ datosIniciales, primerEmpleoInicial, alGuardar }) {
     else if (!buscarPuesto(cargoFinal, seccionFinal)) nuevosErrores.seccion = 'Elige la sección a la que vas a entrar.';
     setErrores(nuevosErrores);
     if (Object.values(nuevosErrores).every((v) => !v)) {
-      alGuardar({ nombre: nombreLimpio, cedula: cedulaLimpia, celular: celularLimpio, correo: correoLimpio,
+      alGuardar({ nombre: nombreLimpio, tipoDocumento, cedula: cedulaLimpia, celular: celularLimpio, correo: correoLimpio,
                   cargo: cargoFinal, seccion: seccionFinal, primerEmpleo });
     } else {
       // Lleva la vista al primer mensaje de error para que el candidato sepa qué falta.
@@ -1237,10 +1264,20 @@ function PantallaDatos({ datosIniciales, primerEmpleoInicial, alGuardar }) {
                      placeholder="Como aparece en tu cédula"
                      value={nombre} onChange={(e) => setNombre(e.target.value)} maxLength={120} />
             </label>
+            <label className="fila fila-campo">
+              <span className="etiqueta">Tipo de documento</span>
+              <span className="selector-con-flecha" style={{ display: 'block' }}>
+                <select value={tipoDocumento} onChange={(e) => setTipoDocumento(e.target.value)}>
+                  {TIPOS_DOCUMENTO.map(([id, nombreTipo]) => <option key={id} value={id}>{nombreTipo}</option>)}
+                </select>
+              </span>
+            </label>
             <label className={`fila fila-campo ${errores.cedula ? 'con-error' : ''}`}>
               <span className="etiqueta">Número de documento</span>
-              <input type="text" inputMode="numeric" autoComplete="off" enterKeyHint="next"
-                     placeholder="Solo números"
+              {/* La cédula abre el teclado de números; los demás documentos pueden tener letras */}
+              <input type="text" inputMode={tipoDocumento === 'CC' ? 'numeric' : 'text'}
+                     autoCapitalize={tipoDocumento === 'CC' ? 'off' : 'characters'} autoComplete="off" enterKeyHint="next"
+                     placeholder={tipoDocumento === 'CC' ? 'Solo números' : 'Como aparece en tu documento'}
                      value={cedula} onChange={(e) => setCedula(e.target.value)} maxLength={20} />
             </label>
             <label className={`fila fila-campo ${errores.celular ? 'con-error' : ''}`}>
@@ -2169,7 +2206,7 @@ class PantallaDeError extends React.Component {
 
    CONTRATO con el panel (no cambiarlo sin cambiar también panel-gh.html):
      Link:  ?c=<código>; código = JSON → texto UTF-8 → base64url (sin "=").
-            JSON = { "v": 1, "n": 1, "h": "<16 primeros hex de SHA-256 de la cédula>",
+            JSON = { "v": 1, "n": 1, "h": "<16 primeros hex de SHA-256 del documento (solo letras y números, en mayúscula)>",
                      "d": [ { "id": "adres", "m": "No se lee bien" } ] }
             "id" es el de CONFIG.documentos (si no existe, se ignora y se avisa).
             El link no lleva nombre ni cédula a la vista: solo la huella "h".
@@ -2188,9 +2225,12 @@ const PASOS_CORRECCION = ['Lo que debes corregir', 'Verifica tu documento', 'Cor
 /** Cédula del link de ejemplo del modo prueba (?prueba=1 → "Corrección"). */
 const CEDULA_PRUEBA_CORRECCION = '1144098765';
 
-/** Huella de una cédula: 16 primeros caracteres hex de SHA-256, usando solo sus dígitos. */
+/**
+ * Huella de un documento: 16 primeros caracteres hex de SHA-256 del número normalizado
+ * (solo letras y números, en mayúscula). Para una cédula es lo mismo que "solo dígitos".
+ */
 async function huellaCedula(cedula) {
-  const digitos = String(cedula || '').replace(/\D/g, '');
+  const digitos = String(cedula || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
   const resumen = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(digitos));
   return Array.from(new Uint8Array(resumen)).map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
 }
@@ -2400,12 +2440,14 @@ function InicioCorreccion({ correccion, guardadoDisponible, avisoInicial, alCome
  */
 function VerificarCedula({ correccion, alVerificar }) {
   const [cedula, setCedula] = useState('');
+  const [conLetras, setConLetras] = useState(false); // teclado con letras para pasaporte, PPT o CE
   const [error, setError] = useState('');
   const [revisando, setRevisando] = useState(false);
 
   async function verificar() {
-    const digitos = cedula.replace(/\D/g, '');
-    if (digitos.length < 5 || digitos.length > 12) { setError('Escribe tu número de documento, solo números.'); return; }
+    // Cédulas: solo números. Pasaporte, CE o PPT: letras y números (en mayúscula)
+    const digitos = cedula.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+    if (digitos.length < 3 || digitos.length > 15) { setError('Escribe tu número de documento como aparece en él.'); return; }
     setRevisando(true);
     const coincide = (await huellaCedula(digitos)) === correccion.h;
     setRevisando(false);
@@ -2422,13 +2464,19 @@ function VerificarCedula({ correccion, alVerificar }) {
           <div className="lista">
             <label className={`fila fila-campo ${error ? 'con-error' : ''}`}>
               <span className="etiqueta">Número de documento</span>
-              <input type="text" inputMode="numeric" autoComplete="off" enterKeyHint="done" placeholder="Solo números"
+              <input type="text" inputMode={conLetras ? 'text' : 'numeric'} autoCapitalize="characters" autoComplete="off"
+                     enterKeyHint="done" placeholder={conLetras ? 'Como aparece en tu documento' : 'Solo números'}
                      value={cedula} maxLength={20}
                      onChange={(e) => { setCedula(e.target.value); setError(''); }}
                      onKeyDown={(e) => e.key === 'Enter' && verificar()} />
             </label>
           </div>
           {error && <p className="grupo-pie error" role="alert">{error}</p>}
+          <p className="grupo-pie">
+            <button type="button" className="boton-texto" style={{ fontSize: 13, minHeight: 0 }} onClick={() => setConLetras(!conLetras)}>
+              {conLetras ? 'Mi documento es una cédula (solo números)' : 'Mi documento tiene letras (pasaporte, PPT…)'}
+            </button>
+          </p>
           {MODO_PRUEBA && <p className="grupo-pie">Modo prueba: el número es {CEDULA_PRUEBA_CORRECCION}.</p>}
         </section>
       </main>

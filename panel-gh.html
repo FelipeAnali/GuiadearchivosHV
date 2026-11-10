@@ -962,6 +962,7 @@ function expedienteNuevo(datos, usuario) {
   return {
     version: 1,
     rev: 0,
+    tipoDocumento: datos.tipoDocumento || 'CC',
     cedula: datos.cedula,
     nombre: datos.nombre,
     cargo: datos.cargo || '',
@@ -1033,7 +1034,7 @@ async function estaEnPapelera(raiz, cedula) {
  * anota cuándo, quién y desde qué fecha se puede eliminar. Devuelve cuántos ZIP movió.
  */
 async function enviarAPapelera(raiz, c, usuario) {
-  const cedula = String((c.expediente && c.expediente.cedula) || c.cedula || '').replace(/\D/g, '');
+  const cedula = String((c.expediente && c.expediente.cedula) || c.cedula || '').replace(/[^0-9A-Za-z]/g, '');
   const zipsDelExpediente = new Set(((c.expediente && c.expediente.envios) || []).map((e) => e.zip));
   const candidatos = await subcarpeta(raiz, C.candidatos);
   const destino = await moverCarpeta(candidatos, c.nombreCarpeta, await subcarpeta(raiz, C.papelera));
@@ -1042,7 +1043,7 @@ async function enviarAPapelera(raiz, c, usuario) {
   // (OneDrive le pone adelante el nombre de quien sube: "Laura Gomez_1144098765_...zip")
   const zips = [];
   if (cedula) {
-    const deEsteCandidato = new RegExp(`(^|[^0-9])${cedula}_`);
+    const deEsteCandidato = new RegExp(`(^|[^0-9A-Z])${cedula}_`, 'i');
     const procesados = await subcarpeta(await subcarpeta(raiz, C.recibidos), C.procesados);
     for (const item of await listar(procesados)) {
       if (item.tipo === 'file' && (zipsDelExpediente.has(item.nombre) || deEsteCandidato.test(item.nombre))) {
@@ -1079,8 +1080,8 @@ async function leerPapelera(raiz) {
       carpeta: item.handle,
       nombreCarpeta: item.nombre,
       expediente,
-      cedula: expediente ? expediente.cedula : (item.nombre.match(/^\d+/) || [''])[0],
-      nombre: expediente ? expediente.nombre : item.nombre.replace(/^\d+_?/, '').replace(/_/g, ' '),
+      cedula: expediente ? expediente.cedula : item.nombre.split('_')[0],
+      nombre: expediente ? expediente.nombre : item.nombre.split('_').slice(1).join(' '),
       // El plazo se calcula con los días de AHORA (si cambian en Ajustes, aplica también a los que ya están)
       eliminarDesde: expediente && expediente.enPapelera && expediente.enPapelera.fecha
         ? new Date(new Date(expediente.enPapelera.fecha).getTime() + CONFIG.diasPapelera * MS_POR_DIA).toISOString()
@@ -1256,6 +1257,11 @@ function correoLimpio(valor) {
   return /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(correo) ? correo : '';
 }
 
+/** Sigla del documento para mostrar: "C.C. 1144…", "PA AB123…", "PPT …", "C.E. …". */
+function siglaDocumento(tipo) {
+  return { CC: 'C.C.', CE: 'C.E.', PA: 'Pasaporte', PPT: 'PPT' }[tipo || 'CC'] || tipo;
+}
+
 /** Agrega una línea a la bitácora del expediente. */
 function anotar(expediente, usuario, accion) {
   expediente.bitacora = [...(expediente.bitacora || []), { fecha: new Date().toISOString(), usuario, accion }];
@@ -1267,7 +1273,8 @@ function anotar(expediente, usuario, accion) {
    ========================================================================== */
 
 /** Nombre válido para un archivo dentro del ZIP: 1144123456_02_CEDULA.pdf */
-const PATRON_ARCHIVO = /^\d{5,12}_\d{2}_[A-Z0-9_]+\.(pdf|jpg|jpeg|png)$/i;
+// El número de documento puede ser una cédula (solo números) o un pasaporte, CE o PPT (letras y números)
+const PATRON_ARCHIVO = /^[A-Z0-9]{3,15}_\d{2}_[A-Z0-9_]+\.(pdf|jpg|jpeg|png)$/i;
 
 /**
  * Busca lo que hay en Recibidos (y en sus subcarpetas, por si OneDrive crea
@@ -1333,7 +1340,7 @@ async function analizarArchivo(item, raiz) {
   const d = r.datos;
   // Corrección: lo dice el JSON (tipo "correccion") o el nombre del ZIP (…_CORRECCION_1.zip)
   const esCorreccion = d.tipo === 'correccion' || /CORRECCION/i.test(item.nombre);
-  if (!/^\d{5,12}$/.test(String(d.cedula || ''))) r.errores.push('La cédula del paquete no es válida.');
+  if (!/^[A-Z0-9]{3,15}$/i.test(String(d.cedula || ''))) r.errores.push('El número de documento del paquete no es válido.');
   // El JSON de una corrección no trae el nombre: se toma del expediente del candidato
   if (!esCorreccion && !String(d.nombre || '').trim()) r.errores.push('El paquete no trae el nombre del candidato.');
   if (esCorreccion && !(Number.isInteger(Number(d.correccion)) && Number(d.correccion) >= 1)) {
@@ -1431,6 +1438,7 @@ async function procesarZip(raiz, item, usuario) {
   expediente = {
     ...expediente,
     nombre: d.nombre, cargo: d.cargo || '', seccion: d.seccion || '',
+    tipoDocumento: d.tipoDocumento || expediente.tipoDocumento || 'CC',
     primerEmpleo: !!d.primerEmpleo,
     // Celular y correo: llegan en los envíos nuevos; si no vienen (o vienen mal), se deja lo que había
     celular: celularLimpio(d.celular) || expediente.celular || '',
@@ -1462,7 +1470,7 @@ async function procesarZip(raiz, item, usuario) {
    CONTRATO con la app del candidato (no cambiarlo sin cambiar también la app):
      Link:  <enlaceAppCandidato>?c=<código>
             código = JSON → texto UTF-8 → base64url (sin "=").
-            JSON   = { "v": 1, "n": 1, "h": "<16 primeros hex de SHA-256 de la cédula>",
+            JSON   = { "v": 1, "n": 1, "h": "<16 primeros hex de SHA-256 del documento (solo letras y números, en mayúscula)>",
                        "d": [ { "id": "adres", "m": "No se lee bien" } ] }
             "id" es el de CONFIG.documentos; "m" tiene máximo 160 caracteres.
             El link NUNCA lleva el nombre ni la cédula a la vista: solo la huella "h".
@@ -1478,9 +1486,12 @@ const VERSION_LINK_CORRECCION = 1;
 /** Largo máximo del motivo que va en el link. */
 const MAXIMO_MOTIVO = 160;
 
-/** Huella de la cédula para el link: 16 primeros caracteres hex de SHA-256 (solo dígitos). */
+/**
+ * Huella del documento para el link: 16 primeros caracteres hex de SHA-256 del número
+ * normalizado (solo letras y números, en mayúscula). Para una cédula es "solo dígitos".
+ */
 async function huellaCedula(cedula) {
-  const digitos = String(cedula || '').replace(/\D/g, '');
+  const digitos = String(cedula || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
   const resumen = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(digitos));
   return Array.from(new Uint8Array(resumen)).map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
 }
@@ -1638,14 +1649,14 @@ async function leerCandidatos(raiz) {
     } catch (e) {
       problema = 'El expediente.json está dañado.';
     }
-    const cedula = (item.nombre.match(/^\d+/) || [''])[0];
+    const cedula = item.nombre.split('_')[0];
     lista.push({
       carpeta: item.handle,
       nombreCarpeta: item.nombre,
       expediente,
       problema,
       cedula: expediente ? expediente.cedula : cedula,
-      nombre: expediente ? expediente.nombre : item.nombre.replace(/^\d+_?/, '').replace(/_/g, ' '),
+      nombre: expediente ? expediente.nombre : item.nombre.split('_').slice(1).join(' '),
     });
   }
   return lista;
@@ -1698,7 +1709,7 @@ function resumenDelCandidato(exp) {
     'EXPEDIENTE DE INGRESO — Supertiendas Cañaveral S.A.S.',
     '',
     `Nombre:        ${nombreBonito(exp.nombre)}`,
-    `Cédula:        ${exp.cedula}`,
+    `Documento:     ${siglaDocumento(exp.tipoDocumento)} ${exp.cedula}`,
     `Cargo:         ${exp.cargo || '—'}${exp.seccion ? `, ${exp.seccion}` : ''}`,
     `Celular:       ${exp.celular || '—'}`,
     `Correo:        ${exp.correo || '—'}`,
@@ -1815,7 +1826,7 @@ async function zipDeEjemplo(c, foto) {
     // Corrección: el JSON del contrato (sin nombre). Envío normal: con celular y correo si los hay.
     const datos = c.tipo === 'correccion'
       ? { version: 1, tipo: 'correccion', correccion: c.n || 1, cedula: c.cedula, generado: new Date().toISOString(), archivos: lista }
-      : { version: 1, tipo: c.tipo, cedula: c.cedula, nombre: c.nombre, cargo: c.cargo, seccion: c.seccion,
+      : { version: 1, tipo: c.tipo, tipoDocumento: c.tipoDocumento || 'CC', cedula: c.cedula, nombre: c.nombre, cargo: c.cargo, seccion: c.seccion,
           primerEmpleo: !!c.primerEmpleo, celular: c.celular || undefined, correo: c.correo || undefined,
           autorizacionDatos: { aceptada: true, fecha: new Date().toISOString() },
           generado: new Date().toISOString(), archivos: lista };
@@ -1897,6 +1908,9 @@ async function crearCarpetaDeEjemplo(modo) {
       await zipDeEjemplo({ cedula: '1107554433', nombre: 'Andrés Rojas', cargo: 'AUXILIAR DE PANADERIA', seccion: 'PANADERIA', docs: [...DOCS_COMPLETOS, 'manipulacion'] }, foto), hace(1, 2));
     recibidos.poner('1062887766_VALENTINA_RIOS_AUXILIAR_DE_BODEGA.zip',
       await zipDeEjemplo({ cedula: '1062887766', nombre: 'Valentina Ríos', cargo: 'AUXILIAR DE BODEGA', seccion: 'BODEGA', primerEmpleo: true, docs: DOCS_PRIMER, conClave: 'adres' }, foto), hace(0, 5));
+    // Candidata extranjera con pasaporte (documento con letras)
+    recibidos.poner('AV1234567_YULEIDY_PEREZ_AUXILIAR_DE_CAJA.zip',
+      await zipDeEjemplo({ cedula: 'AV1234567', tipoDocumento: 'PA', nombre: 'Yuleidy Pérez', cargo: 'AUXILIAR DE CAJA', seccion: 'CAJAS', docs: DOCS_COMPLETOS, celular: '3209876543' }, foto), hace(0, 2));
     recibidos.poner('1144556677_SEBASTIAN_TORRES_SURTIDOR.zip',
       await zipDeEjemplo({ cedula: '1144556677', nombre: 'Sebastián Torres', cargo: 'SURTIDOR', seccion: 'PGC', docs: DOCS_COMPLETOS, celular: '3157654321' }, foto), hace(0, 1));
     // Corrección 1 de Camilo (tiene la cédula rechazada): lo que mandaría la app del candidato
@@ -2157,7 +2171,7 @@ function FilaBandeja({ item, onProcesar, procesando }) {
         <span className="fila-titulo">{titulo}</span>
         {d && tipo !== 'invalido' && (
           <span className="fila-sub">
-            <span className="numeros">C.C. {d.cedula}</span>{d.cargo ? ` — ${d.cargo}` : ''}{d.seccion ? `, ${d.seccion}` : ''}
+            <span className="numeros">{siglaDocumento(d.tipoDocumento)} {d.cedula}</span>{d.cargo ? ` — ${d.cargo}` : ''}{d.seccion ? `, ${d.seccion}` : ''}
             {d.primerEmpleo ? ' — primer empleo' : ''}{tipo === 'correccion' ? ` — corrección ${a.numeroCorreccion}` : ''}
           </span>
         )}
@@ -2277,7 +2291,7 @@ function FilaCandidato({ c, onAbrir }) {
          onKeyDown={(ev) => (ev.key === 'Enter' || ev.key === ' ') && (ev.preventDefault(), onAbrir(c))}>
       <div className="fila-texto">
         <span className="fila-titulo">{nombreBonito(c.nombre)}</span>
-        <span className="fila-sub numeros">C.C. {c.cedula || '—'}{e && e.primerEmpleo ? ' — primer empleo' : ''}</span>
+        <span className="fila-sub numeros">{siglaDocumento(e && e.tipoDocumento)} {c.cedula || '—'}{e && e.primerEmpleo ? ' — primer empleo' : ''}</span>
       </div>
       <div className="fila-texto c-cargo">
         {e ? <><span className="fila-sub" style={{ color: 'var(--texto)' }}>{e.cargo || 'Sin cargo'}</span><span className="fila-pista">{e.seccion}</span></>
@@ -2563,7 +2577,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
             <div className="fila-texto">
               <h2 style={{ overflowWrap: 'anywhere' }}>{nombreBonito(exp.nombre)}</h2>
-              <span className="fila-sub numeros">C.C. {exp.cedula} — {exp.cargo || 'sin cargo'}{exp.seccion ? `, ${exp.seccion}` : ''}{exp.primerEmpleo ? ' — primer empleo' : ''}</span>
+              <span className="fila-sub numeros">{siglaDocumento(exp.tipoDocumento)} {exp.cedula} — {exp.cargo || 'sin cargo'}{exp.seccion ? `, ${exp.seccion}` : ''}{exp.primerEmpleo ? ' — primer empleo' : ''}</span>
               {(exp.celular || exp.correo) && (
                 <span className="contacto">
                   {exp.celular && <a className="numeros" href={`tel:+57${exp.celular}`}>Cel. {exp.celular}</a>}
@@ -2883,7 +2897,7 @@ function Papelera({ lista, cargando, onRecuperar, onEliminar, onRecargar, ocupad
               <div className="icono-caja ojo"><Icono nombre="papelera" /></div>
               <div className="fila-texto">
                 <span className="fila-titulo">{nombreBonito(item.nombre)}</span>
-                <span className="fila-sub"><span className="numeros">C.C. {item.cedula || '—'}</span>{e && e.cargo ? ` — ${e.cargo}` : ''}</span>
+                <span className="fila-sub"><span className="numeros">{siglaDocumento(e && e.tipoDocumento)} {item.cedula || '—'}</span>{e && e.cargo ? ` — ${e.cargo}` : ''}</span>
                 <span className="fila-pista">
                   {e && e.enPapelera ? `${e.enPapelera.por || '—'} lo marcó como no contratado el ${fechaCorta(e.enPapelera.fecha)} — ` : ''}
                   {quedan === null ? 'Sin fecha: elimínalo a mano.' : quedan === 0 ? 'Se elimina la próxima vez que se actualice.' : `Se elimina en ${plural(quedan, 'día', 'días')} (${fechaCorta(item.eliminarDesde)}).`}
