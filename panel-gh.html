@@ -12,7 +12,7 @@
 
   QUÉ HACE (PARTES 1, 2 y 3 de 6):
     1. ARRANQUE: elegir la carpeta "Hojas de vida" y escribir quién la usa.
-       Si faltan las subcarpetas (Recibidos, Candidatos, Historial), las crea.
+       Si faltan las subcarpetas (Recibidos, Candidatos), las crea.
     2. BANDEJA: muestra los ZIP que llegaron a "Recibidos" (los que suben los
        candidatos con el link de "Solicitar archivos") y revisa cada uno.
     3. PROCESAR: saca los archivos del ZIP a la carpeta del candidato
@@ -22,6 +22,9 @@
        muestra a los que están EN PROCESO (Recibido, En revisión, Con correcciones).
        LISTOS: cuando un candidato pasa a "Completo" o "Contratado", sale de
        Candidatos y aparece en "Listos" (su carpeta no se mueve: sigue en Candidatos).
+       NO CONTRATADO: no se guarda nada. Al elegir "No contratado" (y confirmar),
+       se borra la carpeta completa del candidato y sus ZIP de Recibidos/Procesados.
+       No hay historial de no contratados.
     5. FICHA: aprobar o rechazar (con motivo) cada documento del candidato,
        subir los archivos de GH (SAGRILAFT, ARL, EPS, caja, pensión, paquete
        de inducción), marcar los chequeos (examen médico, ERP, Cronoseg) y
@@ -40,7 +43,7 @@
 
   LO QUE LLEGA EN LAS SIGUIENTES PARTES:
     4. Entrega final en un solo PDF (el ZIP ya está: "Descargar ZIP" en la ficha).
-    5. Historial, conservación y ajustes.
+    5. Ajustes.
 
   PRIVACIDAD:
     - Esta página NO tiene servidor. Lee y escribe solo en la carpeta que la
@@ -62,7 +65,8 @@
     1. UTILIDADES      Textos, fechas, plurales.
     2. RECORDAR        Guarda en el navegador cuál carpeta y quién la usa.
     3. ARCHIVOS        Leer, escribir y mover archivos en la carpeta.
-    4. EXPEDIENTE      Leer y guardar expediente.json (con aviso de choques).
+    4. EXPEDIENTE      Leer y guardar expediente.json (con aviso de choques) y
+                       borrar todo lo de un candidato no contratado.
     5. BANDEJA         Buscar los ZIP en Recibidos y revisarlos.
     6. PROCESAR        Pasar un ZIP a la carpeta del candidato (envío normal).
     6B. CORRECCIONES   Contrato con la app del candidato (link y ZIP), armar el
@@ -183,6 +187,7 @@
   .boton-secundario, .boton-suave { background: var(--tinte-suave); color: var(--tinte); }
   .boton-texto { background: none; color: var(--tinte); padding: 0 6px; font-weight: 400; font-size: 16px; }
   .boton-texto.peligro { color: var(--rojo); }
+  .boton-peligro { background: var(--rojo); color: #FFFFFF; }
   .boton-grande { min-height: 50px; padding: 0 20px; border-radius: 14px; font-size: 17px; width: 100%; }
   @media (hover: hover) and (pointer: fine) { .boton:hover:not(:disabled) { opacity: 0.85; } }
 
@@ -596,7 +601,6 @@ window.CONFIG_PANEL = {
     recibidos: 'Recibidos',        // aquí llegan los ZIP del link de OneDrive
     procesados: 'Procesados',      // dentro de Recibidos: ZIP ya pasados al candidato
     candidatos: 'Candidatos',      // una carpeta por candidato
-    historial: 'Historial',        // no contratados (parte 5)
     anteriores: '_anteriores',     // dentro del candidato: versiones reemplazadas
     gestionHumana: 'Gestion_Humana', // dentro del candidato: archivos que sube GH
   },
@@ -646,7 +650,8 @@ window.CONFIG_PANEL = {
     { id: 'correcciones',  nombre: 'Con correcciones' },
     { id: 'completo',      nombre: 'Completo' },
     { id: 'contratado',    nombre: 'Contratado' },
-    { id: 'no_contratado', nombre: 'No contratado' },
+    // "No contratado" no es un estado que se guarde: al elegirlo se borra todo el candidato
+    { id: 'no_contratado', nombre: 'No contratado (borrar todo)' },
   ],
 };
 </script>
@@ -847,7 +852,7 @@ async function moverArchivo(handle, carpetaOrigen, carpetaDestino, nombreNuevo) 
 /** Crea las subcarpetas que falten y devuelve cuáles creó. */
 async function prepararEstructura(raiz) {
   const creadas = [];
-  for (const nombre of [C.recibidos, C.candidatos, C.historial]) {
+  for (const nombre of [C.recibidos, C.candidatos]) {
     if (!(await existe(raiz, nombre))) creadas.push(nombre);
     await subcarpeta(raiz, nombre);
   }
@@ -911,6 +916,34 @@ function expedienteNuevo(datos, usuario) {
     correcciones: [],    // { n, fecha, por, documentos: [{ id, motivo }], recibida } (sección 6B)
     bitacora: [],        // qué se hizo, quién y cuándo
   };
+}
+
+/**
+ * Candidato NO contratado: no se guarda nada. Borra su carpeta completa en Candidatos
+ * (documentos, Gestion_Humana, _anteriores y expediente.json) y sus ZIP en
+ * Recibidos/Procesados, que tienen copia de todos sus documentos.
+ * OneDrive guarda lo borrado en su papelera por un tiempo (lo maneja sistemas).
+ * Devuelve cuántos ZIP borró.
+ */
+async function borrarCandidato(raiz, c) {
+  const cedula = String((c.expediente && c.expediente.cedula) || c.cedula || '').replace(/\D/g, '');
+  const zipsDelExpediente = new Set(((c.expediente && c.expediente.envios) || []).map((e) => e.zip));
+  const candidatos = await subcarpeta(raiz, C.candidatos);
+  await candidatos.removeEntry(c.nombreCarpeta, { recursive: true });
+  let zips = 0;
+  if (cedula) {
+    // ZIP de este candidato: los que registró el expediente o los que llevan "<cédula>_" en el nombre
+    // (OneDrive le pone adelante el nombre de quien sube: "Laura Gomez_1144098765_...zip")
+    const deEsteCandidato = new RegExp(`(^|[^0-9])${cedula}_`);
+    const procesados = await subcarpeta(await subcarpeta(raiz, C.recibidos), C.procesados);
+    for (const item of await listar(procesados)) {
+      if (item.tipo === 'file' && (zipsDelExpediente.has(item.nombre) || deEsteCandidato.test(item.nombre))) {
+        await procesados.removeEntry(item.nombre);
+        zips++;
+      }
+    }
+  }
+  return { zips };
 }
 
 /** Agrega una línea a la bitácora del expediente. */
@@ -1023,8 +1056,6 @@ async function analizarArchivo(item, raiz) {
   if (!esCorreccion && !r.errores.length) {
     const existente = await buscarCarpetaCandidato(raiz, d.cedula);
     if (existente) r.avisos.push('Este candidato ya tiene carpeta: es un envío nuevo. Los archivos actuales se guardan en "_anteriores".');
-    const enHistorial = await buscarCarpetaCandidato(raiz, d.cedula, C.historial);
-    if (enHistorial) r.avisos.push('Esta cédula está en el Historial (no contratado antes).');
   }
   r.tipo = r.errores.length ? 'invalido' : (esCorreccion ? 'correccion' : 'envio');
   return r;
@@ -1188,7 +1219,6 @@ async function revisarCorreccion(r, raiz) {
   const carpeta = await buscarCarpetaCandidato(raiz, d.cedula);
   if (!carpeta) {
     r.errores.push('No hay un candidato con esta cédula en Candidatos. Revisa que el candidato ya haya mandado su paquete.');
-    if (await buscarCarpetaCandidato(raiz, d.cedula, C.historial)) r.avisos.push('Esta cédula está en el Historial (no contratado antes).');
     return;
   }
   let expediente = null;
@@ -1564,7 +1594,7 @@ async function crearCarpetaDeEjemplo(modo) {
     ['AUXILIAR DE SERVICIO AL CLIENTE Y DOMICILIOS', 'SERVICIO AL CLIENTE'], ['SURTIDOR', 'PGC'],
     ['AUXILIAR DE FRUVER', 'FRUVER'], ['COORDINADOR DE PREVENCIÓN DE PÉRDIDAS Y SEGURIDAD', 'ADMINISTRATIVO'],
   ];
-  const estados = ['recibido', 'revision', 'correcciones', 'completo', 'contratado', 'no_contratado'];
+  const estados = ['recibido', 'revision', 'correcciones', 'completo', 'contratado'];
   for (let i = 0; i < 40; i++) {
     const [cargo, seccion] = cargos[i % cargos.length];
     await sembrar({ cedula: String(1000000000 + i * 7919), nombre: largos[i % largos.length] + (i >= largos.length ? ` ${i}` : ''),
@@ -1702,7 +1732,6 @@ function PantallaArranque({ onCarpeta, onEjemplo, carpetaRecordada, onReabrir, e
           <div className="arbol-fila"><Icono nombre="carpeta" /> Hojas de vida</div>
           <div className="arbol-fila sangria"><Icono nombre="bandeja" /> Recibidos <small>lo que suben los candidatos</small></div>
           <div className="arbol-fila sangria"><Icono nombre="personas" /> Candidatos <small>una carpeta por cédula</small></div>
-          <div className="arbol-fila sangria"><Icono nombre="historial" /> Historial <small>no contratados</small></div>
         </div>
       </section>
     </main>
@@ -1724,7 +1753,6 @@ function BarraLateral({ vista, setVista, pendientes, totalCandidatos, usuario, c
       <Item id="bandeja" icono="bandeja" texto="Bandeja" cifra={pendientes} />
       <Item id="candidatos" icono="personas" texto="Candidatos" cifra={0} />
       <Item id="listos" icono="listo" texto="Listos" cifra={0} />
-      <Item id="historial" icono="historial" texto="Historial" pronto="Parte 5" />
       <Item id="ajustes" icono="ajustes" texto="Ajustes" pronto="Parte 5" />
       <div className="lateral-pie">
         <span>Trabajando como</span>
@@ -1891,8 +1919,7 @@ function Candidatos({ lista, cargando, onAbrir, onRecargar, modo = 'proceso' }) 
                placeholder="Buscar por nombre, cédula o cargo" aria-label="Buscar candidato" />
         <select className="selector" value={filtro} onChange={(e) => setFiltro(e.target.value)} aria-label="Filtrar por estado">
           <option value={FILTRO_ACTIVOS}>{enListos ? 'Todos los listos' : 'En proceso'}</option>
-          {!enListos && <option value="todos">Incluir no contratados</option>}
-          {CONFIG.estados.filter((e) => enListos === ESTADOS_LISTOS.includes(e.id))
+          {CONFIG.estados.filter((e) => e.id !== 'no_contratado' && enListos === ESTADOS_LISTOS.includes(e.id))
             .map((e) => <option key={e.id} value={e.id}>{e.nombre} ({cuenta(e.id)})</option>)}
         </select>
       </div>
@@ -1962,7 +1989,8 @@ async function tipoDeArchivo(archivo) {
 /** Motivos de rechazo rápidos (se puede escribir otro). */
 const MOTIVOS_RAPIDOS = ['No se lee bien', 'No es el documento pedido', 'Está incompleto', 'Está vencido'];
 
-function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
+function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
+  // onNoContratado: lo llama el selector de estado al elegir "No contratado" (App pide confirmar y borra)
   const [exp, setExp] = useState(c.expediente);
   const [archivosCandidato, setArchivosCandidato] = useState({});  // nombre → handle
   const [archivosGH, setArchivosGH] = useState({});                // nombre → handle
@@ -2222,7 +2250,8 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar }) {
           </div>
           <div className="cabeza-estado">
             <select className={`selector selector-estado e-${exp.estado}`} value={exp.estado} disabled={guardando}
-                    onChange={(e) => cambiarEstado(e.target.value)} aria-label="Estado del candidato">
+                    onChange={(e) => e.target.value === 'no_contratado' ? onNoContratado(c) : cambiarEstado(e.target.value)}
+                    aria-label="Estado del candidato">
               {CONFIG.estados.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
             </select>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -2492,6 +2521,32 @@ function HojaCorrecciones({ exp, rechazados, faltantes, guardando, avisar, usuar
   );
 }
 
+/* ---------- Diálogo para confirmar el borrado de un no contratado ---------- */
+
+/**
+ * Alerta de iOS: "¿Borrar a <nombre>?". Explica que no queda nada guardado.
+ * El botón rojo llama onBorrar(c); mientras borra, los botones quedan inactivos.
+ */
+function DialogoBorrar({ c, onBorrar, onCancelar }) {
+  const [borrando, setBorrando] = useState(false);
+  return (
+    <div className="dialogo-fondo" onClick={() => !borrando && onCancelar()}>
+      <div className="dialogo" role="alertdialog" aria-modal="true" aria-labelledby="titulo-borrar" onClick={(e) => e.stopPropagation()}>
+        <h2 id="titulo-borrar">¿No fue contratado(a)? Se borra {nombreBonito(c.nombre)}</h2>
+        <p>Se borran <strong>todos</strong> sus documentos, los de Gestión Humana, el expediente y sus ZIP recibidos.
+           No queda historial. Desde el panel no se puede deshacer.</p>
+        <div className="acciones">
+          <button className="boton boton-secundario" disabled={borrando} onClick={onCancelar}>Cancelar</button>
+          <button className="boton boton-peligro" disabled={borrando}
+                  onClick={async () => { setBorrando(true); await onBorrar(c); }}>
+            {borrando ? 'Borrando…' : 'Borrar todo'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Diálogo para cambiar el nombre ---------- */
 function DialogoNombre({ actual, onGuardar, onCancelar }) {
   const [valor, setValor] = useState(actual);
@@ -2533,6 +2588,7 @@ function App() {
   const [abierto, setAbierto] = useState(null);
   const [aviso, setAviso] = useState(null);
   const [editarNombre, setEditarNombre] = useState(false);
+  const [porBorrar, setPorBorrar] = useState(null);   // candidato no contratado esperando confirmación
   const temporizador = useRef(null);
 
   /** Muestra un aviso abajo por unos segundos. */
@@ -2669,6 +2725,20 @@ function App() {
     await recargar();
   }
 
+  /** "No contratado" confirmado: borra todo lo del candidato y cierra su ficha. */
+  async function borrarNoContratado(c) {
+    try {
+      const r = await borrarCandidato(raiz, c);
+      setPorBorrar(null); setAbierto(null);
+      avisar(`Se borró todo lo de ${nombreBonito(c.nombre)}${r.zips ? ` (y ${plural(r.zips, 'ZIP', 'ZIP')} de Procesados)` : ''}`);
+    } catch (e) {
+      console.error(e);
+      setPorBorrar(null);
+      avisar(`No se pudo borrar: ${e.message}`, 'error');
+    }
+    await recargar();
+  }
+
   async function guardarNombre(nombre) {
     setUsuario(nombre); setEditarNombre(false);
     if (!modoEjemplo) await recordar('usuario', nombre);
@@ -2707,7 +2777,9 @@ function App() {
         )}
       </main>
       {/* Al cerrar la ficha se revisa otra vez la bandeja: una corrección recién pedida cambia los avisos */}
-      {abierto && <Ficha c={abierto} usuario={usuario} avisar={avisar} onCambio={recargarCandidatos} onCerrar={() => { setAbierto(null); recargar(); }} />}
+      {abierto && <Ficha c={abierto} usuario={usuario} avisar={avisar} onCambio={recargarCandidatos}
+                         onCerrar={() => { setAbierto(null); recargar(); }} onNoContratado={setPorBorrar} />}
+      {porBorrar && <DialogoBorrar c={porBorrar} onBorrar={borrarNoContratado} onCancelar={() => setPorBorrar(null)} />}
       {editarNombre && <DialogoNombre actual={usuario} onGuardar={guardarNombre} onCancelar={() => setEditarNombre(false)} />}
       {aviso && (
         <div className={`aviso-flotante ${aviso.tipo === 'error' ? 'error' : ''} ${modoEjemplo ? 'sobre-selector' : ''}`} role="status">
