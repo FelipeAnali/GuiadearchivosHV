@@ -207,6 +207,14 @@ function documentosQueAplican(datos) {
   });
 }
 
+/**
+ * ¿El documento ya está completo? Casi todos con 1 archivo; los que tienen "cantidad"
+ * (ej. 2 referencias personales) necesitan exactamente esa cantidad.
+ */
+function documentoCompleto(doc, archivos) {
+  return (archivos || []).length >= (doc.cantidad || 1);
+}
+
 /** Texto de ayuda del documento; cambia para puestos bajo Decreto 1500. */
 function ayudaDelDocumento(doc, datos) {
   const puesto = buscarPuesto(datos.cargo, datos.seccion);
@@ -1073,7 +1081,7 @@ function PantallaInicio({ alComenzar, guardadoDisponible, avisoInicial }) {
               .map((doc) => (
               <div className="fila" key={doc.id}>
                 <div className="fila-cuerpo">
-                  <div className="fila-titulo">{doc.nombre}</div>
+                  <div className="fila-titulo">{doc.nombre}{doc.cantidad ? ` (${doc.cantidad})` : ''}</div>
                   {doc.requerido === 'segunCargo' && <div className="fila-sub">Solo si tu cargo lo pide</div>}
                 </div>
               </div>
@@ -1214,9 +1222,10 @@ function PantallaDatos({ datosIniciales, primerEmpleoInicial, alGuardar }) {
     // Celular: obligatorio, 10 números y empieza por 3 (si lo escriben con +57 se le quita)
     const celularLimpio = celular.replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, '');
     if (!CELULAR_VALIDO.test(celularLimpio)) nuevosErrores.celular = 'Escribe tu celular: 10 números y empieza por 3.';
-    // Correo: opcional; si lo escriben, debe tener forma de correo
+    // Correo: obligatorio y con forma de correo
     const correoLimpio = correo.trim().toLowerCase();
-    if (correoLimpio && !CORREO_VALIDO.test(correoLimpio)) nuevosErrores.correo = 'Revisa tu correo: debe ser como nombre@correo.com (o déjalo vacío).';
+    if (!correoLimpio) nuevosErrores.correo = 'Escribe tu correo, por ejemplo nombre@correo.com.';
+    else if (!CORREO_VALIDO.test(correoLimpio)) nuevosErrores.correo = 'Revisa tu correo: debe ser como nombre@correo.com.';
     // Si escribió el cargo completo pero no tocó la sugerencia, se acepta igual.
     let cargoFinal = cargo;
     let seccionFinal = seccion;
@@ -1281,19 +1290,19 @@ function PantallaDatos({ datosIniciales, primerEmpleoInicial, alGuardar }) {
                      value={cedula} onChange={(e) => setCedula(e.target.value)} maxLength={20} />
             </label>
             <label className={`fila fila-campo ${errores.celular ? 'con-error' : ''}`}>
-              <span className="etiqueta">Celular</span>
+              <span className="etiqueta">Celular con WhatsApp</span>
               <input type="tel" inputMode="tel" autoComplete="tel-national" enterKeyHint="next"
-                     placeholder="10 números, empieza por 3"
+                     placeholder="Número donde tienes WhatsApp"
                      value={celular} onChange={(e) => setCelular(e.target.value)} maxLength={20} />
             </label>
             <label className={`fila fila-campo ${errores.correo ? 'con-error' : ''}`}>
-              <span className="etiqueta">Correo (opcional)</span>
+              <span className="etiqueta">Correo</span>
               <input type="email" inputMode="email" autoComplete="email" autoCapitalize="none" autoCorrect="off"
                      spellCheck={false} enterKeyHint="next" placeholder="nombre@correo.com"
                      value={correo} onChange={(e) => setCorreo(e.target.value)} maxLength={120} />
             </label>
           </div>
-          <p className="grupo-pie">Gestión Humana te escribirá a este celular (o al correo) si hay que corregir algún documento.</p>
+          <p className="grupo-pie">El celular debe tener <strong>WhatsApp</strong> (no uno solo para llamadas): por ahí y por el correo te escribe Gestión Humana si hay que corregir algún documento.</p>
         </section>
 
         {/* Respuesta de la primera pantalla; se deja corregir por si la tocó mal */}
@@ -1385,6 +1394,9 @@ function TarjetaDocumento({ doc, posicion, ayuda, archivos, cedula, todosLosArch
   const [error, setError] = useState(null);
   const [revisando, setRevisando] = useState(false);
   const tieneArchivos = archivos.length > 0;
+  const completo = documentoCompleto(doc, archivos);
+  // Documentos con cantidad exacta (ej. 2 referencias personales): no deja subir de más
+  const lleno = !!doc.cantidad && archivos.length >= doc.cantidad;
   const esImagen = doc.tipo === 'imagen';
   const [tutorialAbierto, setTutorialAbierto] = useState(false); // hoja "¿Cómo lo saco?" abierta
   const [comoComprimir, setComoComprimir] = useState(false);     // hoja "Cómo comprimir un PDF" abierta
@@ -1398,7 +1410,12 @@ function TarjetaDocumento({ doc, posicion, ayuda, archivos, cedula, todosLosArch
     // Si el documento admite un solo archivo, el que se va a reemplazar no cuenta como repetido.
     const actuales = doc.variosArchivos ? { ...todosLosArchivos } : { ...todosLosArchivos, [doc.id]: [] };
     try {
-      for (const archivo of elegidos) {
+      // Con cantidad exacta, solo se toman los que faltan (si eligen de más, se avisa)
+      const cupo = doc.cantidad ? Math.max(0, doc.cantidad - archivos.length) : elegidos.length;
+      if (elegidos.length > cupo) {
+        setError({ texto: `Solo se necesitan ${doc.cantidad}: no se agregaron ${elegidos.slice(cupo).map((a) => a.name).join(', ')}.` });
+      }
+      for (const archivo of elegidos.slice(0, cupo)) {
         const resultado = esImagen
           ? await revisarImagen(archivo, doc, actuales)
           : await revisarArchivo(archivo, doc, cedula, actuales);
@@ -1437,7 +1454,7 @@ function TarjetaDocumento({ doc, posicion, ayuda, archivos, cedula, todosLosArch
 
   return (
     <div className="fila fila-con-icono">
-      <div className={`circulo ${tieneArchivos ? 'hecho' : ''}`} aria-hidden="true">
+      <div className={`circulo ${completo ? 'hecho' : ''}`} aria-hidden="true">
         {tieneArchivos ? <Palomita tamano={16} /> : posicion}
       </div>
       <div className="fila-cuerpo">
@@ -1501,7 +1518,10 @@ function TarjetaDocumento({ doc, posicion, ayuda, archivos, cedula, todosLosArch
             <span className="fila-sub">Revisando…</span>
           ) : (
             <>
-              {(!tieneArchivos || doc.variosArchivos || esImagen) && (
+              {doc.cantidad && !completo && (
+                <span className="fila-sub" style={{ width: '100%' }}>Llevas {archivos.length} de {doc.cantidad}.</span>
+              )}
+              {(!tieneArchivos || doc.variosArchivos || esImagen) && !lleno && (
                 <button type="button" className="boton boton-tintado boton-chico" onClick={() => selectorPdf.current.click()}>
                   {textoBotonPrincipal}
                 </button>
@@ -1522,7 +1542,7 @@ function TarjetaDocumento({ doc, posicion, ayuda, archivos, cedula, todosLosArch
 /** Pantalla 3: lista de documentos. */
 function PantallaDocumentos({ sesion, alAgregar, alQuitar, alEditarDatos, alContinuar, alBorrarTodo }) {
   const docs = documentosQueAplican(sesion.datos);
-  const faltan = docs.filter((d) => !(sesion.archivos[d.id] || []).length).length;
+  const faltan = docs.filter((d) => !documentoCompleto(d, sesion.archivos[d.id])).length;
 
   return (
     <>
@@ -1978,9 +1998,9 @@ function App() {
           } else {
             setSesion(guardada);
             // Si el cargo o la sección guardados ya no existen en la lista, o si el avance es de
-            // antes de pedir el celular, se vuelve a "Tus datos" para completarlos
+            // antes de pedir el celular o el correo, se vuelve a "Tus datos" para completarlos
             const datosValidos = guardada.datos && buscarPuesto(guardada.datos.cargo, guardada.datos.seccion)
-              && CELULAR_VALIDO.test(guardada.datos.celular || '');
+              && CELULAR_VALIDO.test(guardada.datos.celular || '') && CORREO_VALIDO.test(guardada.datos.correo || '');
             setPantalla(datosValidos ? 'documentos' : 'datos');
           }
         }
@@ -2109,7 +2129,7 @@ function App() {
 
   // --- Avance para la barra de caña ---
   const docsAplicables = sesion?.datos ? documentosQueAplican(sesion.datos) : [];
-  const completos = docsAplicables.filter((d) => (sesion.archivos[d.id] || []).length).length;
+  const completos = docsAplicables.filter((d) => documentoCompleto(d, sesion.archivos[d.id])).length;
   const mostrarAvance = ['documentos', 'envio'].includes(pantalla);
 
   if (cargando) return null;
@@ -2493,7 +2513,7 @@ function VerificarCedula({ correccion, alVerificar }) {
 
 /** Corrección, pantalla 3: solo los documentos pedidos, con el motivo arriba en rojo. */
 function DocumentosCorreccion({ correccion, sesion, alAgregar, alQuitar, alContinuar }) {
-  const faltan = correccion.documentos.filter(({ doc }) => !(sesion.archivos[doc.id] || []).length).length;
+  const faltan = correccion.documentos.filter(({ doc }) => !documentoCompleto(doc, sesion.archivos[doc.id])).length;
   return (
     <>
       <main className="contenido">
@@ -2637,7 +2657,7 @@ function AppCorreccion({ correccion }) {
   }
 
   const paso = { inicio: 1, verificar: 2, documentos: 3, envio: 4 }[pantalla];
-  const completos = sesion ? correccion.documentos.filter(({ doc }) => (sesion.archivos[doc.id] || []).length).length : 0;
+  const completos = sesion ? correccion.documentos.filter(({ doc }) => documentoCompleto(doc, sesion.archivos[doc.id])).length : 0;
   const mostrarAvance = ['documentos', 'envio'].includes(pantalla);
 
   if (cargando) return null;

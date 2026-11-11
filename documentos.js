@@ -26,6 +26,8 @@
    ayuda      → explicación corta debajo del nombre.
    requerido  → true (siempre) o 'segunCargo' (solo si el cargo lo pide).
    variosArchivos → true si se pueden subir varios PDF (ej. diplomas).
+   cantidad   → (opcional) cuántos PDF exactos se piden (ej. 2 referencias personales).
+                Hasta tenerlos todos el documento no queda completo, y no deja subir más.
    omitirSiPrimerEmpleo → true: no se pide si el candidato dice que es su primer empleo.
    soloSiPrimerEmpleo   → true: se pide SOLO si es su primer empleo (ej. referencias personales).
    tipo       → 'imagen' para la foto 3×4 (se sube JPG/PNG, no PDF). Sin tipo = PDF.
@@ -90,8 +92,8 @@ window.DOCUMENTOS = [
 
     // Solo para quien dice que es su primer empleo (reemplaza la referencia laboral)
     { id: 'referencia_personal', codigo: '05', nombre: 'Referencias personales', nombreCorto: 'Referencias personales',
-      ayuda: 'Carta de referencia personal con nombre, teléfono y firma de quien te recomienda. Puedes subir una o varias.',
-      requerido: true, soloSiPrimerEmpleo: true, variosArchivos: true,
+      ayuda: 'Necesitas 2 cartas de referencia personal, cada una con el nombre, teléfono y firma de quien te recomienda. Sube un PDF por cada carta.',
+      requerido: true, soloSiPrimerEmpleo: true, variosArchivos: true, cantidad: 2,
       revision: {
         nombreArchivo: ['REFERENCIA', 'PERSONAL', 'RECOMENDACION', 'CARTA'], ejemploNombre: 'referencia_personal.pdf',
         paginasMax: 2, palabras: ['REFERENCIA', 'RECOMIENDO', 'RECOMENDACION', 'CONOZCO', 'PERSONAL', 'CERTIFIC'],
