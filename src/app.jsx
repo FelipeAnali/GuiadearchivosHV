@@ -200,6 +200,7 @@ function buscarCargos(texto, limite = 8) {
 function documentosQueAplican(datos) {
   const puesto = buscarPuesto(datos.cargo, datos.seccion);
   return CONFIG.documentos.filter((doc) => {
+    if (doc.soloAprendiz) return false; // se pide solo en el link de aprendiz
     if (doc.omitirSiPrimerEmpleo && datos.primerEmpleo) return false;
     if (doc.soloSiPrimerEmpleo && !datos.primerEmpleo) return false;
     if (doc.requerido !== 'segunCargo') return true;
@@ -1078,6 +1079,7 @@ function PantallaInicio({ alComenzar, guardadoDisponible, avisoInicial }) {
             {CONFIG.documentos
               .filter((doc) => !(doc.omitirSiPrimerEmpleo && primerEmpleo === 'si'))
               .filter((doc) => !(doc.soloSiPrimerEmpleo && primerEmpleo !== 'si'))
+              .filter((doc) => !doc.soloAprendiz)
               .map((doc) => (
               <div className="fila" key={doc.id}>
                 <div className="fila-cuerpo">

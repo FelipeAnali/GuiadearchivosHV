@@ -582,6 +582,7 @@
   .ajuste-item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 260px) auto; gap: 8px; align-items: center; padding: 8px 16px; }
   .ajuste-item + .ajuste-item::before { content: ''; position: absolute; top: 0; right: 0; left: 16px; height: 0.5px; background: var(--separador); }
   .ajuste-item.sin-tipo { grid-template-columns: minmax(0, 1fr) auto; }
+  .ajuste-item.sede { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.4fr) auto; }
   .campo-ajuste { width: 100%; min-width: 0; height: 38px; padding: 0 12px; border-radius: 10px; border: 0; background: var(--relleno); font-size: 16px; color: var(--texto); }
   .campo-ajuste.numero { max-width: 120px; font-variant-numeric: tabular-nums; }
   .campo-ajuste.enlace { grid-column: 1 / 3; height: 34px; font-size: 14px; }
@@ -597,6 +598,8 @@
     .ajuste-item { grid-template-columns: minmax(0, 1fr) auto; }
     .ajuste-item .selector { grid-column: 1 / -1; grid-row: 2; }
     .campo-ajuste.enlace { grid-column: 1 / -1; grid-row: 3; }
+    .ajuste-item.sede { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .ajuste-item.sede > input:first-child { grid-column: 1 / -1; }
   }
 
   /* Hoja "Pedir correcciones": otra hoja de iOS encima de la ficha */
@@ -640,8 +643,9 @@
      Nombres de carpetas, documentos y estados. Los documentos deben coincidir
      con los de la app del candidato (mismo "id").
      ========================================================================= -->
-<!-- Lista de documentos compartida con la app del candidato -->
+<!-- Listas compartidas con la app del candidato: documentos y cargos -->
 <script src="documentos.js"></script>
+<script src="cargos.js"></script>
 <script>
 window.CONFIG_PANEL = {
   // Dirección pública de la app del candidato en GitHub Pages. Los links de
@@ -662,6 +666,56 @@ window.CONFIG_PANEL = {
   diasAlerta: 5,
   // Días que un no contratado queda en la Papelera antes de eliminarse del todo
   diasPapelera: 7,
+  // ---------------- APRENDICES SENA (todo esto se puede cambiar en Ajustes) ----------------
+  // Días antes de que el aprendiz entre a prácticas para pedirle la manipulación de alimentos
+  diasManipulacionAprendiz: 30,
+  // Secciones (de cargos.js) donde a los aprendices se les pide manipulación de alimentos
+  seccionesManipulacionAprendiz: ['CAJAS Y SERVICIO AL CLIENTE', 'SURTIDO', 'BODEGA', 'BODEGA LA DOLORES', 'LOGISTICA',
+    'LOGISTICA LA DOLORES', 'PANADERIA Y RESTAURANTE', 'RECIBO', 'SGA'],
+  // Cómo se llama el contrato en el checklist de GH cuando el candidato es aprendiz
+  nombreContratoAprendiz: 'Contrato de aprendizaje SENA',
+  // Sedes (centros de operación) para inscribir aprendices: nombre, sector y ciudad
+  sedes: [
+    { nombre: "CC SANTIAGO PLAZA CARTAGO", sector: "Norte del Valle", ciudad: "" },
+    { nombre: "CC SANTIAGO PLAZA GUADALUPE", sector: "Cali y Jamundi", ciudad: "" },
+    { nombre: "CC SANTIAGO PLAZA VILLACOLOMBIA", sector: "Cali y Jamundi", ciudad: "" },
+    { nombre: "CINEMAS SANTIAGO PLAZA ZARZAL", sector: "Norte del Valle", ciudad: "" },
+    { nombre: "PROCESOS GANADO", sector: "Norte del Valle", ciudad: "" },
+    { nombre: "PRODUCCION PANADERIA CEDI YUMBO", sector: "Norte del Valle", ciudad: "" },
+    { nombre: "SC ARTE PANETERO VILLACOLOMBIA", sector: "Cali y Jamundi", ciudad: "" },
+    { nombre: "SC ARTE PANETERO YUMBO", sector: "Norte del Valle", ciudad: "" },
+    { nombre: "SC BODEGA CAVASA", sector: "Norte del Valle", ciudad: "" },
+    { nombre: "SC BODEGA JUANCHITO PICARDIAS", sector: "Norte del Valle", ciudad: "" },
+    { nombre: "SC BRISAS DE LOS ALAMOS", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC BUENOS AIRES", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC BUGA ALBERGUE", sector: "Norte del Valle", ciudad: "Buga, Valle del Cauca" },
+    { nombre: "SC BUGA MERINO", sector: "Norte del Valle", ciudad: "Buga, Valle del Cauca" },
+    { nombre: "SC CAVASA", sector: "Norte del Valle", ciudad: "Villagorgona, Valle del Cauca" },
+    { nombre: "SC CEDI YUMBO", sector: "Norte del Valle", ciudad: "" },
+    { nombre: "SC CENTENARIO", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC CIUDAD COUNTRY", sector: "Cali y Jamundi", ciudad: "Jamundi, Valle del Cauca" },
+    { nombre: "SC COOTRAEMCALI", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC EL INGENIO", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC EL LIMONAR", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC LA 34", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC LA PRIMERA", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC LOS PINOS", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC PALMIRA CENTRO", sector: "Norte del Valle", ciudad: "Palmira, Valle del Cauca" },
+    { nombre: "SC PALMITEX", sector: "Norte del Valle", ciudad: "Palmira, Valle del Cauca" },
+    { nombre: "SC PANCE", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC PASOANCHO", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC POLLO CAÑAVERAL GUADALUPE", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC PUNTO 14", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC ROLDANILLO", sector: "Norte del Valle", ciudad: "Roldanillo, Valle del Cauca" },
+    { nombre: "SC SANTA ELENA", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC TULUA", sector: "Norte del Valle", ciudad: "Tulua, Valle del Cauca" },
+    { nombre: "SC VILLAGORGONA", sector: "Norte del Valle", ciudad: "Villagorgona, Valle del Cauca" },
+    { nombre: "SC VILLAGORGONA 20 DE JULIO", sector: "Norte del Valle", ciudad: "Villagorgona, Valle del Cauca" },
+    { nombre: "SC VILLANUEVA", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+    { nombre: "SC ZARZAL", sector: "Norte del Valle", ciudad: "Zarzal, Valle del Cauca" },
+    { nombre: "SEDE ADMINISTRATIVA", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
+  ],
+
   // Motivos de rechazo rápidos que salen como botones al rechazar un documento
   motivosRapidos: ['No se lee bien', 'No es el documento pedido', 'Está incompleto', 'Está vencido'],
   // Todo lo anterior (y el checklistGH) se puede cambiar desde el panel, en Ajustes:
@@ -695,7 +749,8 @@ window.CONFIG_PANEL = {
   // Documentos que manda el candidato: salen de "documentos.js", el MISMO archivo que usa
   // la app del candidato (así las dos apps tienen siempre la misma lista). Aquí solo se
   // toma el id, el código y el nombre corto. Los documentos se cambian en documentos.js.
-  documentos: (window.DOCUMENTOS || []).map((d) => ({ id: d.id, codigo: d.codigo, nombre: d.nombreCorto || d.nombre })),
+  documentos: (window.DOCUMENTOS || []).map((d) => ({ id: d.id, codigo: d.codigo, nombre: d.nombreCorto || d.nombre,
+    paraAprendiz: !!d.paraAprendiz, soloAprendiz: !!d.soloAprendiz })),
 
   // Estados del candidato, en orden
   estados: [
@@ -725,10 +780,11 @@ window.CONFIG_PANEL = {
 <script>
   // ¿Llegó todo? Si no, en vez de una página en blanco se explica qué pasa.
   (function () {
-    var faltan = ['React', 'ReactDOM', 'Babel', 'JSZip', 'DOCUMENTOS'].filter(function (n) { return !window[n]; });
+    var faltan = ['React', 'ReactDOM', 'Babel', 'JSZip', 'DOCUMENTOS', 'CARGOS_TEXTO'].filter(function (n) { return !window[n]; });
     if (faltan.length) {
-      document.getElementById('carga-panel-texto').textContent = faltan.length === 1 && faltan[0] === 'DOCUMENTOS'
-        ? 'No se pudo cargar la lista de documentos (documentos.js). Recarga la página; si sigue igual, revisa que ese archivo esté en el repositorio junto al panel.'
+      var soloListas = faltan.every(function (n) { return n === 'DOCUMENTOS' || n === 'CARGOS_TEXTO'; });
+      document.getElementById('carga-panel-texto').textContent = soloListas
+        ? 'No se pudo cargar la lista de documentos o de cargos (documentos.js / cargos.js). Recarga la página; si sigue igual, revisa que esos archivos estén en el repositorio junto al panel.'
         : 'No se pudo cargar el panel. Revisa la conexión y recarga la página. Si sigue igual, pide a sistemas ' +
           'que permitan cdnjs.cloudflare.com y cdn.jsdelivr.net en este computador.';
     }
@@ -1158,7 +1214,8 @@ async function eliminarDePapelera(raiz, item) {
    ========================================================================== */
 const ARCHIVO_AJUSTES = 'ajustes.json';
 /** Lo que se puede cambiar desde la pantalla Ajustes. */
-const CAMPOS_AJUSTABLES = ['checklistGH', 'motivosRapidos', 'diasAlerta', 'diasPapelera', 'tamanoMaximoGHMB', 'enlaceAppCandidato'];
+const CAMPOS_AJUSTABLES = ['checklistGH', 'motivosRapidos', 'diasAlerta', 'diasPapelera', 'tamanoMaximoGHMB', 'enlaceAppCandidato',
+  'diasManipulacionAprendiz', 'seccionesManipulacionAprendiz', 'nombreContratoAprendiz', 'sedes'];
 /** Copia de los valores de fábrica (para "Restaurar valores de fábrica"). */
 const CONFIG_FABRICA = JSON.parse(JSON.stringify(Object.fromEntries(CAMPOS_AJUSTABLES.map((k) => [k, CONFIG[k]]))));
 /** Tipos de ítem del checklist, con su explicación para la pantalla Ajustes. */
@@ -1222,6 +1279,14 @@ function validarAjustes(v) {
     diasPapelera: entero(v.diasPapelera, 1, 90, CONFIG_FABRICA.diasPapelera),
     tamanoMaximoGHMB: entero(v.tamanoMaximoGHMB, 1, 100, CONFIG_FABRICA.tamanoMaximoGHMB),
     enlaceAppCandidato: String(v.enlaceAppCandidato || '').trim() || CONFIG_FABRICA.enlaceAppCandidato,
+    // Aprendices
+    diasManipulacionAprendiz: entero(v.diasManipulacionAprendiz, 1, 365, CONFIG_FABRICA.diasManipulacionAprendiz),
+    seccionesManipulacionAprendiz: [...new Set((Array.isArray(v.seccionesManipulacionAprendiz) ? v.seccionesManipulacionAprendiz : CONFIG_FABRICA.seccionesManipulacionAprendiz)
+      .map((x) => String(x || '').trim()).filter(Boolean))],
+    nombreContratoAprendiz: String(v.nombreContratoAprendiz || '').trim().slice(0, 80) || CONFIG_FABRICA.nombreContratoAprendiz,
+    sedes: (Array.isArray(v.sedes) ? v.sedes : CONFIG_FABRICA.sedes)
+      .filter((x) => x && String(x.nombre || '').trim())
+      .map((x) => ({ nombre: String(x.nombre).trim().slice(0, 80), sector: String(x.sector || '').trim().slice(0, 60), ciudad: String(x.ciudad || '').trim().slice(0, 60) })),
   };
 }
 
@@ -1903,6 +1968,17 @@ function fotoDeEjemplo() {
     c.toBlob((b) => ok(b), 'image/jpeg', 0.8);
   });
 }
+
+/**
+ * Cargos y secciones de cargos.js (la misma lista de la app del candidato):
+ * [{ cargo, seccion, manipulacion }]. Se usa para inscribir aprendices y en Ajustes.
+ */
+const PUESTOS = String(window.CARGOS_TEXTO || '').split(/\r?\n/)
+  .map((l) => l.split(/\t|;/).map((x) => x.trim()))
+  .filter(([cargo, seccion]) => cargo && seccion && cargo.toUpperCase() !== 'CARGO')
+  .map(([cargo, seccion, manipulacion]) => ({ cargo, seccion, manipulacion: (manipulacion || 'NO').toUpperCase() }));
+/** Todas las secciones, sin repetir y en orden. */
+const SECCIONES = [...new Set(PUESTOS.map((p) => p.seccion))].sort((a, b) => a.localeCompare(b, 'es'));
 
 /** Código de cada documento (01, 02…), de documentos.js. */
 const CODIGOS = Object.fromEntries(CONFIG.documentos.map((d) => [d.id, d.codigo]));
@@ -3163,6 +3239,62 @@ function Ajustes({ info, onGuardar, onRecargar, cargando }) {
             </label>
           ))}
         </div>
+      </section>
+
+      <section className="grupo">
+        <h3 className="grupo-titulo">Aprendices SENA</h3>
+        <div className="tarjeta">
+          <label className="fila-numero">
+            <span>Días antes de prácticas para pedir manipulación<small>Si al aprendiz le falta más que esto para entrar a prácticas, la manipulación se pide después</small></span>
+            <input className="campo-ajuste numero" type="number" min="1" max="365" value={borrador.diasManipulacionAprendiz}
+                   onChange={(e) => poner('diasManipulacionAprendiz', e.target.value === '' ? '' : Number(e.target.value))} />
+          </label>
+          <label className="fila-numero">
+            <span>Nombre del contrato para aprendices<small>Así sale en el checklist de GH en vez de “Contrato de trabajo”</small></span>
+            <input className="campo-ajuste" style={{ maxWidth: 280 }} value={borrador.nombreContratoAprendiz} maxLength={80}
+                   onChange={(e) => poner('nombreContratoAprendiz', e.target.value)} />
+          </label>
+        </div>
+      </section>
+
+      <section className="grupo">
+        <h3 className="grupo-titulo">Secciones donde a los aprendices se les pide manipulación de alimentos</h3>
+        <div className="tarjeta">
+          {SECCIONES.map((seccion) => {
+            const activa = borrador.seccionesManipulacionAprendiz.includes(seccion);
+            return (
+              <label className="fila-numero" key={seccion}>
+                <span>{seccion}</span>
+                <input type="checkbox" role="switch" className="interruptor" checked={activa}
+                       onChange={() => poner('seccionesManipulacionAprendiz', activa
+                         ? borrador.seccionesManipulacionAprendiz.filter((x) => x !== seccion)
+                         : [...borrador.seccionesManipulacionAprendiz, seccion])} />
+              </label>
+            );
+          })}
+        </div>
+        <p className="grupo-pie">Las secciones salen de la lista de cargos (cargos.js). Si agregan una sección nueva allá, aparece aquí.</p>
+      </section>
+
+      <section className="grupo">
+        <h3 className="grupo-titulo">Sedes (para inscribir aprendices)</h3>
+        <div className="tarjeta">
+          {borrador.sedes.map((sede, i) => (
+            <div className="ajuste-item sede" key={i}>
+              <input className="campo-ajuste" value={sede.nombre} maxLength={80} placeholder="Nombre de la sede, ej. SC PANCE"
+                     aria-label={`Sede ${i + 1}`} onChange={(e) => poner('sedes', borrador.sedes.map((x, j) => (j === i ? { ...x, nombre: e.target.value } : x)))} />
+              <input className="campo-ajuste" value={sede.sector} maxLength={60} placeholder="Sector"
+                     aria-label={`Sector de la sede ${i + 1}`} onChange={(e) => poner('sedes', borrador.sedes.map((x, j) => (j === i ? { ...x, sector: e.target.value } : x)))} />
+              <input className="campo-ajuste" value={sede.ciudad} maxLength={60} placeholder="Ciudad"
+                     aria-label={`Ciudad de la sede ${i + 1}`} onChange={(e) => poner('sedes', borrador.sedes.map((x, j) => (j === i ? { ...x, ciudad: e.target.value } : x)))} />
+              <button className="boton boton-texto peligro" onClick={() => poner('sedes', borrador.sedes.filter((_, j) => j !== i))}>Quitar</button>
+            </div>
+          ))}
+          <div className="ajuste-item sin-tipo">
+            <button className="boton boton-suave" onClick={() => poner('sedes', [...borrador.sedes, { nombre: '', sector: '', ciudad: '' }])}>Agregar sede</button>
+          </div>
+        </div>
+        <p className="grupo-pie">Las sedes sin nombre no se guardan.</p>
       </section>
 
       <section className="grupo">

@@ -26,6 +26,8 @@
    ayuda      → explicación corta debajo del nombre.
    requerido  → true (siempre) o 'segunCargo' (solo si el cargo lo pide).
    variosArchivos → true si se pueden subir varios PDF (ej. diplomas).
+   paraAprendiz → true si también se le pide a los aprendices SENA (ver panel, "Aprendices").
+   soloAprendiz → true si se le pide SOLO a los aprendices (no sale en el envío normal).
    cantidad   → (opcional) cuántos PDF exactos se piden (ej. 2 referencias personales).
                 Hasta tenerlos todos el documento no queda completo, y no deja subir más.
    omitirSiPrimerEmpleo → true: no se pide si el candidato dice que es su primer empleo.
@@ -52,11 +54,11 @@
      Un PDF sin texto y sin imagen (en blanco) siempre se rechaza.
 */
 window.DOCUMENTOS = [
-    { id: 'foto', codigo: '01', nombre: 'Foto 3×4 fondo blanco', nombreCorto: 'Foto 3×4',
+    { id: 'foto', codigo: '01', nombre: 'Foto 3×4 fondo blanco', nombreCorto: 'Foto 3×4', paraAprendiz: true,
       ayuda: 'Foto tipo documento, de frente y con fondo blanco. Súbela como imagen (JPG o PNG) desde tu galería o tómala con la cámara.',
       requerido: true, tipo: 'imagen' },
 
-    { id: 'cedula', codigo: '02', nombre: 'Cédula ampliada al 150 %', nombreCorto: 'Cédula',
+    { id: 'cedula', codigo: '02', nombre: 'Cédula ampliada al 150 %', nombreCorto: 'Cédula', paraAprendiz: true,
       ayuda: 'Por ambas caras, en un solo PDF.', requerido: true,
       revision: {
         nombreArchivo: ['CEDULA', 'CC', 'DOCUMENTO', 'IDENTIDAD', 'IDENTIFICACION'], ejemploNombre: 'cedula.pdf',
@@ -64,7 +66,7 @@ window.DOCUMENTOS = [
         traeCedula: true,
         distintivas: ['REGISTRADUR', 'NUIP', 'CEDULA DE CIUDADANIA', 'IDENTIFICACION PERSONAL', 'ESTATURA', 'INDICE DERECHO', 'LUGAR DE NACIMIENTO'] } },
 
-    { id: 'diplomas', codigo: '03', nombre: 'Diplomas de estudios', nombreCorto: 'Diplomas',
+    { id: 'diplomas', codigo: '03', nombre: 'Diplomas de estudios', nombreCorto: 'Diplomas', paraAprendiz: true,
       ayuda: 'Bachiller, técnico, tecnólogo, etc. Puedes subir un PDF por cada diploma.',
       requerido: true, variosArchivos: true,
       revision: {
@@ -73,7 +75,7 @@ window.DOCUMENTOS = [
         palabras: ['DIPLOMA', 'BACHILLER', 'TECNIC', 'TECNOLOG', 'PROFESIONAL', 'TITULO', 'GRADO', 'ACTA', 'OTORGA', 'CERTIFICA'],
         distintivas: ['DIPLOMA', 'BACHILLER', 'ACTA DE GRADO', 'TITULO DE', 'OTORGA', 'CONFIERE', 'GRADUAD'] } },
 
-    { id: 'manipulacion', codigo: '04', nombre: 'Certificado de manipulación de alimentos', nombreCorto: 'Manipulación de alimentos',
+    { id: 'manipulacion', codigo: '04', nombre: 'Certificado de manipulación de alimentos', nombreCorto: 'Manipulación de alimentos', paraAprendiz: true,
       ayuda: 'Vigente y con mínimo 10 horas de formación.',
       ayudaDecreto1500: 'Vigente y bajo el Decreto 1500 de 2007. Es obligatorio para tu cargo.',
       requerido: 'segunCargo',
@@ -99,7 +101,7 @@ window.DOCUMENTOS = [
         paginasMax: 2, palabras: ['REFERENCIA', 'RECOMIENDO', 'RECOMENDACION', 'CONOZCO', 'PERSONAL', 'CERTIFIC'],
         distintivas: ['REFERENCIA PERSONAL', 'RECOMIENDO', 'CONOZCO', 'RECOMENDACION PERSONAL'] } },
 
-    { id: 'adres', codigo: '06', nombre: 'Certificado de afiliación a EPS (ADRES)', nombreCorto: 'Certificado de EPS (ADRES)',
+    { id: 'adres', codigo: '06', nombre: 'Certificado de afiliación a EPS (ADRES)', nombreCorto: 'Certificado de EPS (ADRES)', paraAprendiz: true,
       ayuda: 'Lo descargas gratis en la página de ADRES con tu número de documento.',
       enlaceAyuda: { texto: 'Consultar en ADRES', url: 'https://www.adres.gov.co/consulte-su-eps' },
       tutorial: {
@@ -157,4 +159,15 @@ window.DOCUMENTOS = [
         palabras: ['PENSION', 'RUAF', 'COLPENSIONES', 'PORVENIR', 'PROTECCION', 'COLFONDOS', 'SKANDIA'],
         traeCedula: true,
         distintivas: ['PENSION', 'COLPENSIONES', 'PORVENIR', 'COLFONDOS', 'SKANDIA', 'CESANTIAS', 'RUAF'] } },
+
+    // Solo para aprendices SENA
+    { id: 'constancia_sena', codigo: '08', nombre: 'Constancia del SENA', nombreCorto: 'Constancia del SENA',
+      paraAprendiz: true, soloAprendiz: true,
+      ayuda: 'Certificado de matrícula o constancia de la etapa en la que vas (lectiva o productiva). La descargas de Sofía Plus o te la da tu centro de formación.',
+      requerido: true,
+      revision: {
+        nombreArchivo: ['SENA', 'CONSTANCIA', 'MATRICULA', 'CERTIFICADO', 'ETAPA', 'FICHA'], ejemploNombre: 'constancia_sena.pdf',
+        paginasMax: 3, palabras: ['SENA', 'SERVICIO NACIONAL DE APRENDIZAJE', 'APRENDIZ', 'MATRICULA', 'FICHA'],
+        traeCedula: true,
+        distintivas: ['SERVICIO NACIONAL DE APRENDIZAJE', 'SENA', 'APRENDIZ', 'FICHA', 'ETAPA LECTIVA', 'ETAPA PRODUCTIVA', 'SOFIA PLUS'] } },
 ];
