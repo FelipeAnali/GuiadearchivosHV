@@ -61,7 +61,10 @@
     "Inscribir aprendiz" crea su carpeta con sus datos y fechas, y arma el link para
     que suba solo sus documentos. La vista "Aprendices" muestra cuántos días le faltan
     para prácticas y avisa cuándo pedir la manipulación de alimentos (si su sección la
-    pide, a CONFIG.diasManipulacionAprendiz días). Sección 6C.
+    pide, a CONFIG.diasManipulacionAprendiz días). Cuando el aprendiz sube su ZIP
+    (<documento>_APRENDIZ_<n>.zip), la Bandeja lo procesa solo si es un aprendiz
+    inscrito, trae el código único del link enviado y solo lo pedido; si confirmó un
+    celular o correo distinto, actualiza la ficha y lo anota. Sección 6C.
 
   LO QUE LLEGA EN LAS SIGUIENTES PARTES:
     4. Entrega final en un solo PDF (el ZIP ya está: "Descargar ZIP" en la ficha).
@@ -1533,9 +1536,14 @@ async function analizarArchivo(item, raiz) {
   const d = r.datos;
   // Corrección: lo dice el JSON (tipo "correccion") o el nombre del ZIP (…_CORRECCION_1.zip)
   const esCorreccion = d.tipo === 'correccion' || /CORRECCION/i.test(item.nombre);
+  // Aprendiz: lo dice el JSON (tipo "aprendiz") o el nombre del ZIP (…_APRENDIZ_1.zip). Se trata como corrección (sin nombre).
+  const esAprendizZip = d.tipo === 'aprendiz' || /_APRENDIZ_\d+/i.test(item.nombre);
   if (!/^[A-Z0-9]{3,15}$/i.test(String(d.cedula || ''))) r.errores.push('El número de documento del paquete no es válido.');
   // El JSON de una corrección no trae el nombre: se toma del expediente del candidato
-  if (!esCorreccion && !String(d.nombre || '').trim()) r.errores.push('El paquete no trae el nombre del candidato.');
+  if (!esCorreccion && !esAprendizZip && !String(d.nombre || '').trim()) r.errores.push('El paquete no trae el nombre del candidato.');
+  if (esAprendizZip && !(Number.isInteger(Number(d.solicitud)) && Number(d.solicitud) >= 1)) {
+    r.errores.push('El paquete del aprendiz no dice a qué solicitud responde.');
+  }
   if (esCorreccion && !(Number.isInteger(Number(d.correccion)) && Number(d.correccion) >= 1)) {
     r.errores.push('El paquete de corrección no dice qué número de corrección es.');
   }
@@ -1560,15 +1568,17 @@ async function analizarArchivo(item, raiz) {
   if (sinRevisar) r.avisos.push(`${plural(sinRevisar, 'archivo', 'archivos')} sin revisión automática (escaneado o protegido).`);
 
   // Corrección: el candidato debe existir en Candidatos (de ahí sale el nombre)
-  if (esCorreccion && !r.errores.length) await revisarCorreccion(r, raiz);
+  if (esCorreccion && !esAprendizZip && !r.errores.length) await revisarCorreccion(r, raiz);
+  // Aprendiz: inscrito, con el código del link enviado y solo lo pedido (sección 6C)
+  if (esAprendizZip && !r.errores.length) await revisarAprendiz(r, raiz);
 
   // ¿Ya existe este candidato?
-  if (!esCorreccion && !r.errores.length) {
+  if (!esCorreccion && !esAprendizZip && !r.errores.length) {
     const existente = await buscarCarpetaCandidato(raiz, d.cedula);
     if (existente) r.avisos.push('Este candidato ya tiene carpeta: es un envío nuevo. Los archivos actuales se guardan en "_anteriores".');
     if (await estaEnPapelera(raiz, d.cedula)) r.avisos.push('Esta cédula está en la Papelera (la marcaron como no contratada hace poco).');
   }
-  r.tipo = r.errores.length ? 'invalido' : (esCorreccion ? 'correccion' : 'envio');
+  r.tipo = r.errores.length ? 'invalido' : (esAprendizZip ? 'aprendiz' : esCorreccion ? 'correccion' : 'envio');
   return r;
 }
 
@@ -1665,7 +1675,10 @@ async function procesarZip(raiz, item, usuario) {
    CONTRATO con la app del candidato (no cambiarlo sin cambiar también la app):
      Link:  <enlaceAppCandidato>?c=<código>
             código = JSON → texto UTF-8 → base64url (sin "=").
-            JSON   = { "v": 1, "n": 1, "h": "<16 primeros hex de SHA-256 del documento (solo letras y números, en mayúscula)>",
+            Versión 1 (links viejos, sin código). Desde ahora el panel arma la versión 2:
+            { "v": 2, "t": "correccion", "n", "h", "k": "<código único>", "a": 0, "d" } y el ZIP
+            trae "codigo": si no coincide con el del expediente, no se procesa.
+            JSON v1 = { "v": 1, "n": 1, "h": "<16 primeros hex de SHA-256 del documento (solo letras y números, en mayúscula)>",
                        "d": [ { "id": "adres", "m": "No se lee bien" } ] }
             "id" es el de CONFIG.documentos; "m" tiene máximo 160 caracteres.
             El link NUNCA lleva el nombre ni la cédula a la vista: solo la huella "h".
@@ -1704,12 +1717,13 @@ function aBase64Url(texto) {
 }
 
 /**
- * Arma el link de corrección para el candidato.
- * n: número de la corrección; huella: huellaCedula(); documentos: [{ id, motivo }].
+ * Arma el link de corrección para el candidato (versión 2: con código único).
+ * n: número de la corrección; huella: huellaCedula(); documentos: [{ id, motivo }];
+ * codigo: código único que queda en el expediente y debe volver en el ZIP.
  */
-function linkDeCorreccion(n, huella, documentos) {
+function linkDeCorreccion(n, huella, documentos, codigo) {
   const datos = {
-    v: VERSION_LINK_CORRECCION, n, h: huella,
+    v: 2, t: 'correccion', n, h: huella, k: codigo, a: 0,
     d: documentos.map((x) => ({ id: x.id, m: String(x.motivo || '').slice(0, MAXIMO_MOTIVO) })),
   };
   const base = CONFIG.enlaceAppCandidato || '';
@@ -1749,6 +1763,11 @@ async function revisarCorreccion(r, raiz) {
   if (!expediente) { r.errores.push('La carpeta de este candidato no tiene un expediente.json válido.'); return; }
   r.nombreCandidato = expediente.nombre;
   const pedida = (expediente.correcciones || []).find((x) => Number(x.n) === r.numeroCorreccion);
+  // Filtro de seguridad: si la corrección se pidió con código único, el ZIP debe traer ese mismo código
+  if (pedida && pedida.codigo && String(r.datos.codigo || '') !== pedida.codigo) {
+    r.errores.push('El código del paquete no coincide con el del link que se le envió: no viene de ese link. No se procesa.');
+    return;
+  }
   if (pedida && pedida.recibida) {
     r.avisos.push(`La corrección ${r.numeroCorreccion} ya se había recibido (${fechaCorta(pedida.recibida)}). Si la procesas, reemplaza lo que llegó esa vez.`);
   } else if (!pedida) {
@@ -1997,6 +2016,133 @@ function agregarSolicitud(exp, solicitud, usuario) {
     : `Envió el link de documentos (solicitud ${solicitud.n}): ${lista}`);
 }
 
+/**
+ * Revisa un ZIP de aprendiz en la bandeja (lo llama analizarArchivo). Los 3 filtros:
+ *   1) la app ya verificó su número de documento;
+ *   2) debe ser un aprendiz INSCRITO, responder a una solicitud enviada y traer solo lo pedido;
+ *   3) el código del ZIP debe ser el mismo del link enviado (solo quedó en el expediente).
+ * También avisa si confirmó un celular o correo distinto al que tenía GH.
+ */
+async function revisarAprendiz(r, raiz) {
+  const d = r.datos;
+  r.numeroSolicitud = Number(d.solicitud);
+  const carpeta = await buscarCarpetaCandidato(raiz, d.cedula);
+  if (!carpeta) {
+    r.errores.push('No hay un aprendiz inscrito con este número de documento. No se procesa.');
+    if (await estaEnPapelera(raiz, d.cedula)) r.avisos.push('Esta cédula está en la Papelera (no contratado).');
+    return;
+  }
+  let expediente = null;
+  try { expediente = await leerExpediente(carpeta); } catch (e) { expediente = null; }
+  if (!expediente) { r.errores.push('La carpeta de este documento no tiene un expediente.json válido.'); return; }
+  r.nombreCandidato = expediente.nombre;
+  if (!esAprendiz(expediente)) { r.errores.push('Esta persona no está inscrita como aprendiz. No se procesa.'); return; }
+  const solicitud = (expediente.solicitudes || []).find((s) => Number(s.n) === r.numeroSolicitud);
+  if (!solicitud) { r.errores.push(`No hay registro de la solicitud ${r.numeroSolicitud}: el paquete no viene de un link enviado. No se procesa.`); return; }
+  if (!solicitud.codigo || String(d.codigo || '') !== solicitud.codigo) {
+    r.errores.push('El código del paquete no coincide con el del link que se le envió: no viene de ese link. No se procesa.');
+    return;
+  }
+  if (solicitud.recibida) r.avisos.push(`La solicitud ${r.numeroSolicitud} ya se había recibido (${fechaCorta(solicitud.recibida)}). Si la procesas, reemplaza lo que llegó esa vez.`);
+  // Solo lo pedido: lo demás se ignora
+  const pedidos = new Set(solicitud.documentos.map((x) => x.id));
+  r.archivos.filter((a) => !pedidos.has(a.documento)).forEach((a) => r.avisos.push(`Se ignora ${nombreDocumento(a.documento)}: no se le pidió.`));
+  r.archivos = r.archivos.filter((a) => pedidos.has(a.documento));
+  const faltan = [...pedidos].filter((id) => !r.archivos.some((a) => a.documento === id));
+  if (faltan.length) r.avisos.push(`No trae: ${faltan.map(nombreDocumento).join(', ')}.`);
+  if (!r.archivos.length) { r.errores.push('El paquete no trae ninguno de los documentos que se le pidieron.'); return; }
+  // Doble verificación del contacto
+  const cambios = cambiosDeContacto(expediente, d);
+  cambios.forEach((x) => r.avisos.push(`Confirmó ${x.campo} distinto: antes ${x.antes || '—'}, ahora ${x.ahora}. Se actualizará la ficha.`));
+}
+
+/** Celular y correo que el aprendiz confirmó en la app y que son distintos a los del expediente. */
+function cambiosDeContacto(expediente, datos) {
+  const cambios = [];
+  const celular = celularLimpio(datos.celular);
+  const correo = correoLimpio(datos.correo);
+  if (celular && celular !== expediente.celular) cambios.push({ clave: 'celular', campo: 'un celular', antes: expediente.celular, ahora: celular });
+  if (correo && correo !== expediente.correo) cambios.push({ clave: 'correo', campo: 'un correo', antes: expediente.correo, ahora: correo });
+  return cambios;
+}
+
+/**
+ * Procesa un ZIP de aprendiz. Mismo orden seguro que procesarCorreccion:
+ *   1) archivos actuales de esos documentos a _anteriores/<fecha>/, 2) escribir los nuevos,
+ *   3) expediente (solicitud recibida, "En revisión", contacto actualizado, bitácora),
+ *   4) mover el ZIP a Procesados.
+ */
+async function procesarAprendiz(raiz, item, usuario) {
+  const analisis = await analizarArchivo(item, raiz);
+  if (analisis.errores.length) throw new Error(analisis.errores[0]);
+  if (analisis.tipo !== 'aprendiz') throw new Error('Este paquete no es de un aprendiz.');
+  const d = analisis.datos;
+  const n = analisis.numeroSolicitud;
+  const carpeta = await buscarCarpetaCandidato(raiz, d.cedula);
+  let expediente = await leerExpediente(carpeta);
+  const revLeida = expediente.rev;
+
+  const porDocumento = {};
+  analisis.archivos.forEach((a) => { (porDocumento[a.documento] = porDocumento[a.documento] || []).push(a); });
+
+  // 1) Lo que hubiera de esos documentos pasa a _anteriores/<fecha>/
+  const enCarpeta = Object.fromEntries((await listar(carpeta)).filter((x) => x.tipo === 'file').map((x) => [x.nombre, x.handle]));
+  let carpetaAnterior = null;
+  let destino = null;
+  for (const id of Object.keys(porDocumento)) {
+    for (const nombre of ((expediente.documentos || {})[id] || {}).archivos || []) {
+      if (!enCarpeta[nombre]) continue;
+      if (!destino) {
+        const anteriores = await subcarpeta(carpeta, C.anteriores);
+        carpetaAnterior = await nombreLibre(anteriores, marcaDeTiempo());
+        destino = await subcarpeta(anteriores, carpetaAnterior);
+      }
+      await moverArchivo(enCarpeta[nombre], carpeta, destino);
+    }
+  }
+
+  // 2) Archivos nuevos: cada documento queda "pendiente" para revisar
+  const documentos = { ...(expediente.documentos || {}) };
+  for (const [id, lista] of Object.entries(porDocumento)) {
+    const doc = { archivos: [], revision: 'pendiente', motivo: '', conContrasena: false, revisadoAutomaticamente: true, solicitud: n };
+    for (const a of lista) {
+      await escribir(carpeta, a.archivo, await analisis.zip.file(a.archivo).async('blob'));
+      doc.archivos.push(a.archivo);
+      doc.conContrasena = doc.conContrasena || !!a.conContrasena;
+      doc.revisadoAutomaticamente = doc.revisadoAutomaticamente && !!a.revisadoAutomaticamente;
+    }
+    documentos[id] = doc;
+  }
+
+  // 3) Expediente
+  const ahora = new Date().toISOString();
+  const cuantos = Object.keys(porDocumento).length;
+  const cambios = cambiosDeContacto(expediente, d);
+  expediente = {
+    ...expediente,
+    documentos,
+    solicitudes: (expediente.solicitudes || []).map((s) => (Number(s.n) === n ? { ...s, recibida: ahora } : s)),
+    estado: 'revision',
+    autorizacionDatos: d.autorizacionDatos || expediente.autorizacionDatos,
+    envios: [...(expediente.envios || []), {
+      tipo: 'aprendiz', solicitud: n, zip: item.nombre, generado: d.generado || null,
+      procesado: ahora, procesadoPor: usuario, archivos: analisis.archivos.map((a) => a.archivo),
+      anteriores: carpetaAnterior ? `${C.anteriores}/${carpetaAnterior}` : null,
+    }],
+  };
+  cambios.forEach((x) => { expediente[x.clave] = x.ahora; });
+  expediente.rev = revLeida;
+  anotar(expediente, usuario, `Recibió los documentos de la solicitud ${n} (${plural(cuantos, 'documento', 'documentos')})`);
+  cambios.forEach((x) => anotar(expediente, usuario, `El aprendiz actualizó su ${x.clave}: antes ${x.antes || '—'}, ahora ${x.ahora}`));
+  if (d.autorizacionDatos && d.autorizacionDatos.aceptada) anotar(expediente, usuario, `El aprendiz aceptó la autorización de datos (${fechaCorta(d.autorizacionDatos.fecha)})`);
+  await guardarExpediente(carpeta, expediente);
+
+  // 4) Mover el ZIP a Recibidos/Procesados
+  const procesados = await subcarpeta(await subcarpeta(raiz, C.recibidos), C.procesados);
+  await moverArchivo(item.handle, item.carpeta, procesados);
+  return { nombre: expediente.nombre, n, cuantos, cambios: cambios.length };
+}
+
 /* ==========================================================================
    7. CANDIDATOS: leer el listado (un expediente por carpeta)
    ========================================================================== */
@@ -2203,6 +2349,9 @@ async function zipDeEjemplo(c, foto) {
     // Corrección: el JSON del contrato (sin nombre). Envío normal: con celular y correo si los hay.
     const datos = c.tipo === 'correccion'
       ? { version: 1, tipo: 'correccion', correccion: c.n || 1, cedula: c.cedula, generado: new Date().toISOString(), archivos: lista }
+      : c.tipo === 'aprendiz'
+      ? { version: 1, tipo: 'aprendiz', solicitud: c.n || 1, codigo: c.codigo, cedula: c.cedula, celular: c.celular || '', correo: c.correo || '',
+          autorizacionDatos: { aceptada: true, fecha: new Date().toISOString() }, generado: new Date().toISOString(), archivos: lista }
       : { version: 1, tipo: c.tipo, tipoDocumento: c.tipoDocumento || 'CC', cedula: c.cedula, nombre: c.nombre, cargo: c.cargo, seccion: c.seccion,
           primerEmpleo: !!c.primerEmpleo, celular: c.celular || undefined, correo: c.correo || undefined,
           autorizacionDatos: { aceptada: true, fecha: new Date().toISOString() },
@@ -2319,6 +2468,13 @@ async function crearCarpetaDeEjemplo(modo) {
         await guardarExpediente(carpeta, exp);
       }
     }
+    // Mariana respondió su link (código correcto) y confirmó un celular nuevo; y un paquete con código falso
+    const mariana = await leerExpediente(await buscarCarpetaCandidato(raiz, '1112345678'));
+    const docsMariana = mariana.solicitudes[0].documentos.map((x) => x.id);
+    recibidos.poner('Mariana Lopez_1112345678_APRENDIZ_1.zip',
+      await zipDeEjemplo({ cedula: '1112345678', tipo: 'aprendiz', n: 1, codigo: mariana.solicitudes[0].codigo, celular: '3119876543', correo: mariana.correo, docs: docsMariana }, foto), hace(0, 1.5));
+    recibidos.poner('Kevin Rojas_1113456789_APRENDIZ_1.zip',
+      await zipDeEjemplo({ cedula: '1113456789', tipo: 'aprendiz', n: 1, codigo: 'CODIGOFALSO', celular: '3025678901', docs: ['foto', 'cedula'] }, foto), hace(0, 1));
     // Corrección 1 de Camilo (tiene la cédula rechazada): lo que mandaría la app del candidato
     recibidos.poner('1006223344_CORRECCION_1.zip',
       await zipDeEjemplo({ cedula: '1006223344', tipo: 'correccion', n: 1, docs: ['cedula'] }, foto), hace(0, 0.5));
@@ -2510,7 +2666,7 @@ function BarraLateral({ vista, setVista, pendientes, totalCandidatos, enPapelera
 
 /* ---------- Bandeja de entrada ---------- */
 function Bandeja({ items, cargando, onRecargar, onProcesar, onProcesarTodos, procesando, lote, onAgregar }) {
-  const listos = items.filter((x) => x.analisis && (x.analisis.tipo === 'envio' || x.analisis.tipo === 'correccion'));
+  const listos = items.filter((x) => x.analisis && ['envio', 'correccion', 'aprendiz'].includes(x.analisis.tipo));
   const selector = useRef(null);          // campo oculto para elegir ZIP del computador
   const [encima, setEncima] = useState(false); // ¿están arrastrando un archivo encima?
 
@@ -2567,7 +2723,7 @@ function FilaBandeja({ item, onProcesar, procesando }) {
   const a = item.analisis;
   const d = a && a.datos;
   const tipo = !a ? 'cargando' : a.tipo;
-  const icono = { envio: ['paquete', ''], correccion: ['corregir', 'info'], invalido: ['alerta', 'malo'], cargando: ['cargando', ''] }[tipo];
+  const icono = { envio: ['paquete', ''], correccion: ['corregir', 'info'], aprendiz: ['personas', 'info'], invalido: ['alerta', 'malo'], cargando: ['cargando', ''] }[tipo];
   // En una corrección el nombre no viene en el ZIP: sale del expediente (a.nombreCandidato)
   const nombre = d && (d.nombre || (a && a.nombreCandidato));
   const titulo = nombre && tipo !== 'invalido' ? nombreBonito(nombre) : item.nombre;
@@ -2579,7 +2735,7 @@ function FilaBandeja({ item, onProcesar, procesando }) {
         {d && tipo !== 'invalido' && (
           <span className="fila-sub">
             <span className="numeros">{siglaDocumento(d.tipoDocumento)} {d.cedula}</span>{d.cargo ? ` — ${d.cargo}` : ''}{d.seccion ? `, ${d.seccion}` : ''}
-            {d.primerEmpleo ? ' — primer empleo' : ''}{tipo === 'correccion' ? ` — corrección ${a.numeroCorreccion}` : ''}
+            {d.primerEmpleo ? ' — primer empleo' : ''}{tipo === 'correccion' ? ` — corrección ${a.numeroCorreccion}` : ''}{tipo === 'aprendiz' ? ` — aprendiz, solicitud ${a.numeroSolicitud}` : ''}
           </span>
         )}
         <span className="fila-pista">
@@ -2594,9 +2750,9 @@ function FilaBandeja({ item, onProcesar, procesando }) {
         )}
       </div>
       <div className="fila-lado">
-        {(tipo === 'envio' || tipo === 'correccion') && (
+        {['envio', 'correccion', 'aprendiz'].includes(tipo) && (
           <button className="boton boton-suave" disabled={procesando} onClick={() => onProcesar(item)}>
-            {tipo === 'correccion' ? 'Procesar corrección' : 'Procesar'}
+            {tipo === 'correccion' ? 'Procesar corrección' : tipo === 'aprendiz' ? 'Procesar aprendiz' : 'Procesar'}
           </button>
         )}
       </div>
@@ -3110,6 +3266,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
                       ))}
                       {doc.conContrasena ? ' — tiene contraseña' : ''}{!doc.revisadoAutomaticamente ? ' — revísalo con cuidado' : ''}
                       {doc.correccion ? ` — llegó en la corrección ${doc.correccion}` : ''}
+                      {doc.solicitud ? ` — llegó en la solicitud ${doc.solicitud}` : ''}
                     </span>
                     {doc.revision === 'rechazado' && doc.motivo && <span className="motivo-texto">Motivo: {doc.motivo}</span>}
                     {rechazando && rechazando.id === id && (
@@ -3241,6 +3398,7 @@ function HojaCorrecciones({ exp, rechazados, faltantes, guardando, avisar, usuar
   ]));
   const [huella, setHuella] = useState('');
   const [registrada, setRegistrada] = useState(null); // número de la corrección ya registrada
+  const [codigo] = useState(codigoAleatorio);          // código único de este link (filtro de seguridad)
   const n = registrada || siguienteCorreccion(exp);
 
   useEffect(() => { huellaCedula(exp.cedula).then(setHuella); }, [exp.cedula]);
@@ -3252,14 +3410,14 @@ function HojaCorrecciones({ exp, rechazados, faltantes, guardando, avisar, usuar
 
   const elegidos = Object.entries(eleccion).filter(([, v]) => v.activo).map(([id, v]) => ({ id, motivo: v.motivo.slice(0, MAXIMO_MOTIVO) }));
   const listo = elegidos.length > 0 && !!huella;
-  const link = listo ? linkDeCorreccion(n, huella, elegidos) : '';
+  const link = listo ? linkDeCorreccion(n, huella, elegidos, codigo) : '';
   const mensaje = listo ? mensajeDeCorreccion(exp.nombre, elegidos, link) : '';
   const celular = String(exp.celular || '').replace(/\D/g, '');
 
   /** Registra la corrección la primera vez (copiar o enviar cuenta como "pedirla"). */
   async function registrarSiFalta() {
     if (registrada) return true;
-    const ok = await onRegistrar({ n, fecha: new Date().toISOString(), por: usuario, documentos: elegidos, recibida: null });
+    const ok = await onRegistrar({ n, codigo, fecha: new Date().toISOString(), por: usuario, documentos: elegidos, recibida: null });
     if (ok) setRegistrada(n);
     return ok;
   }
@@ -4065,6 +4223,11 @@ function App() {
   async function procesar(item, silencioso = false) {
     setProcesando(true);
     try {
+      if (item.analisis && item.analisis.tipo === 'aprendiz') {
+        const r = await procesarAprendiz(raiz, item, usuario);
+        if (!silencioso) avisar(`Se recibieron los documentos de ${nombreBonito(r.nombre)}${r.cambios ? ' (actualizó su contacto)' : ''}`);
+        return true;
+      }
       if (item.analisis && item.analisis.tipo === 'correccion') {
         const r = await procesarCorreccion(raiz, item, usuario);
         if (!silencioso) avisar(`Se recibió la corrección ${r.n} de ${nombreBonito(r.nombre)}`);
@@ -4084,7 +4247,7 @@ function App() {
   }
 
   async function procesarTodos() {
-    const listos = bandeja.filter((x) => x.analisis && (x.analisis.tipo === 'envio' || x.analisis.tipo === 'correccion'));
+    const listos = bandeja.filter((x) => x.analisis && ['envio', 'correccion', 'aprendiz'].includes(x.analisis.tipo));
     let bien = 0;
     for (let i = 0; i < listos.length; i++) {
       setLote({ hechos: i, total: listos.length });
