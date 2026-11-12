@@ -3829,6 +3829,7 @@ function HojaInscribir({ onInscribir, onCerrar }) {
                                 sede: '', fechaContrato: '', fechaPracticas: '' });
   const [errores, setErrores] = useState({});
   const [guardando, setGuardando] = useState(false);
+  useCerrarConEscape(onCerrar, !guardando);
   // Al cambiar un campo se borra su error (y al cambiar el cargo, la sección elegida)
   const poner = (campo, valor) => {
     setD((x) => ({ ...x, [campo]: valor, ...(campo === 'cargo' ? { seccion: '' } : {}) }));
@@ -4017,6 +4018,7 @@ function DialogoVersiones({ versiones, onElegir, onCancelar }) {
   const masReciente = [...versiones].sort((a, b) => String(b.expediente.actualizado).localeCompare(String(a.expediente.actualizado)))[0].nombre;
   const [elegida, setElegida] = useState(masReciente);
   const [guardando, setGuardando] = useState(false);
+  useCerrarConEscape(onCancelar, !guardando);
   return (
     <div className="dialogo-fondo encima" onClick={() => !guardando && onCancelar()}>
       <div className="dialogo dialogo-ancho" role="dialog" aria-modal="true" aria-labelledby="titulo-versiones" onClick={(e) => e.stopPropagation()}>
@@ -4058,8 +4060,22 @@ function DialogoVersiones({ versiones, onElegir, onCancelar }) {
  * titulo, texto y textoBoton se muestran tal cual. El botón rojo llama onConfirmar();
  * mientras trabaja, los botones quedan inactivos.
  */
+/**
+ * Cierra una ventana con la tecla Escape. Escucha primero (fase de captura) y detiene el evento,
+ * para que no se cierre también la ficha que está detrás.
+ */
+function useCerrarConEscape(alCerrar, activo = true) {
+  useEffect(() => {
+    if (!activo) return undefined;
+    const alTeclear = (ev) => { if (ev.key === 'Escape') { ev.stopImmediatePropagation(); alCerrar(); } };
+    window.addEventListener('keydown', alTeclear, true);
+    return () => window.removeEventListener('keydown', alTeclear, true);
+  }, [alCerrar, activo]);
+}
+
 function DialogoConfirmar({ titulo, texto, textoBoton, textoTrabajando, onConfirmar, onCancelar }) {
   const [trabajando, setTrabajando] = useState(false);
+  useCerrarConEscape(onCancelar, !trabajando);
   return (
     <div className="dialogo-fondo" onClick={() => !trabajando && onCancelar()}>
       <div className="dialogo" role="alertdialog" aria-modal="true" aria-labelledby="titulo-confirmar" onClick={(e) => e.stopPropagation()}>

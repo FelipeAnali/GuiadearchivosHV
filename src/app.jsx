@@ -187,10 +187,41 @@ function buscarCargos(texto, limite = 8) {
   const palabras = normalizar(texto).split(' ').filter(Boolean);
   if (palabras.length === 0) return [];
   const empiezaIgual = (c) => (normalizar(c).startsWith(palabras[0]) ? 0 : 1);
-  return CARGOS_UNICOS
+  const exactos = CARGOS_UNICOS
     .filter((c) => palabras.every((p) => normalizar(c).includes(p)))
     .sort((a, b) => empiezaIgual(a) - empiezaIgual(b) || a.localeCompare(b, 'es'))
     .slice(0, limite);
+  if (exactos.length) return exactos;
+  return cargosParecidos(palabras, limite);
+}
+
+/**
+ * Si el candidato escribe un cargo que no está tal cual (ej. "cajera", "carnicero"), se buscan
+ * cargos cuyo nombre O SECCIÓN tenga palabras parecidas ("cajera" → sección CAJAS; "carnicero" → CARNES).
+ * Dos palabras se parecen si empiezan igual en al menos 3 letras y en el 60 % de la más corta.
+ */
+function cargosParecidos(palabras, limite) {
+  const seParecen = (a, b) => {
+    let i = 0;
+    while (i < a.length && i < b.length && a[i] === b[i]) i++;
+    return i >= 3 && i >= 0.6 * Math.min(a.length, b.length);
+  };
+  const utiles = palabras.filter((p) => p.length >= 4); // "de", "la", "aux" no sirven para adivinar
+  if (utiles.length === 0) return [];
+  const puntaje = new Map();
+  PUESTOS.forEach((puesto) => {
+    if (normalizar(puesto.cargo).includes('APRENDIZ')) return; // los aprendices entran con su propio link
+    const enCargo = normalizar(puesto.cargo).split(' ');
+    const enSeccion = normalizar(puesto.seccion).split(' ');
+    // Pesa más si se parece al nombre del cargo que si solo se parece a la sección
+    const aciertos = utiles.reduce((total, p) => total
+      + (enCargo.some((t) => seParecen(p, t)) ? 2 : enSeccion.some((t) => seParecen(p, t)) ? 1 : 0), 0);
+    if (aciertos > (puntaje.get(puesto.cargo) || 0)) puntaje.set(puesto.cargo, aciertos);
+  });
+  return [...puntaje.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es'))
+    .slice(0, limite)
+    .map(([cargo]) => cargo);
 }
 
 /**
@@ -1360,6 +1391,9 @@ function PantallaDatos({ datosIniciales, primerEmpleoInicial, alGuardar }) {
                 {sugerencias.length === 0 && (
                   <div className="fila"><div className="fila-sub">No encontramos ese cargo. Prueba con otra palabra.</div></div>
                 )}
+                {sugerencias.length > 0 && !sugerencias.some((c) => normalizar(textoCargo).split(' ').filter(Boolean).every((p) => normalizar(c).includes(p))) && (
+                  <div className="fila"><div className="fila-sub">No está con ese nombre exacto: estos son los más parecidos. Si no es ninguno, pregúntale a Gestión Humana.</div></div>
+                )}
               </div>
             )}
 
@@ -1988,6 +2022,69 @@ function PantallaFinal({ nombreZip, alReiniciar }) {
  * Las pantallas reciben funciones como comenzar, guardarDatos, agregarArchivos... y las
  * llaman cuando el candidato hace algo. Solo esas funciones cambian la sesión.
  */
+/**
+ * Botón "Atrás" del celular (Android) o deslizar para volver (iPhone).
+ * Sin esto, "Atrás" saca al candidato de la página (y en un celular prestado pierde lo subido).
+ * Se agrega una entrada "guardia" al historial: al tocar Atrás, la app decide.
+ *   alAtras() devuelve el nombre de la pantalla anterior, o null si no hay a dónde volver.
+ *   Si es null se muestra un aviso, y si vuelve a tocar Atrás, ahí sí sale de la página.
+ * La guardia se vuelve a poner cada vez que cambia la pantalla.
+ */
+function useBotonAtras(pantalla, alAtras, irA) {
+  const ultimo = useRef({ alAtras, irA });
+  ultimo.current = { alAtras, irA };
+  const [avisoSalir, setAvisoSalir] = useState(false);
+  const conGuardia = useRef(false);
+
+  useEffect(() => {
+    if (!window.history || !window.history.pushState) return;
+    if (!conGuardia.current) {
+      try { window.history.pushState({ guardiaCanaveral: true }, ''); conGuardia.current = true; } catch { /* sin historial */ }
+    }
+    setAvisoSalir(false);
+  }, [pantalla]);
+
+  useEffect(() => {
+    const alVolver = () => {
+      conGuardia.current = false; // la guardia se acaba de gastar
+      const anterior = ultimo.current.alAtras();
+      if (anterior) {
+        ultimo.current.irA(anterior);
+        window.scrollTo(0, 0);
+        try { window.history.pushState({ guardiaCanaveral: true }, ''); conGuardia.current = true; } catch { /* nada */ }
+      } else {
+        setAvisoSalir(true); // el siguiente Atrás ya sale de la página
+        setTimeout(() => setAvisoSalir(false), 6000);
+      }
+    };
+    window.addEventListener('popstate', alVolver);
+    return () => window.removeEventListener('popstate', alVolver);
+  }, []);
+
+  /** Si el candidato toca cualquier cosa después del aviso, se vuelve a proteger. */
+  function seguirAqui() {
+    setAvisoSalir(false);
+    if (!conGuardia.current) {
+      try { window.history.pushState({ guardiaCanaveral: true }, ''); conGuardia.current = true; } catch { /* nada */ }
+    }
+  }
+  return { avisoSalir, seguirAqui };
+}
+
+/** Aviso que sale abajo cuando toca Atrás en la primera pantalla. */
+function AvisoSalir({ guardaAvance, alQuedarse }) {
+  return (
+    <div className="aviso-flotante" role="alert">
+      <p>
+        Si vuelves a tocar <strong>Atrás</strong>, sales de la página.
+        {guardaAvance === true && ' Tu avance queda guardado en este dispositivo.'}
+        {guardaAvance === false && ' Como no guardamos nada aquí, perderías lo que subiste.'}
+      </p>
+      <button type="button" className="boton boton-tintado boton-chico" onClick={alQuedarse}>Seguir aquí</button>
+    </div>
+  );
+}
+
 function App() {
   const [cargando, setCargando] = useState(true);
   const [sesion, setSesion] = useState(null);
@@ -1997,6 +2094,13 @@ function App() {
   const [zipFinal, setZipFinal] = useState('');
   const [modoPrueba, setModoPrueba] = useState('normal');
   const [confirmacion, setConfirmacion] = useState(null); // ventana de confirmación abierta (o null)
+  // Botón Atrás del celular: vuelve a la pantalla anterior en vez de salir de la página
+  const { avisoSalir, seguirAqui } = useBotonAtras(pantalla, () => {
+    if (confirmacion) { setConfirmacion(null); return pantalla; } // primero cierra la ventana abierta
+    if (pantalla === 'envio') return 'documentos';
+    if (pantalla === 'datos') return sesion?.datos ? 'documentos' : 'inicio';
+    return null;
+  }, setPantalla);
 
   // --- Al abrir: recupera el avance guardado (si existe y no ha vencido) ---
   useEffect(() => {
@@ -2187,6 +2291,10 @@ function App() {
           <p>Por seguridad, borraremos todo en {segundosRestantes} s si no usas la página.</p>
           <button type="button" className="boton boton-tintado boton-chico">Sigo aquí</button>
         </div>
+      )}
+
+      {avisoSalir && segundosRestantes === null && (
+        <AvisoSalir guardaAvance={sesion && pantalla !== 'final' ? !!sesion.dispositivoPersonal : null} alQuedarse={seguirAqui} />
       )}
 
       {MODO_PRUEBA && (
@@ -2703,6 +2811,11 @@ function AppCorreccion({ correccion }) {
   const [avisoInicial, setAvisoInicial] = useState(null);
   const [zipFinal, setZipFinal] = useState('');
   const [confirmacion, setConfirmacion] = useState(null);
+  const { avisoSalir, seguirAqui } = useBotonAtras(pantalla, () => {
+    if (confirmacion) { setConfirmacion(null); return pantalla; }
+    if (pantalla === 'envio') return 'documentos';
+    return null;
+  }, setPantalla);
 
   // --- Al abrir: recupera el avance de ESTA corrección (no el del envío normal) ---
   useEffect(() => {
@@ -2826,6 +2939,10 @@ function AppCorreccion({ correccion }) {
           <p>Por seguridad, borraremos todo en {segundosRestantes} s si no usas la página.</p>
           <button type="button" className="boton boton-tintado boton-chico">Sigo aquí</button>
         </div>
+      )}
+
+      {avisoSalir && segundosRestantes === null && (
+        <AvisoSalir guardaAvance={sesion && pantalla !== 'final' ? !!sesion.dispositivoPersonal : null} alQuedarse={seguirAqui} />
       )}
 
       {MODO_PRUEBA && (

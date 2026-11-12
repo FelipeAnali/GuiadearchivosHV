@@ -430,6 +430,9 @@
     font-size: 14px; font-weight: 600; padding: 3px 10px; border-radius: 999px; min-height: 28px;
   }
   .boton-como:active { opacity: 0.6; }
+  /* Zona de toque más grande que el dibujo (44 px de alto), para que sea fácil tocarlo con el dedo */
+  .boton-como { position: relative; }
+  .boton-como::after { content: ''; position: absolute; inset: -8px -4px; }
   .hoja.tutorial {
     background: var(--celda); border-radius: 16px 16px 14px 14px;
     max-height: calc(100dvh - 40px); display: flex; flex-direction: column; overflow: hidden;
@@ -929,7 +932,37 @@ function buscarCargos(texto) {
   const palabras = normalizar(texto).split(' ').filter(Boolean);
   if (palabras.length === 0) return [];
   const empiezaIgual = c => normalizar(c).startsWith(palabras[0]) ? 0 : 1;
-  return CARGOS_UNICOS.filter(c => palabras.every(p => normalizar(c).includes(p))).sort((a, b) => empiezaIgual(a) - empiezaIgual(b) || a.localeCompare(b, 'es')).slice(0, limite);
+  const exactos = CARGOS_UNICOS.filter(c => palabras.every(p => normalizar(c).includes(p))).sort((a, b) => empiezaIgual(a) - empiezaIgual(b) || a.localeCompare(b, 'es')).slice(0, limite);
+  if (exactos.length) return exactos;
+  return cargosParecidos(palabras, limite);
+}
+
+/**
+ * Si el candidato escribe un cargo que no está tal cual (ej. "cajera", "carnicero"), se buscan
+ * cargos cuyo nombre O SECCIÓN tenga palabras parecidas ("cajera" → sección CAJAS; "carnicero" → CARNES).
+ * Dos palabras se parecen si empiezan igual en al menos 3 letras y en el 60 % de la más corta.
+ */
+function cargosParecidos(palabras, limite) {
+  const seParecen = (a, b) => {
+    let i = 0;
+    while (i < a.length && i < b.length && a[i] === b[i]) i++;
+    return i >= 3 && i >= 0.6 * Math.min(a.length, b.length);
+  };
+  const utiles = palabras.filter(p => p.length >= 4); // "de", "la", "aux" no sirven para adivinar
+  if (utiles.length === 0) return [];
+  const puntaje = new Map();
+  PUESTOS.forEach(puesto => {
+    if (normalizar(puesto.cargo).includes('APRENDIZ')) return; // los aprendices entran con su propio link
+    const enCargo = normalizar(puesto.cargo).split(' ');
+    const enSeccion = normalizar(puesto.seccion).split(' ');
+    // Pesa más si se parece al nombre del cargo que si solo se parece a la sección
+    const aciertos = utiles.reduce((total, p) => total + (enCargo.some(t => seParecen(p, t)) ? 2 : enSeccion.some(t => seParecen(p, t)) ? 1 : 0), 0);
+    if (aciertos > (puntaje.get(puesto.cargo) || 0)) puntaje.set(puesto.cargo, aciertos);
+  });
+  return [...puntaje.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es')).slice(0, limite).map(_ref3 => {
+    let [cargo] = _ref3;
+    return cargo;
+  });
 }
 
 /**
@@ -1512,12 +1545,12 @@ function textoDeRevision(sesion, resumen) {
   } = sesion;
   const lineas = ['DOCUMENTOS DE INGRESO — Supertiendas Cañaveral S.A.S.', '', `Nombre:        ${datos.nombre}`, `Documento:     ${datos.tipoDocumento || 'CC'} ${datos.cedula}`, `Celular:       ${datos.celular || '—'}`, `Correo:        ${datos.correo || '—'}`, `Cargo:         ${datos.cargo}`, `Sección:       ${datos.seccion}`, `Primer empleo: ${datos.primerEmpleo ? 'Sí' : 'No'}`, `Generado:      ${new Date().toLocaleString('es-CO')}`, '', 'REVISIÓN DE CADA ARCHIVO', '------------------------'];
   let porRevisar = 0;
-  resumen.forEach(_ref3 => {
+  resumen.forEach(_ref4 => {
     let {
       doc,
       nombre,
       item
-    } = _ref3;
+    } = _ref4;
     let estado;
     if (doc.tipo === 'imagen') estado = 'OK — foto revisada (tamaño, vertical y fondo claro).';else if (item.protegido) {
       estado = 'REVISAR A MANO — tiene contraseña y no se pudo leer.';
@@ -1698,10 +1731,10 @@ function useInactividad(activo, minutos, alVencer) {
    --------------------------------------------------------------------------- */
 
 /** Palomita (✓) dibujada, igual a la de iOS. */
-function Palomita(_ref4) {
+function Palomita(_ref5) {
   let {
     tamano = 17
-  } = _ref4;
+  } = _ref5;
   return /*#__PURE__*/React.createElement("svg", {
     width: tamano,
     height: tamano,
@@ -1726,8 +1759,8 @@ function navegadorDentroDeApp() {
   if (MODO_PRUEBA && new URLSearchParams(location.search).has('app')) return 'Instagram';
   const ua = navigator.userAgent || '';
   const apps = [[/Instagram/i, 'Instagram'], [/FBAN|FBAV|FB_IAB|FBIOS|FB4A/i, 'Facebook'], [/Messenger/i, 'Messenger'], [/musical_ly|TikTok|BytedanceWebview|trill/i, 'TikTok'], [/Snapchat/i, 'Snapchat'], [/LinkedInApp/i, 'LinkedIn'], [/Twitter/i, 'X (Twitter)'], [/Line\//i, 'LINE'], [/Pinterest/i, 'Pinterest']];
-  const encontrada = apps.find(_ref5 => {
-    let [patron] = _ref5;
+  const encontrada = apps.find(_ref6 => {
+    let [patron] = _ref6;
     return patron.test(ua);
   });
   return encontrada ? encontrada[1] : null;
@@ -1820,11 +1853,11 @@ const PASOS = ['Preguntas iniciales', 'Tus datos y cargo', 'Sube tus documentos'
  * paso: número del paso actual (1 a 4), o undefined en la pantalla final (todos con ✓).
  * pasos: nombres de los pasos (el modo corrección manda los suyos).
  */
-function PanelPasos(_ref6) {
+function PanelPasos(_ref7) {
   let {
     paso,
     pasos = PASOS
-  } = _ref6;
+  } = _ref7;
   return /*#__PURE__*/React.createElement("aside", {
     className: "lateral",
     "aria-label": "Pasos"
@@ -1866,12 +1899,12 @@ function PanelAyuda() {
 }
 
 /** Barra de navegación translúcida con el paso actual y la barra de avance en forma de caña. */
-function Encabezado(_ref7) {
+function Encabezado(_ref8) {
   let {
     paso,
     completos,
     total
-  } = _ref7;
+  } = _ref8;
   return /*#__PURE__*/React.createElement("header", {
     className: "barra-nav"
   }, /*#__PURE__*/React.createElement("div", {
@@ -1907,12 +1940,12 @@ function Encabezado(_ref7) {
    --------------------------------------------------------------------------- */
 
 /** Pantalla 1: bienvenida, ¿dispositivo propio? y autorización de datos. */
-function PantallaInicio(_ref8) {
+function PantallaInicio(_ref9) {
   let {
     alComenzar,
     guardadoDisponible,
     avisoInicial
-  } = _ref8;
+  } = _ref9;
   const [primerEmpleo, setPrimerEmpleo] = useState(null); // 'si' | 'no'
   const [dispositivo, setDispositivo] = useState(null); // 'propio' | 'prestado'
   const [autoriza, setAutoriza] = useState(false);
@@ -2060,12 +2093,12 @@ const CELULAR_VALIDO = /^3\d{9}$/;
 const CORREO_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /** Pantalla 2: nombre, cédula, celular, correo, cargo (buscador) y sección. */
-function PantallaDatos(_ref9) {
+function PantallaDatos(_ref10) {
   let {
     datosIniciales,
     primerEmpleoInicial,
     alGuardar
-  } = _ref9;
+  } = _ref10;
   const [nombre, setNombre] = useState((datosIniciales === null || datosIniciales === void 0 ? void 0 : datosIniciales.nombre) || '');
   const [cedula, setCedula] = useState((datosIniciales === null || datosIniciales === void 0 ? void 0 : datosIniciales.cedula) || '');
   const [tipoDocumento, setTipoDocumento] = useState((datosIniciales === null || datosIniciales === void 0 ? void 0 : datosIniciales.tipoDocumento) || 'CC');
@@ -2202,8 +2235,8 @@ function PantallaDatos(_ref9) {
     }, /*#__PURE__*/React.createElement("select", {
       value: tipoDocumento,
       onChange: e => setTipoDocumento(e.target.value)
-    }, TIPOS_DOCUMENTO.map(_ref10 => {
-      let [id, nombreTipo] = _ref10;
+    }, TIPOS_DOCUMENTO.map(_ref11 => {
+      let [id, nombreTipo] = _ref11;
       return /*#__PURE__*/React.createElement("option", {
         key: id,
         value: id
@@ -2316,7 +2349,11 @@ function PantallaDatos(_ref9) {
       className: "fila"
     }, /*#__PURE__*/React.createElement("div", {
       className: "fila-sub"
-    }, "No encontramos ese cargo. Prueba con otra palabra."))), cargo && secciones.length === 1 && /*#__PURE__*/React.createElement("div", {
+    }, "No encontramos ese cargo. Prueba con otra palabra.")), sugerencias.length > 0 && !sugerencias.some(c => normalizar(textoCargo).split(' ').filter(Boolean).every(p => normalizar(c).includes(p))) && /*#__PURE__*/React.createElement("div", {
+      className: "fila"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "fila-sub"
+    }, "No est\xE1 con ese nombre exacto: estos son los m\xE1s parecidos. Si no es ninguno, preg\xFAntale a Gesti\xF3n Humana."))), cargo && secciones.length === 1 && /*#__PURE__*/React.createElement("div", {
       className: "fila fila-campo"
     }, /*#__PURE__*/React.createElement("span", {
       className: "etiqueta"
@@ -2360,7 +2397,7 @@ function PantallaDatos(_ref9) {
  *   - Documentos normales: solo PDF que el candidato ya tenga listo.
  *   - La foto 3×4 (tipo 'imagen'): se sube como imagen JPG/PNG, no como PDF.
  */
-function TarjetaDocumento(_ref11) {
+function TarjetaDocumento(_ref12) {
   var _doc$revision;
   let {
     doc,
@@ -2372,7 +2409,7 @@ function TarjetaDocumento(_ref11) {
     alAgregar,
     alQuitar,
     motivoGH
-  } = _ref11;
+  } = _ref12;
   // motivoGH (opcional): en el modo corrección, por qué Gestión Humana pide este documento
   const selectorPdf = useRef(null); // elige el PDF (o la imagen, en la foto 3×4)
   const [error, setError] = useState(null);
@@ -2547,7 +2584,7 @@ function TarjetaDocumento(_ref11) {
 }
 
 /** Pantalla 3: lista de documentos. */
-function PantallaDocumentos(_ref12) {
+function PantallaDocumentos(_ref13) {
   let {
     sesion,
     alAgregar,
@@ -2555,7 +2592,7 @@ function PantallaDocumentos(_ref12) {
     alEditarDatos,
     alContinuar,
     alBorrarTodo
-  } = _ref12;
+  } = _ref13;
   const docs = documentosQueAplican(sesion.datos);
   const faltan = docs.filter(d => !documentoCompleto(d, sesion.archivos[d.id])).length;
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("main", {
@@ -2621,14 +2658,14 @@ function PantallaDocumentos(_ref12) {
  * nombreZip y armar son opcionales: el modo corrección manda su propio nombre de ZIP
  * y su propia función para armarlo (sección 7). Sin ellos, es el envío normal.
  */
-function PantallaEnvio(_ref13) {
+function PantallaEnvio(_ref14) {
   let {
     sesion,
     alVolver,
     alTerminar,
     nombreZip: nombreZipFijo,
     armar = armarZip
-  } = _ref13;
+  } = _ref14;
   const [zip, setZip] = useState(null); // archivo ZIP ya armado
   const [armando, setArmando] = useState(false);
   const [error, setError] = useState(null);
@@ -2747,10 +2784,10 @@ function PantallaEnvio(_ref13) {
    ============================================================================ */
 
 /** Marco de celular pequeño donde se dibuja cada ilustración. */
-function MarcoCelular(_ref14) {
+function MarcoCelular(_ref15) {
   let {
     children
-  } = _ref14;
+  } = _ref15;
   return /*#__PURE__*/React.createElement("svg", {
     className: "ilustracion",
     viewBox: "0 0 120 150",
@@ -3001,10 +3038,10 @@ function IlustracionFondo() {
 }
 
 /** Archivo PDF con el nombre que pide la app. */
-function IlustracionRenombrar(_ref15) {
+function IlustracionRenombrar(_ref16) {
   let {
     nombre
-  } = _ref15;
+  } = _ref16;
   return /*#__PURE__*/React.createElement(MarcoCelular, null, /*#__PURE__*/React.createElement("path", {
     d: "M44 26 h24 l12 12 v40 h-36 z",
     fill: "var(--relleno)",
@@ -3112,11 +3149,11 @@ const TUTORIAL_COMPRIMIR = {
  * doc: documento cuyo campo "tutorial" tiene { titulo, intro, pasos, enlaces, nota }.
  * Se usa para "¿Cómo lo saco?" (ADRES, pensión) y para "Cómo comprimir tu PDF".
  */
-function HojaTutorial(_ref16) {
+function HojaTutorial(_ref17) {
   let {
     doc,
     alCerrar
-  } = _ref16;
+  } = _ref17;
   const tutorial = doc.tutorial;
   const hoja = useRef(null);
 
@@ -3201,7 +3238,7 @@ function HojaTutorial(_ref16) {
  * Ventana de confirmación estilo iPhone (hoja que sale desde abajo).
  * Reemplaza confirm()/alert() del navegador, que algunas vistas previas bloquean.
  */
-function HojaConfirmacion(_ref17) {
+function HojaConfirmacion(_ref18) {
   let {
     mensaje,
     textoAccion,
@@ -3209,7 +3246,7 @@ function HojaConfirmacion(_ref17) {
     soloAviso,
     alConfirmar,
     alCerrar
-  } = _ref17;
+  } = _ref18;
   return /*#__PURE__*/React.createElement("div", {
     className: "hoja-fondo",
     onClick: alCerrar
@@ -3242,11 +3279,11 @@ function HojaConfirmacion(_ref17) {
    --------------------------------------------------------------------------- */
 
 /** Pantalla 5: cierre. Ya se borraron los datos; solo recuerda borrar el ZIP si el equipo no es suyo. */
-function PantallaFinal(_ref18) {
+function PantallaFinal(_ref19) {
   let {
     nombreZip,
     alReiniciar
-  } = _ref18;
+  } = _ref19;
   return /*#__PURE__*/React.createElement("main", {
     className: "contenido final"
   }, /*#__PURE__*/React.createElement("div", {
@@ -3281,6 +3318,92 @@ function PantallaFinal(_ref18) {
  * Las pantallas reciben funciones como comenzar, guardarDatos, agregarArchivos... y las
  * llaman cuando el candidato hace algo. Solo esas funciones cambian la sesión.
  */
+/**
+ * Botón "Atrás" del celular (Android) o deslizar para volver (iPhone).
+ * Sin esto, "Atrás" saca al candidato de la página (y en un celular prestado pierde lo subido).
+ * Se agrega una entrada "guardia" al historial: al tocar Atrás, la app decide.
+ *   alAtras() devuelve el nombre de la pantalla anterior, o null si no hay a dónde volver.
+ *   Si es null se muestra un aviso, y si vuelve a tocar Atrás, ahí sí sale de la página.
+ * La guardia se vuelve a poner cada vez que cambia la pantalla.
+ */
+function useBotonAtras(pantalla, alAtras, irA) {
+  const ultimo = useRef({
+    alAtras,
+    irA
+  });
+  ultimo.current = {
+    alAtras,
+    irA
+  };
+  const [avisoSalir, setAvisoSalir] = useState(false);
+  const conGuardia = useRef(false);
+  useEffect(() => {
+    if (!window.history || !window.history.pushState) return;
+    if (!conGuardia.current) {
+      try {
+        window.history.pushState({
+          guardiaCanaveral: true
+        }, '');
+        conGuardia.current = true;
+      } catch {/* sin historial */}
+    }
+    setAvisoSalir(false);
+  }, [pantalla]);
+  useEffect(() => {
+    const alVolver = () => {
+      conGuardia.current = false; // la guardia se acaba de gastar
+      const anterior = ultimo.current.alAtras();
+      if (anterior) {
+        ultimo.current.irA(anterior);
+        window.scrollTo(0, 0);
+        try {
+          window.history.pushState({
+            guardiaCanaveral: true
+          }, '');
+          conGuardia.current = true;
+        } catch {/* nada */}
+      } else {
+        setAvisoSalir(true); // el siguiente Atrás ya sale de la página
+        setTimeout(() => setAvisoSalir(false), 6000);
+      }
+    };
+    window.addEventListener('popstate', alVolver);
+    return () => window.removeEventListener('popstate', alVolver);
+  }, []);
+
+  /** Si el candidato toca cualquier cosa después del aviso, se vuelve a proteger. */
+  function seguirAqui() {
+    setAvisoSalir(false);
+    if (!conGuardia.current) {
+      try {
+        window.history.pushState({
+          guardiaCanaveral: true
+        }, '');
+        conGuardia.current = true;
+      } catch {/* nada */}
+    }
+  }
+  return {
+    avisoSalir,
+    seguirAqui
+  };
+}
+
+/** Aviso que sale abajo cuando toca Atrás en la primera pantalla. */
+function AvisoSalir(_ref20) {
+  let {
+    guardaAvance,
+    alQuedarse
+  } = _ref20;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "aviso-flotante",
+    role: "alert"
+  }, /*#__PURE__*/React.createElement("p", null, "Si vuelves a tocar ", /*#__PURE__*/React.createElement("strong", null, "Atr\xE1s"), ", sales de la p\xE1gina.", guardaAvance === true && ' Tu avance queda guardado en este dispositivo.', guardaAvance === false && ' Como no guardamos nada aquí, perderías lo que subiste.'), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "boton boton-tintado boton-chico",
+    onClick: alQuedarse
+  }, "Seguir aqu\xED"));
+}
 function App() {
   const [cargando, setCargando] = useState(true);
   const [sesion, setSesion] = useState(null);
@@ -3290,6 +3413,19 @@ function App() {
   const [zipFinal, setZipFinal] = useState('');
   const [modoPrueba, setModoPrueba] = useState('normal');
   const [confirmacion, setConfirmacion] = useState(null); // ventana de confirmación abierta (o null)
+  // Botón Atrás del celular: vuelve a la pantalla anterior en vez de salir de la página
+  const {
+    avisoSalir,
+    seguirAqui
+  } = useBotonAtras(pantalla, () => {
+    if (confirmacion) {
+      setConfirmacion(null);
+      return pantalla;
+    } // primero cierra la ventana abierta
+    if (pantalla === 'envio') return 'documentos';
+    if (pantalla === 'datos') return sesion !== null && sesion !== void 0 && sesion.datos ? 'documentos' : 'inicio';
+    return null;
+  }, setPantalla);
 
   // --- Al abrir: recupera el avance guardado (si existe y no ha vencido) ---
   useEffect(() => {
@@ -3516,11 +3652,14 @@ function App() {
   }, /*#__PURE__*/React.createElement("p", null, "Por seguridad, borraremos todo en ", segundosRestantes, " s si no usas la p\xE1gina."), /*#__PURE__*/React.createElement("button", {
     type: "button",
     className: "boton boton-tintado boton-chico"
-  }, "Sigo aqu\xED")), MODO_PRUEBA && /*#__PURE__*/React.createElement("div", {
+  }, "Sigo aqu\xED")), avisoSalir && segundosRestantes === null && /*#__PURE__*/React.createElement(AvisoSalir, {
+    guardaAvance: sesion && pantalla !== 'final' ? !!sesion.dispositivoPersonal : null,
+    alQuedarse: seguirAqui
+  }), MODO_PRUEBA && /*#__PURE__*/React.createElement("div", {
     className: "selector-prueba",
     "aria-label": "Datos de prueba"
-  }, [['normal', 'Normal'], ['extremo', 'Caso extremo'], ['vacio', 'Vacío'], ['correccion', 'Corrección'], ['aprendiz', 'Aprendiz']].map(_ref19 => {
-    let [valor, texto] = _ref19;
+  }, [['normal', 'Normal'], ['extremo', 'Caso extremo'], ['vacio', 'Vacío'], ['correccion', 'Corrección'], ['aprendiz', 'Aprendiz']].map(_ref21 => {
+    let [valor, texto] = _ref21;
     return /*#__PURE__*/React.createElement("button", {
       key: valor,
       type: "button",
@@ -3748,10 +3887,10 @@ function nombreZipCorreccion(sesion) {
 async function armarZipCorreccion(sesion, correccion) {
   const zip = new JSZip();
   const listado = [];
-  correccion.documentos.forEach(_ref20 => {
+  correccion.documentos.forEach(_ref22 => {
     let {
       doc
-    } = _ref20;
+    } = _ref22;
     const lista = sesion.archivos[doc.id] || [];
     lista.forEach((item, i) => {
       const nombre = nombreArchivoEnZip(sesion.cedula, doc, item, i, lista.length);
@@ -3846,13 +3985,13 @@ function EnlaceCorreccionDanado() {
 }
 
 /** Corrección, pantalla 1: qué pide Gestión Humana y ¿el dispositivo es propio o prestado? */
-function InicioCorreccion(_ref21) {
+function InicioCorreccion(_ref23) {
   let {
     correccion,
     guardadoDisponible,
     avisoInicial,
     alComenzar
-  } = _ref21;
+  } = _ref23;
   const [dispositivo, setDispositivo] = useState(null); // 'propio' | 'prestado'
   const [autoriza, setAutoriza] = useState(false); // solo si el link pide la autorización (aprendiz, primer link)
   const textos = TEXTOS_SOLICITUD[correccion.tipo];
@@ -3887,11 +4026,11 @@ function InicioCorreccion(_ref21) {
     className: "grupo-titulo"
   }, textos.lista), /*#__PURE__*/React.createElement("div", {
     className: "lista"
-  }, correccion.documentos.map(_ref22 => {
+  }, correccion.documentos.map(_ref24 => {
     let {
       doc,
       motivo
-    } = _ref22;
+    } = _ref24;
     return /*#__PURE__*/React.createElement("div", {
       className: "fila",
       key: doc.id
@@ -3967,11 +4106,11 @@ function InicioCorreccion(_ref21) {
  * Si es APRENDIZ, además confirma su celular con WhatsApp y su correo ACTUALES (doble
  * verificación: GH pudo registrar datos viejos). Van en el ZIP y el panel los actualiza.
  */
-function VerificarCedula(_ref23) {
+function VerificarCedula(_ref25) {
   let {
     correccion,
     alVerificar
-  } = _ref23;
+  } = _ref25;
   const esAprendiz = correccion.tipo === 'aprendiz';
   const [cedula, setCedula] = useState('');
   const [celular, setCelular] = useState('');
@@ -4118,18 +4257,18 @@ function VerificarCedula(_ref23) {
 }
 
 /** Corrección, pantalla 3: solo los documentos pedidos, con el motivo arriba en rojo. */
-function DocumentosCorreccion(_ref24) {
+function DocumentosCorreccion(_ref26) {
   let {
     correccion,
     sesion,
     alAgregar,
     alQuitar,
     alContinuar
-  } = _ref24;
-  const faltan = correccion.documentos.filter(_ref25 => {
+  } = _ref26;
+  const faltan = correccion.documentos.filter(_ref27 => {
     let {
       doc
-    } = _ref25;
+    } = _ref27;
     return !documentoCompleto(doc, sesion.archivos[doc.id]);
   }).length;
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("main", {
@@ -4142,11 +4281,11 @@ function DocumentosCorreccion(_ref24) {
     className: "grupo-titulo"
   }, "Documentos"), /*#__PURE__*/React.createElement("div", {
     className: "lista"
-  }, correccion.documentos.map((_ref26, i) => {
+  }, correccion.documentos.map((_ref28, i) => {
     let {
       doc,
       motivo
-    } = _ref26;
+    } = _ref28;
     return /*#__PURE__*/React.createElement(TarjetaDocumento, {
       key: doc.id,
       doc: doc,
@@ -4176,11 +4315,11 @@ function DocumentosCorreccion(_ref24) {
 }
 
 /** Corrección, pantalla 5: cierre. */
-function FinalCorreccion(_ref27) {
+function FinalCorreccion(_ref29) {
   let {
     nombreZip,
     texto
-  } = _ref27;
+  } = _ref29;
   return /*#__PURE__*/React.createElement("main", {
     className: "contenido final"
   }, /*#__PURE__*/React.createElement("div", {
@@ -4203,10 +4342,10 @@ function FinalCorreccion(_ref27) {
  * clave de guardado y sin datos, cargo ni autorización.
  *   pantalla: 'inicio' | 'verificar' | 'documentos' | 'envio' | 'final'
  */
-function AppCorreccion(_ref28) {
+function AppCorreccion(_ref30) {
   let {
     correccion
-  } = _ref28;
+  } = _ref30;
   const clave = claveCorreccion(correccion);
   const [cargando, setCargando] = useState(true);
   const [sesion, setSesion] = useState(null);
@@ -4215,6 +4354,17 @@ function AppCorreccion(_ref28) {
   const [avisoInicial, setAvisoInicial] = useState(null);
   const [zipFinal, setZipFinal] = useState('');
   const [confirmacion, setConfirmacion] = useState(null);
+  const {
+    avisoSalir,
+    seguirAqui
+  } = useBotonAtras(pantalla, () => {
+    if (confirmacion) {
+      setConfirmacion(null);
+      return pantalla;
+    }
+    if (pantalla === 'envio') return 'documentos';
+    return null;
+  }, setPantalla);
 
   // --- Al abrir: recupera el avance de ESTA corrección (no el del envío normal) ---
   useEffect(() => {
@@ -4316,10 +4466,10 @@ function AppCorreccion(_ref28) {
     documentos: 3,
     envio: 4
   }[pantalla];
-  const completos = sesion ? correccion.documentos.filter(_ref29 => {
+  const completos = sesion ? correccion.documentos.filter(_ref31 => {
     let {
       doc
-    } = _ref29;
+    } = _ref31;
     return documentoCompleto(doc, sesion.archivos[doc.id]);
   }).length : 0;
   const mostrarAvance = ['documentos', 'envio'].includes(pantalla);
@@ -4375,7 +4525,10 @@ function AppCorreccion(_ref28) {
   }, /*#__PURE__*/React.createElement("p", null, "Por seguridad, borraremos todo en ", segundosRestantes, " s si no usas la p\xE1gina."), /*#__PURE__*/React.createElement("button", {
     type: "button",
     className: "boton boton-tintado boton-chico"
-  }, "Sigo aqu\xED")), MODO_PRUEBA && /*#__PURE__*/React.createElement("div", {
+  }, "Sigo aqu\xED")), avisoSalir && segundosRestantes === null && /*#__PURE__*/React.createElement(AvisoSalir, {
+    guardaAvance: sesion && pantalla !== 'final' ? !!sesion.dispositivoPersonal : null,
+    alQuedarse: seguirAqui
+  }), MODO_PRUEBA && /*#__PURE__*/React.createElement("div", {
     className: "selector-prueba",
     "aria-label": "Datos de prueba"
   }, /*#__PURE__*/React.createElement("button", {
@@ -4383,8 +4536,8 @@ function AppCorreccion(_ref28) {
     onClick: () => {
       location.href = `${location.pathname}?prueba=1`;
     }
-  }, "Env\xEDo normal"), [['correccion', 'Corrección'], ['aprendiz', 'Aprendiz']].map(_ref30 => {
-    let [tipo, texto] = _ref30;
+  }, "Env\xEDo normal"), [['correccion', 'Corrección'], ['aprendiz', 'Aprendiz']].map(_ref32 => {
+    let [tipo, texto] = _ref32;
     return /*#__PURE__*/React.createElement("button", {
       key: tipo,
       type: "button",
