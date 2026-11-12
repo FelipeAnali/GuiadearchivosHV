@@ -449,6 +449,7 @@
   .alerta { padding: 12px 16px; border-radius: var(--radio); font-size: 15px; margin-top: 14px; }
   .alerta.error { background: var(--alerta-fondo); color: var(--rojo); }
   .alerta.aviso { background: var(--alerta-fondo); color: var(--alerta-texto); }
+  .alerta.info { background: var(--tinte-suave); color: var(--texto); }
 
   /* ==========================================================================
      VACÍO, HOJA DEL CANDIDATO, AVISOS Y DIÁLOGOS
@@ -2200,6 +2201,19 @@ function estadoItemGH(expediente, item) {
  * Avance total del candidato: documentos del candidato (aprobados) + checklist de GH.
  * Devuelve { total, hechos, nudos[] }; cada nudo es una clase de la "caña".
  */
+/** Cuántos documentos llegaron y aún no tienen Aprobar/Rechazar (los que hay que revisar). */
+function porRevisar(expediente) {
+  return Object.values((expediente && expediente.documentos) || {}).filter((d) => d.revision !== 'aprobado' && d.revision !== 'rechazado').length;
+}
+
+/** Filtro de tipo en Candidatos y Listos: todos, solo candidatos o solo aprendices. */
+const TIPOS_FILTRO = [['todos', 'Candidatos y aprendices'], ['candidatos', 'Solo candidatos'], ['aprendices', 'Solo aprendices']];
+function pasaFiltroTipo(expediente, tipo) {
+  if (tipo === 'candidatos') return !esAprendiz(expediente);
+  if (tipo === 'aprendices') return esAprendiz(expediente);
+  return true;
+}
+
 function avanceDe(expediente) {
   if (!expediente) return { total: 0, hechos: 0, nudos: [] };
   const nudos = Object.values(expediente.documentos || {})
@@ -2776,6 +2790,7 @@ function Candidatos({ lista, cargando, onAbrir, onRecargar, modo = 'proceso', us
   const enListos = modo === 'listos';
   const [busqueda, setBusqueda] = useState('');
   const [filtro, setFiltro] = useState(FILTRO_ACTIVOS);
+  const [tipo, setTipo] = useState('todos'); // candidatos, aprendices o los dos
 
   const visibles = useMemo(() => {
     const q = paraBuscar(busqueda.trim());
@@ -2786,6 +2801,7 @@ function Candidatos({ lista, cargando, onAbrir, onRecargar, modo = 'proceso', us
         if (enListos !== ESTADOS_LISTOS.includes(estado)) return false;
         if (filtro === FILTRO_ACTIVOS && estado === 'no_contratado') return false;
         if (filtro !== FILTRO_ACTIVOS && filtro !== 'todos' && estado !== filtro) return false;
+        if (!pasaFiltroTipo(c.expediente, tipo)) return false;
         if (!q) return true;
         return paraBuscar(`${c.nombre} ${c.cedula} ${c.expediente ? c.expediente.cargo : ''}`).includes(q);
       })
@@ -2795,7 +2811,7 @@ function Candidatos({ lista, cargando, onAbrir, onRecargar, modo = 'proceso', us
         const fecha = (c) => c.expediente ? new Date(c.expediente.creado).getTime() : 0;
         return grupo(a) - grupo(b) || fecha(a) - fecha(b);
       });
-  }, [lista, busqueda, filtro, enListos]);
+  }, [lista, busqueda, filtro, enListos, tipo]);
 
   const cuenta = (id) => lista.filter((c) => c.expediente && c.expediente.estado === id).length;
   // Los que cuenta el encabezado: en Candidatos no se cuentan los "No contratados" (no se muestran por defecto)
@@ -2823,6 +2839,9 @@ function Candidatos({ lista, cargando, onAbrir, onRecargar, modo = 'proceso', us
           {CONFIG.estados.filter((e) => e.id !== 'no_contratado' && enListos === ESTADOS_LISTOS.includes(e.id))
             .map((e) => <option key={e.id} value={e.id}>{e.nombre} ({cuenta(e.id)})</option>)}
         </select>
+        <select className="selector" value={tipo} onChange={(e) => setTipo(e.target.value)} aria-label="Filtrar por tipo">
+          {TIPOS_FILTRO.map(([id, texto]) => <option key={id} value={id}>{texto}</option>)}
+        </select>
       </div>
       {visibles.length > 0 && (
         <div className="cand-cabecera" aria-hidden="true">
@@ -2834,7 +2853,7 @@ function Candidatos({ lista, cargando, onAbrir, onRecargar, modo = 'proceso', us
           <div className="vacio">
             <div className="icono-caja"><Icono nombre="personas" tamano={28} /></div>
             <h3>{deEstaVista.length ? 'Ningún candidato coincide' : enListos ? 'Aún no hay candidatos listos' : 'No hay candidatos en proceso'}</h3>
-            <p>{deEstaVista.length ? 'Prueba con otra búsqueda o cambia el filtro de estado.'
+            <p>{deEstaVista.length ? 'Prueba con otra búsqueda o cambia los filtros de estado y tipo.'
               : enListos ? 'Cuando marques a un candidato como Completo, pasa aquí.'
               : 'Procesa un paquete de la bandeja y el candidato aparecerá aquí.'}</p>
           </div>
@@ -3955,38 +3974,88 @@ function HojaInscribir({ onInscribir, onCerrar }) {
  * Todos los aprendices, los que entran a prácticas más pronto primero. Muestra la fase,
  * la manipulación y lo que toca hacer (enviar link, pedir manipulación o reenviar).
  */
+/** Filtros de la vista Aprendices. */
+const FILTROS_APRENDIZ = [
+  ['activos', 'En proceso', (e) => !['contratado', 'no_contratado'].includes(e.estado)],
+  ['revisar', 'Llegaron documentos (por revisar)', (e) => porRevisar(e) > 0],
+  ['enviar', 'Algo por enviar (link o manipulación)', (e) => { const x = accionAprendiz(e); return !!x && x.accion !== 'reenviar'; }],
+  ['esperando', 'Esperando que el aprendiz suba', (e) => (e.solicitudes || []).some((x) => !x.recibida)],
+  ['listos', 'Completos y contratados', (e) => ESTADOS_LISTOS.includes(e.estado)],
+  ['no_contratado', 'No contratados', (e) => e.estado === 'no_contratado'],
+  ['todos', 'Todos', () => true],
+];
+
 function Aprendices({ lista, cargando, onAbrir, onRecargar, onInscribir, onAccion }) {
-  const aprendices = lista.filter((c) => esAprendiz(c.expediente))
-    .sort((a, b) => (diasParaPracticas(a.expediente) ?? 99999) - (diasParaPracticas(b.expediente) ?? 99999));
-  const porPedir = aprendices.filter((c) => { const x = accionAprendiz(c.expediente); return x && x.accion !== 'reenviar'; }).length;
+  const [busqueda, setBusqueda] = useState('');
+  const [filtro, setFiltro] = useState('activos');
+  const [sede, setSede] = useState('');
+  const todos = lista.filter((c) => esAprendiz(c.expediente));
+  const sedesUsadas = [...new Set(todos.map((c) => (c.expediente.aprendiz || {}).sede).filter(Boolean))].sort();
+  const regla = (FILTROS_APRENDIZ.find(([id]) => id === filtro) || FILTROS_APRENDIZ[0])[2];
+  const q = paraBuscar(busqueda.trim());
+  const aprendices = todos
+    .filter((c) => regla(c.expediente))
+    .filter((c) => !sede || (c.expediente.aprendiz || {}).sede === sede)
+    .filter((c) => !q || paraBuscar(`${c.expediente.nombre} ${c.expediente.cedula} ${c.expediente.seccion} ${(c.expediente.aprendiz || {}).sede}`).includes(q))
+    // Primero los que tienen documentos por revisar; luego los que entran a prácticas más pronto
+    .sort((a, b) => (porRevisar(b.expediente) > 0) - (porRevisar(a.expediente) > 0)
+      || (diasParaPracticas(a.expediente) ?? 99999) - (diasParaPracticas(b.expediente) ?? 99999));
+  const activos = todos.filter((c) => FILTROS_APRENDIZ[0][2](c.expediente));
+  const porPedir = activos.filter((c) => { const x = accionAprendiz(c.expediente); return x && x.accion !== 'reenviar'; }).length;
+  const conDocumentos = activos.filter((c) => porRevisar(c.expediente) > 0).length;
   return (
     <>
       <header className="encabezado">
         <div>
           <h1>Aprendices</h1>
-          <p>{plural(aprendices.length, 'aprendiz', 'aprendices')}. Los que entran a prácticas más pronto aparecen primero.</p>
+          <p>{plural(todos.length, 'aprendiz', 'aprendices')}. Primero los que mandaron documentos; luego los que entran a prácticas más pronto.</p>
         </div>
         <div className="acciones">
           <button className="boton boton-secundario" onClick={onRecargar} disabled={cargando}><Icono nombre="recargar" tamano={18} /> Actualizar</button>
           <button className="boton boton-principal" onClick={onInscribir}><Icono nombre="personas" tamano={18} /> Inscribir aprendiz</button>
         </div>
       </header>
-      {porPedir > 0 && (
-        <div className="alerta aviso" style={{ marginBottom: 14 }} role="status">
-          {porPedir === 1 ? 'Hay 1 aprendiz' : `Hay ${porPedir} aprendices`} con algo por enviar (link de documentos o manipulación de alimentos).
+      {conDocumentos > 0 && (
+        <div className="alerta info" style={{ marginBottom: 10 }} role="status">
+          {conDocumentos === 1 ? '1 aprendiz mandó documentos' : `${conDocumentos} aprendices mandaron documentos`} que falta revisar.{' '}
+          <button className="boton boton-texto" style={{ padding: 0, minHeight: 0 }} onClick={() => setFiltro('revisar')}>Ver solo esos</button>
         </div>
       )}
+      {porPedir > 0 && (
+        <div className="alerta aviso" style={{ marginBottom: 14 }} role="status">
+          {porPedir === 1 ? 'Hay 1 aprendiz' : `Hay ${porPedir} aprendices`} con algo por enviar (link de documentos o manipulación de alimentos).{' '}
+          <button className="boton boton-texto" style={{ padding: 0, minHeight: 0 }} onClick={() => setFiltro('enviar')}>Ver solo esos</button>
+        </div>
+      )}
+      <div className="filtros">
+        <input className="buscador" type="search" value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+               placeholder="Buscar por nombre, documento, sección o sede" aria-label="Buscar aprendiz" />
+        <select className="selector" value={filtro} onChange={(e) => setFiltro(e.target.value)} aria-label="Filtrar aprendices">
+          {FILTROS_APRENDIZ.map(([id, texto, r]) => <option key={id} value={id}>{texto} ({todos.filter((c) => r(c.expediente)).length})</option>)}
+        </select>
+        {sedesUsadas.length > 1 && (
+          <select className="selector" value={sede} onChange={(e) => setSede(e.target.value)} aria-label="Filtrar por sede">
+            <option value="">Todas las sedes</option>
+            {sedesUsadas.map((x) => <option key={x} value={x}>{x}</option>)}
+          </select>
+        )}
+      </div>
       <div className="tarjeta">
         {!aprendices.length ? (
           <div className="vacio">
             <div className="icono-caja"><Icono nombre="personas" tamano={28} /></div>
-            <h3>Aún no hay aprendices</h3>
-            <p>Toca “Inscribir aprendiz”, llena sus datos y fechas, y mándale el link para que suba sus documentos.</p>
+            <h3>{todos.length ? 'Ningún aprendiz coincide' : 'Aún no hay aprendices'}</h3>
+            <p>{todos.length ? 'Prueba con otra búsqueda o cambia los filtros.'
+              : 'Toca “Inscribir aprendiz”, llena sus datos y fechas, y mándale el link para que suba sus documentos.'}</p>
           </div>
         ) : aprendices.map((c) => {
           const e = c.expediente;
           const x = accionAprendiz(e);
           const m = estadoManipulacion(e);
+          const pendientes = porRevisar(e);
+          const docs = Object.values(e.documentos || {});
+          const recibidos = docs.length;
+          const aprobados = docs.filter((d) => d.revision === 'aprobado').length;
           return (
             <div className="fila" key={c.nombreCarpeta}>
               <div className={`icono-caja ${x && x.accion !== 'reenviar' ? 'ojo' : ''}`}><Icono nombre="personas" /></div>
@@ -3996,10 +4065,12 @@ function Aprendices({ lista, cargando, onAbrir, onRecargar, onInscribir, onAccio
                 <span className="fila-sub">{siglaDocumento(e.tipoDocumento)} {e.cedula} — {e.cargo}, {e.seccion} — {e.aprendiz.sede}</span>
                 <span className="fila-pista">{faseAprendiz(e)}</span>
                 <span className={`manip ${m.clave}`}>{m.texto}</span>
-                <span className="fila-pista">{nombreEstado(e.estado)}{(e.solicitudes || []).length ? ` — ${plural(e.solicitudes.length, 'link enviado', 'links enviados')}` : ' — falta enviar el link'}</span>
+                <span className="fila-pista">{nombreEstado(e.estado)}{(e.solicitudes || []).length ? ` — ${plural(e.solicitudes.length, 'link enviado', 'links enviados')}` : ' — falta enviar el link'}{recibidos ? ` — ${plural(recibidos, 'documento recibido', 'documentos recibidos')}, ${aprobados} aprobados` : ''}</span>
+                {pendientes > 0 && <span className="mensaje info">Llegaron documentos: {plural(pendientes, 'documento', 'documentos')} por revisar.</span>}
               </div>
-              <div className="fila-lado">
-                {x && <button className={`boton ${x.accion === 'reenviar' ? 'boton-secundario' : 'boton-principal'}`} onClick={() => onAccion(c, x)}>{x.texto}</button>}
+              <div className="fila-lado" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {pendientes > 0 && <button className="boton boton-principal" onClick={() => onAbrir(c)}>Revisar documentos</button>}
+                {x && <button className={`boton ${x.accion === 'reenviar' || pendientes > 0 ? 'boton-secundario' : 'boton-principal'}`} onClick={() => onAccion(c, x)}>{x.texto}</button>}
               </div>
             </div>
           );
@@ -4417,7 +4488,7 @@ function App() {
   return (
     <div className="marco">
       <BarraLateral vista={vista} setVista={setVista} pendientes={pendientes} enPapelera={papelera.length} usuario={usuario}
-                    aprendicesPorAtender={candidatos.filter((c) => esAprendiz(c.expediente) && (accionAprendiz(c.expediente) || {}).accion && accionAprendiz(c.expediente).accion !== 'reenviar').length}
+                    aprendicesPorAtender={candidatos.filter((c) => esAprendiz(c.expediente) && !['contratado', 'no_contratado'].includes(c.expediente.estado) && (porRevisar(c.expediente) > 0 || ((accionAprendiz(c.expediente) || {}).accion && accionAprendiz(c.expediente).accion !== 'reenviar'))).length}
                     carpeta={raiz && raiz.name} esEjemplo={!!modoEjemplo}
                     onCambiarUsuario={() => setEditarNombre(true)} onSalir={salir} />
       <main className="trabajo">

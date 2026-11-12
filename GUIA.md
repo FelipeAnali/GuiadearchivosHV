@@ -140,6 +140,17 @@ aprendiz (los que tienen `paraAprendiz` o `soloAprendiz` en `documentos.js`, por
 | Nombre del contrato que sale en el checklist | `nombreContratoAprendiz` en `panel-gh.html`. |
 | Qué documentos se piden a aprendices | `paraAprendiz: true` (también a aprendices) o `soloAprendiz: true` (solo a ellos) en `documentos.js`. |
 
+**¿Qué pasa cuando el aprendiz envía sus documentos?**
+1. El ZIP llega a **Bandeja** con la etiqueta "aprendiz, solicitud N". Toca **Procesar aprendiz**.
+2. Los documentos entran a la ficha de ese aprendiz (no se crea otro candidato) y queda **En revisión**.
+3. En **Aprendices** sale arriba "1 aprendiz mandó documentos que falta revisar" y en su fila el botón
+   **Revisar documentos**, que abre la ficha para aprobar o rechazar. El número verde del menú también los cuenta.
+
+En **Aprendices** puedes buscar (nombre, documento, sección o sede) y filtrar: en proceso, llegaron documentos,
+algo por enviar, esperando que suba, completos y contratados, no contratados, o por sede.
+En **Candidatos** y **Listos** salen candidatos y aprendices juntos (los aprendices con la etiqueta "Aprendiz");
+el filtro de tipo deja ver **Solo candidatos** o **Solo aprendices**.
+
 Seguridad: cada link de aprendiz lleva un **código único**. Si alguien cambia el link o sube un ZIP que no
 corresponde, el panel lo rechaza. Y el número de documento debe coincidir con el que escribió Gestión Humana.
 
