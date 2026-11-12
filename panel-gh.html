@@ -1814,7 +1814,7 @@ function mensajeDeCitacion(cita, plantilla = CONFIG.plantillaCitacion) {
     direccion: cita.direccion || '', fecha_limite: li.fecha, hora_limite: li.hora, link: linkDeCitacion(cita),
     recomendaciones: (examen.recomendaciones || []).map((x) => `• ${x}`).join('\n'),
     coprologico: (examen.cargosCoprologico || []).length
-      ? `${examen.textoCoprologico || ''} Aplica para: ${examen.cargosCoprologico.map((c) => c.charAt(0) + c.slice(1).toLowerCase()).join(', ')}.`
+      ? `${examen.textoCoprologico || ''} Aplica para: ${examen.textoCargosCoprologico ? examen.textoCargosCoprologico() : ''}.`
       : '',
   };
   return String(plantilla || '').replace(/\{([a-z_]+)\}/g, (todo, clave) => (clave in valores ? valores[clave] : todo)).trim();
@@ -4665,7 +4665,7 @@ function DialogoNombre({ actual, onGuardar, onCancelar }) {
  * Versión del panel. CÁMBIALA cada vez que subas un cambio a este archivo (fecha y un número).
  * El panel abierto compara su versión con la publicada y, si hay una más nueva, avisa que hay que recargar.
  */
-const VERSION_PANEL = '2026-11-13.1';
+const VERSION_PANEL = '2026-11-13.2';
 
 /** Revisa cada 5 minutos (y al volver a la pestaña) si se publicó una versión más nueva del panel. */
 function useVersionNueva() {

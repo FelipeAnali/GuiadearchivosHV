@@ -1608,7 +1608,7 @@ function PantallaDocumentos({ sesion, alAgregar, alQuitar, alEditarDatos, alCont
         <h1>Tus documentos</h1>
         <p className="bajada">Sube cada uno en PDF (la foto como imagen). Puedes saltar alguno y volver después.</p>
         <AvisoPlazo />
-        <TarjetaExamen cargo={sesion.datos.cargo} />
+        <TarjetaExamen cargo={sesion.datos.cargo} seccion={sesion.datos.seccion} />
         <AyudaMovil />
 
         <section className="grupo">
@@ -3065,11 +3065,9 @@ function useCitaVencida() {
   return vencida;
 }
 
-/** ¿El cargo necesita coprológico? (lista en examen.js; basta con que el cargo contenga el nombre) */
-function cargoPideCoprologico(cargo) {
-  const lista = (window.EXAMEN && window.EXAMEN.cargosCoprologico) || [];
-  const c = normalizar(cargo || '');
-  return !!c && lista.some((x) => c.includes(normalizar(x)));
+/** ¿El cargo (en su sección) necesita coprológico? La regla está en examen.js. */
+function cargoPideCoprologico(cargo, seccion) {
+  return !!(window.EXAMEN && window.EXAMEN.pideCoprologico && window.EXAMEN.pideCoprologico(cargo, seccion));
 }
 
 /** Pantalla cuando ya pasó la fecha límite del link. */
@@ -3107,12 +3105,12 @@ function AvisoPlazo() {
  * Tarjeta "Tu examen médico" (de otro color): fecha, hora, centro y dirección, más las
  * recomendaciones de examen.js. cargo (opcional): si ya se sabe, dice si le toca coprológico.
  */
-function TarjetaExamen({ cargo }) {
+function TarjetaExamen({ cargo, seccion }) {
   const [abierta, setAbierta] = useState(false);
   if (!CITA || !CITA.examen) return null;
   const ex = window.EXAMEN || {};
   const recomendaciones = ex.recomendaciones || [];
-  const conCopro = cargo ? cargoPideCoprologico(cargo) : null; // null = aún no sabemos el cargo
+  const conCopro = cargo ? cargoPideCoprologico(cargo, seccion) : null; // null = aún no sabemos el cargo
   const mapa = CITA.direccion
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${CITA.direccion}, ${CITA.ciudad}, Colombia`)}`
     : '';
@@ -3141,7 +3139,7 @@ function TarjetaExamen({ cargo }) {
           <ul>{recomendaciones.map((r) => <li key={r}>{r}</li>)}</ul>
           {conCopro === null && (ex.cargosCoprologico || []).length > 0 && (
             <p className="examen-copro"><strong>Coprológico (solo algunos cargos):</strong> {ex.textoCoprologico}{' '}
-              Aplica para: {ex.cargosCoprologico.map((c) => c.charAt(0) + c.slice(1).toLowerCase()).join(', ')}.</p>
+              Aplica para: {ex.textoCargosCoprologico ? ex.textoCargosCoprologico() : ''}.</p>
           )}
           {(ex.notas || []).map((n) => <p key={n} className="examen-nota">{n}</p>)}
         </div>

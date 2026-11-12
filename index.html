@@ -2639,7 +2639,8 @@ function PantallaDocumentos(_ref13) {
   }, /*#__PURE__*/React.createElement("h1", null, "Tus documentos"), /*#__PURE__*/React.createElement("p", {
     className: "bajada"
   }, "Sube cada uno en PDF (la foto como imagen). Puedes saltar alguno y volver despu\xE9s."), /*#__PURE__*/React.createElement(AvisoPlazo, null), /*#__PURE__*/React.createElement(TarjetaExamen, {
-    cargo: sesion.datos.cargo
+    cargo: sesion.datos.cargo,
+    seccion: sesion.datos.seccion
   }), /*#__PURE__*/React.createElement(AyudaMovil, null), /*#__PURE__*/React.createElement("section", {
     className: "grupo"
   }, /*#__PURE__*/React.createElement("div", {
@@ -4716,11 +4717,9 @@ function useCitaVencida() {
   return vencida;
 }
 
-/** ¿El cargo necesita coprológico? (lista en examen.js; basta con que el cargo contenga el nombre) */
-function cargoPideCoprologico(cargo) {
-  const lista = window.EXAMEN && window.EXAMEN.cargosCoprologico || [];
-  const c = normalizar(cargo || '');
-  return !!c && lista.some(x => c.includes(normalizar(x)));
+/** ¿El cargo (en su sección) necesita coprológico? La regla está en examen.js. */
+function cargoPideCoprologico(cargo, seccion) {
+  return !!(window.EXAMEN && window.EXAMEN.pideCoprologico && window.EXAMEN.pideCoprologico(cargo, seccion));
 }
 
 /** Pantalla cuando ya pasó la fecha límite del link. */
@@ -4758,13 +4757,14 @@ function AvisoPlazo() {
  */
 function TarjetaExamen(_ref33) {
   let {
-    cargo
+    cargo,
+    seccion
   } = _ref33;
   const [abierta, setAbierta] = useState(false);
   if (!CITA || !CITA.examen) return null;
   const ex = window.EXAMEN || {};
   const recomendaciones = ex.recomendaciones || [];
-  const conCopro = cargo ? cargoPideCoprologico(cargo) : null; // null = aún no sabemos el cargo
+  const conCopro = cargo ? cargoPideCoprologico(cargo, seccion) : null; // null = aún no sabemos el cargo
   const mapa = CITA.direccion ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${CITA.direccion}, ${CITA.ciudad}, Colombia`)}` : '';
   return /*#__PURE__*/React.createElement("section", {
     className: "tarjeta-examen",
@@ -4797,7 +4797,7 @@ function TarjetaExamen(_ref33) {
     key: r
   }, r))), conCopro === null && (ex.cargosCoprologico || []).length > 0 && /*#__PURE__*/React.createElement("p", {
     className: "examen-copro"
-  }, /*#__PURE__*/React.createElement("strong", null, "Coprol\xF3gico (solo algunos cargos):"), " ", ex.textoCoprologico, ' ', "Aplica para: ", ex.cargosCoprologico.map(c => c.charAt(0) + c.slice(1).toLowerCase()).join(', '), "."), (ex.notas || []).map(n => /*#__PURE__*/React.createElement("p", {
+  }, /*#__PURE__*/React.createElement("strong", null, "Coprol\xF3gico (solo algunos cargos):"), " ", ex.textoCoprologico, ' ', "Aplica para: ", ex.textoCargosCoprologico ? ex.textoCargosCoprologico() : '', "."), (ex.notas || []).map(n => /*#__PURE__*/React.createElement("p", {
     key: n,
     className: "examen-nota"
   }, n))));

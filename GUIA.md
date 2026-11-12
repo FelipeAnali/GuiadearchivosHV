@@ -185,7 +185,7 @@ Cuando llega un paquete de una citación, la bandeja avisa si el link **no está
 | Centros médicos (ciudad, nombre, dirección) | Panel → **Ajustes** → Centros médicos. |
 | Texto del mensaje | Panel → **Ajustes** → Mensaje de la citación (lo que va entre llaves lo llena el panel). |
 | Hora límite que se propone | Panel → **Ajustes**. |
-| Recomendaciones del examen y cargos con coprológico | Archivo **`examen.js`** (se edita igual que `documentos.js`). |
+| Recomendaciones del examen y cargos con coprológico | Archivo **`examen.js`** (se edita igual que `documentos.js`). En `cargosCoprologico` cada línea es un cargo, o `CARGO \| SECCIÓN` para pedirlo solo en esa sección (ej. `ASESOR DE EXPERIENCIA \| POLLO CAÑAVERAL`). |
 | Contacto de GH en la pantalla de link vencido | `contactoGestionHumana` en la CONFIGURACIÓN de `index.html`. |
 
 ## 7C. El panel no muestra un cambio nuevo
