@@ -154,6 +154,15 @@ el filtro de tipo deja ver **Solo candidatos** o **Solo aprendices**.
 Seguridad: cada link de aprendiz lleva un **código único**. Si alguien cambia el link o sube un ZIP que no
 corresponde, el panel lo rechaza. Y el número de documento debe coincidir con el que escribió Gestión Humana.
 
+## 7C. El panel no muestra un cambio nuevo
+
+El panel suele quedar abierto todo el día y el navegador sigue usando la versión con la que se abrió.
+Cuando se publica una nueva, sale arriba **"Hay una versión nueva del panel"**: toca **Recargar**
+(o presiona **Ctrl + F5**). La versión que estás usando aparece abajo a la izquierda ("Versión …").
+
+**Programadores:** cada vez que cambies `panel-gh.html`, sube también el número de `VERSION_PANEL`
+(arriba de `function App()`), o el aviso no saldrá.
+
 ## 8. Cambiar cómo funciona la página (programadores)
 
 El código de la app **no se edita en `index.html`** (ahí está compilado). Se edita `src/app.jsx` y luego:

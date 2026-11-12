@@ -450,6 +450,10 @@
   .alerta.error { background: var(--alerta-fondo); color: var(--rojo); }
   .alerta.aviso { background: var(--alerta-fondo); color: var(--alerta-texto); }
   .alerta.info { background: var(--tinte-suave); color: var(--texto); }
+  /* Aviso de versión nueva del panel (arriba, sobre todo) */
+  .aviso-version { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 90;
+    display: flex; align-items: center; gap: 14px; padding: 10px 12px 10px 18px; border-radius: 14px;
+    background: var(--alerta-fondo); color: var(--alerta-texto); box-shadow: 0 8px 30px rgba(0,0,0,.18); max-width: calc(100% - 32px); font-size: 15px; }
 
   /* ==========================================================================
      VACÍO, HOJA DEL CANDIDATO, AVISOS Y DIÁLOGOS
@@ -2675,6 +2679,7 @@ function BarraLateral({ vista, setVista, pendientes, totalCandidatos, enPapelera
         <button onClick={onCambiarUsuario}>Cambiar nombre</button>
         <span className="carpeta-nombre" style={{ marginTop: 8 }}>{esEjemplo ? 'Carpeta de ejemplo' : `Carpeta: ${carpeta}`}</span>
         <button onClick={onSalir}>{esEjemplo ? 'Salir del ejemplo' : 'Cambiar carpeta'}</button>
+        <span className="carpeta-nombre" style={{ marginTop: 8, opacity: 0.7 }}>Versión {VERSION_PANEL}</span>
       </div>
     </nav>
   );
@@ -4191,7 +4196,37 @@ function DialogoNombre({ actual, onGuardar, onCancelar }) {
 /* ==========================================================================
    10. APP PRINCIPAL
    ========================================================================== */
+/**
+ * Versión del panel. CÁMBIALA cada vez que subas un cambio a este archivo (fecha y un número).
+ * El panel abierto compara su versión con la publicada y, si hay una más nueva, avisa que hay que recargar.
+ */
+const VERSION_PANEL = '2026-11-12.2';
+
+/** Revisa cada 5 minutos (y al volver a la pestaña) si se publicó una versión más nueva del panel. */
+function useVersionNueva() {
+  const [nueva, setNueva] = useState(null);
+  useEffect(() => {
+    if (!/^https?:/.test(location.protocol)) return undefined; // abierto como archivo: no se puede revisar
+    let ultima = 0;
+    const revisar = async () => {
+      if (Date.now() - ultima < 60000) return;
+      ultima = Date.now();
+      try {
+        const r = await fetch(`${location.pathname}?v=${Date.now()}`, { cache: 'no-store' });
+        const m = (await r.text()).match(/const VERSION_PANEL = '([^']+)'/);
+        if (m && m[1] !== VERSION_PANEL) setNueva(m[1]);
+      } catch { /* sin internet: se intenta después */ }
+    };
+    revisar();
+    const reloj = setInterval(revisar, 5 * 60000);
+    window.addEventListener('focus', revisar);
+    return () => { clearInterval(reloj); window.removeEventListener('focus', revisar); };
+  }, []);
+  return nueva;
+}
+
 function App() {
+  const versionNueva = useVersionNueva();
   const [fase, setFase] = useState('cargando');      // cargando | arranque | listo
   const [raiz, setRaiz] = useState(null);             // carpeta "Hojas de vida"
   const [usuario, setUsuario] = useState('');
@@ -4487,6 +4522,12 @@ function App() {
   const pendientes = bandeja.filter((x) => !x.analisis || x.analisis.tipo !== 'invalido').length;
   return (
     <div className="marco">
+      {versionNueva && (
+        <div className="aviso-version" role="alert">
+          <span>Hay una <strong>versión nueva del panel</strong>. Termina lo que estás haciendo y recarga para usarla.</span>
+          <button className="boton boton-principal" onClick={() => location.reload()}>Recargar</button>
+        </div>
+      )}
       <BarraLateral vista={vista} setVista={setVista} pendientes={pendientes} enPapelera={papelera.length} usuario={usuario}
                     aprendicesPorAtender={candidatos.filter((c) => esAprendiz(c.expediente) && !['contratado', 'no_contratado'].includes(c.expediente.estado) && (porRevisar(c.expediente) > 0 || ((accionAprendiz(c.expediente) || {}).accion && accionAprendiz(c.expediente).accion !== 'reenviar'))).length}
                     carpeta={raiz && raiz.name} esEjemplo={!!modoEjemplo}
