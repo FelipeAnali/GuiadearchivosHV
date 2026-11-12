@@ -17,6 +17,7 @@ Para cambios de configuración (links, cargos, textos) ver [GUIA.md](GUIA.md).
 |---|---|
 | `index.html` | La página publicada: estilos, **CONFIGURACIÓN**, logo, pantalla de carga, librerías y el código de la app **ya compilado**. |
 | `documentos.js` | **Lista de documentos** que se piden (con sus reglas de revisión). La usan la app y el panel. |
+| `examen.js` | **Examen médico**: recomendaciones y cargos con coprológico (tarjeta de la citación y mensaje del panel). |
 | `cargos.js` | **Lista de cargos** (CARGO;SECCIÓN;MANIPULACIÓN), en `window.CARGOS_TEXTO`. La usan la app y el panel. |
 | `src/app.jsx` | **Fuente** del código de la app (React con JSX). Se edita aquí. |
 | `herramientas/compilar.js` | Compila `src/app.jsx` con Babel y lo pone dentro de `index.html` (`npm run compilar`). |
@@ -86,6 +87,23 @@ El detalle está en `src/app.jsx` (sección 7) y en `panel-gh.html` (sección 6B
 - `a` = pedir la autorización de datos (aprendices). `p` = nombre para saludar.
 - `m: "aprendiz"` (opcional, en correcciones) = el candidato es aprendiz: la app le muestra el manual de aprendiz.
 - Los links `v: 1` siguen funcionando.
+
+## Citación (`?cita=...`)
+
+El panel (menú Citación, sección 6D) arma un mensaje genérico con un link a esta página:
+
+```json
+{ "v": 1, "k": "<código único>", "e": "AAAA-MM-DDTHH:MM", "l": "AAAA-MM-DDTHH:MM",
+  "ci": "<ciudad>", "cn": "<centro médico>", "cd": "<dirección>" }
+```
+
+- `e` = examen, `l` = fecha límite (horas de Colombia). Antes de `l` la app funciona como el envío normal y muestra
+  la tarjeta del examen (`TarjetaExamen`, recomendaciones de `examen.js`) y el plazo; después de `l` solo muestra
+  `PantallaCitaVencida` (también si vence mientras el candidato está en la página: se revisa cada 30 s y al descargar).
+- El ZIP lleva `citacion: { codigo, examen, limite, ciudad, centro }`. El panel guarda cada citación en
+  `citaciones.json` y al analizar el ZIP avisa si el código no existe, si la fecha no coincide o si llegó tarde.
+- La fecha límite se revisa en el celular del candidato (no hay servidor): por eso la revisión del panel.
+- `?cita=` dañado → "Este enlace está incompleto". El link general (sin `?cita`) sigue igual.
 
 ## Modo aprendiz (`?c=...` con `t: "aprendiz"`)
 

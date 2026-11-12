@@ -53,6 +53,14 @@ Marca cada punto con ✅ o ❌. Si algo sale ❌, toma pantallazo y anota en qu�
 | A5 | Súbelo y procésalo en el panel | Los documentos llegan a la ficha del aprendiz. Si cambiaste el celular, sale en la bitácora | | |
 | A6 | Cambia una letra del link y ábrelo | "Este enlace está incompleto o ya no sirve…" | | |
 
+## 4C. Citación (link con fecha límite)
+| # | Qué hacer | Qué debe pasar | Android | iPhone |
+|---|---|---|---|---|
+| T1 | En el panel: **Citación**, elige centro, fecha del examen y fecha límite, y toca **Abrir WhatsApp** | Sale el mensaje con la fecha, el lugar, las recomendaciones y el link | | |
+| T2 | Abre el link | Sale el plazo y la tarjeta azul "Tu examen médico" con la dirección y "Ver en el mapa" | | |
+| T3 | Envía los documentos y procesa el paquete en el panel | La ficha muestra "Examen médico: …" | | |
+| T4 | Arma otra citación con fecha límite de hoy dentro de 2 minutos, ábrela y espera | Al pasar la hora sale "¡Gracias por tu interés! Este link ya no funciona…" | | |
+
 ## 5. Revisión en Gestión Humana
 | # | Qué hacer | Qué debe pasar |
 |---|---|---|

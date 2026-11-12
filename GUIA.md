@@ -165,6 +165,29 @@ el filtro de tipo deja ver **Solo candidatos** o **Solo aprendices**.
 Seguridad: cada link de aprendiz lleva un **código único**. Si alguien cambia el link o sube un ZIP que no
 corresponde, el panel lo rechaza. Y el número de documento debe coincidir con el que escribió Gestión Humana.
 
+## 7D. Citación al examen médico (link con fecha límite)
+
+En el panel, menú **Citación**:
+1. Elige la **ciudad y centro médico**, la **fecha y hora del examen** y la **fecha límite** para enviar documentos.
+2. Revisa el mensaje y toca **Copiar mensaje**, **Abrir WhatsApp** o **Abrir correo**. Es un mensaje **genérico**:
+   el mismo sirve para todo el grupo citado ese día (no hay que llenar datos de cada persona).
+3. El link del mensaje abre la página de documentos con una tarjeta azul **"Tu examen médico"** (fecha, hora,
+   centro, dirección con mapa y recomendaciones; si el cargo pide coprológico, se lo dice).
+4. Después de la fecha límite el link **deja de funcionar**: el candidato ve "¡Gracias por tu interés! Este link ya no
+   funciona…". Si necesita más tiempo, en **Citaciones enviadas** toca **Reenviar con nueva fecha**.
+5. El link general (sin fecha) sigue funcionando como respaldo.
+
+Cuando llega un paquete de una citación, la bandeja avisa si el link **no está registrado**, si la fecha fue
+**alterada** o si **llegó después del plazo**, y la ficha muestra la fecha del examen.
+
+| Qué quieres cambiar | Dónde |
+|---|---|
+| Centros médicos (ciudad, nombre, dirección) | Panel → **Ajustes** → Centros médicos. |
+| Texto del mensaje | Panel → **Ajustes** → Mensaje de la citación (lo que va entre llaves lo llena el panel). |
+| Hora límite que se propone | Panel → **Ajustes**. |
+| Recomendaciones del examen y cargos con coprológico | Archivo **`examen.js`** (se edita igual que `documentos.js`). |
+| Contacto de GH en la pantalla de link vencido | `contactoGestionHumana` en la CONFIGURACIÓN de `index.html`. |
+
 ## 7C. El panel no muestra un cambio nuevo
 
 El panel suele quedar abierto todo el día y el navegador sigue usando la versión con la que se abrió.

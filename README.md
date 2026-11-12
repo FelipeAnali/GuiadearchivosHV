@@ -8,6 +8,7 @@ Página para que los candidatos de **Supertiendas Cañaveral S.A.S.** preparen y
 |---|---|
 | [`index.html`](index.html) | La página de documentos de ingreso (todo en un solo archivo). |
 | [`documentos.js`](documentos.js) | Lista de documentos que se piden. La usan **las dos** apps: se cambia en un solo lugar. |
+| [`examen.js`](examen.js) | Recomendaciones del examen médico de ingreso (las muestra la app con el link de citación). |
 | [`cargos.js`](cargos.js) | Lista de cargos y secciones (se pega desde Excel). La usan **las dos** apps. |
 | [`panel-gh.html`](panel-gh.html) | **Panel de Gestión Humana**: recibe los ZIP de los candidatos desde la carpeta de OneDrive, los revisa y lleva el avance de cada uno. Se abre en Chrome o Edge de computador: https://felipeanali.github.io/GuiadearchivosHV/panel-gh.html |
 | [`manual/Manual_candidato_Documentos_de_ingreso.pdf`](manual/Manual_candidato_Documentos_de_ingreso.pdf) | Manual del candidato, paso a paso con imágenes. Los aprendices pueden tener el suyo (`enlaceManualAprendiz`, ver [GUIA.md](GUIA.md) punto 7). |

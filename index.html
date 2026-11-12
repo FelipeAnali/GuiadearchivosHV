@@ -43,6 +43,7 @@
     src/app.jsx          Código de la app (pantallas, revisión de archivos, ZIP).
     documentos.js        Lista de documentos que se piden (la usan esta app y el panel).
     cargos.js            Lista de cargos y secciones (la usan esta app y el panel).
+    examen.js            Recomendaciones del examen médico (tarjeta de la citación; también el panel).
     GUIA.md              Cómo hacer los cambios más comunes, paso a paso.
     COMO_FUNCIONA.md     Cómo funciona por dentro (para programadores).
     PRUEBAS.md           Lista para probar en celulares reales.
@@ -104,6 +105,8 @@
     --sombra-flotante: 0 10px 30px rgba(8, 32, 15, 0.2);
     --radio: 12px;
     --ancho-contenido: 600px;
+    --examen: #1D5FA8;                     /* azul de la tarjeta del examen médico */
+    --examen-fondo: #E8F1FB;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -122,6 +125,8 @@
       --alerta-texto: #FFC24D;
       --barra: rgba(8, 32, 15, 0.86);
       --portada: #10301A;
+      --examen: #8FC2FF;
+      --examen-fondo: #12283F;
     }
   }
 
@@ -371,6 +376,24 @@
   .aviso-info { background: var(--tinte-suave); color: var(--texto); }
   .aviso-alerta { background: var(--alerta-fondo); color: var(--alerta-texto); }
   .aviso-error { background: var(--alerta-fondo); color: var(--rojo); }
+  /* --- Citación (?cita=...): plazo, tarjeta del examen médico y link vencido --- */
+  .aviso-plazo { background: var(--examen-fondo); color: var(--texto); border-left: 4px solid var(--examen); }
+  .aviso-plazo.urgente { background: var(--alerta-fondo); border-left-color: var(--rojo); }
+  .tarjeta-examen { background: var(--examen-fondo); border-radius: var(--radio); padding: 14px 16px; margin-bottom: 20px; border: 1px solid color-mix(in srgb, var(--examen) 30%, transparent); }
+  .examen-cabeza { display: flex; gap: 12px; align-items: center; }
+  .examen-icono { width: 40px; height: 40px; border-radius: 12px; background: var(--examen); color: var(--examen-fondo); display: grid; place-items: center; font-size: 28px; font-weight: 800; flex: none; }
+  .examen-titulo { font-size: 13px; color: var(--examen); font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+  .examen-cuando { font-size: 19px; font-weight: 700; line-height: 1.2; }
+  .examen-lugar { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; font-size: 15px; }
+  .examen-lugar a, .examen-mas { color: var(--examen); font-weight: 600; }
+  .examen-mas { background: none; border: 0; padding: 10px 0 2px; cursor: pointer; font-size: 15px; min-height: 44px; }
+  .examen-detalle ul { margin: 4px 0 8px; padding-left: 20px; font-size: 15px; }
+  .examen-detalle li { margin-bottom: 4px; }
+  .examen-copro { font-size: 15px; margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--celda); }
+  .examen-nota { font-size: 14px; color: var(--texto-2); margin: 6px 0 0; }
+  .cita-vencida { text-align: center; padding-top: 40px; }
+  .cita-vencida .carga-logo { margin: 0 auto 24px; display: block; }
+  .final-icono.vencido { background: var(--alerta-fondo); color: var(--alerta-texto); font-size: 40px; font-weight: 800; }
 
   /* --- Pantalla final --- */
   .final { text-align: center; padding-top: 48px; }
@@ -568,6 +591,7 @@
 <!-- Listas compartidas con el panel de GH: documentos y cargos -->
 <script src="documentos.js"></script>
 <script src="cargos.js"></script>
+<script src="examen.js"></script>
 <script>
 window.CONFIG = {
 
@@ -597,6 +621,10 @@ window.CONFIG = {
   // Cuando exista el PDF, súbelo a la carpeta manual/ y pon aquí su nombre, ej.:
   // 'manual/Manual_aprendiz_Documentos_de_ingreso.pdf'
   enlaceManualAprendiz: 'manual/Manual_aprendiz_Documentos_de_ingreso.pdf',
+
+  // Contacto de Gestión Humana que se muestra cuando un link de citación ya venció
+  // (ej. 'WhatsApp 300 123 4567 o contrataciones@stcanaveral.com'). Vacío = no se muestra.
+  contactoGestionHumana: '',
 
   // Página gratuita para comprimir PDF que se le recomienda al candidato si su archivo pesa mucho.
   enlaceComprimir: 'https://www.ilovepdf.com/es/comprimir_pdf',
@@ -752,7 +780,9 @@ function _extends() { _extends = Object.assign ? Object.assign.bind() : function
                              El mismo modo sirve para los APRENDICES SENA (link versión 2):
                              suben solo los documentos que se les piden.
                              Contrato del link y del ZIP con el panel (panel-gh.html).
-     8. ARRANQUE             Abre el envío normal o el modo corrección según la dirección.
+     7B. CITACIÓN            Link ?cita=... que arma el panel (examen médico + plazo para enviar
+                             documentos): tarjeta del examen y link que VENCE en la fecha límite.
+     8. ARRANQUE             Abre el envío normal, la citación o el modo corrección según la dirección.
 
    PALABRAS QUE SE REPITEN
      sesion   Todo el avance del candidato: { datos, archivos, expira, ... } (ver sesionNueva).
@@ -991,6 +1021,12 @@ function documentoCompleto(doc, archivos) {
 }
 
 /** Texto de ayuda del documento; cambia para puestos bajo Decreto 1500. */
+/** Link de ayuda del documento: el de Decreto 1500 si el cargo lo pide y existe; si no, el normal. */
+function enlaceDelDocumento(doc, datos) {
+  const puesto = buscarPuesto(datos.cargo, datos.seccion);
+  if (doc.enlaceAyudaDecreto1500 && puesto && puesto.manipulacion === 'decreto1500') return doc.enlaceAyudaDecreto1500;
+  return doc.enlaceAyuda;
+}
 function ayudaDelDocumento(doc, datos) {
   const puesto = buscarPuesto(datos.cargo, datos.seccion);
   if (doc.ayudaDecreto1500 && puesto && puesto.manipulacion === 'decreto1500') return doc.ayudaDecreto1500;
@@ -1514,6 +1550,9 @@ async function armarZip(sesion) {
   });
   zip.file('datos_candidato.json', JSON.stringify({
     version: 1,
+    ...(CITA ? {
+      citacion: citacionParaZip()
+    } : {}),
     tipoDocumento: datos.tipoDocumento || 'CC',
     cedula: datos.cedula,
     nombre: datos.nombre,
@@ -1972,7 +2011,7 @@ function PantallaInicio(_ref9) {
     className: "logo logo-blanco",
     src: LOGO,
     alt: "Supertiendas Ca\xF1averal"
-  }), /*#__PURE__*/React.createElement("h1", null, "Documentos de ingreso"), /*#__PURE__*/React.createElement("p", null, "Sube tus documentos y al final te entregamos un solo archivo listo para enviar. Puedes hacerlo por partes.")), /*#__PURE__*/React.createElement(AyudaMovil, null), /*#__PURE__*/React.createElement("section", {
+  }), /*#__PURE__*/React.createElement("h1", null, "Documentos de ingreso"), /*#__PURE__*/React.createElement("p", null, "Sube tus documentos y al final te entregamos un solo archivo listo para enviar. Puedes hacerlo por partes.")), /*#__PURE__*/React.createElement(AvisoPlazo, null), /*#__PURE__*/React.createElement(TarjetaExamen, null), /*#__PURE__*/React.createElement(AyudaMovil, null), /*#__PURE__*/React.createElement("section", {
     className: "grupo"
   }, /*#__PURE__*/React.createElement("h2", {
     className: "grupo-titulo"
@@ -2599,7 +2638,9 @@ function PantallaDocumentos(_ref13) {
     className: "contenido"
   }, /*#__PURE__*/React.createElement("h1", null, "Tus documentos"), /*#__PURE__*/React.createElement("p", {
     className: "bajada"
-  }, "Sube cada uno en PDF (la foto como imagen). Puedes saltar alguno y volver despu\xE9s."), /*#__PURE__*/React.createElement(AyudaMovil, null), /*#__PURE__*/React.createElement("section", {
+  }, "Sube cada uno en PDF (la foto como imagen). Puedes saltar alguno y volver despu\xE9s."), /*#__PURE__*/React.createElement(AvisoPlazo, null), /*#__PURE__*/React.createElement(TarjetaExamen, {
+    cargo: sesion.datos.cargo
+  }), /*#__PURE__*/React.createElement(AyudaMovil, null), /*#__PURE__*/React.createElement("section", {
     className: "grupo"
   }, /*#__PURE__*/React.createElement("div", {
     className: "lista"
@@ -2625,7 +2666,10 @@ function PantallaDocumentos(_ref13) {
     className: "lista"
   }, docs.map((doc, i) => /*#__PURE__*/React.createElement(TarjetaDocumento, {
     key: doc.id,
-    doc: doc,
+    doc: {
+      ...doc,
+      enlaceAyuda: enlaceDelDocumento(doc, sesion.datos)
+    },
     posicion: i + 1,
     ayuda: ayudaDelDocumento(doc, sesion.datos),
     archivos: sesion.archivos[doc.id] || [],
@@ -2675,6 +2719,10 @@ function PantallaEnvio(_ref14) {
 
   /** Arma el ZIP y lo descarga. */
   async function descargar() {
+    if (citaVencida()) {
+      setError('Ya pasó la fecha límite de este link y no se puede enviar el paquete. Comunícate con Gestión Humana.');
+      return;
+    }
     setArmando(true);
     setError(null);
     try {
@@ -2695,7 +2743,7 @@ function PantallaEnvio(_ref14) {
     className: "contenido"
   }, /*#__PURE__*/React.createElement("h1", null, "Revisa y env\xEDa"), /*#__PURE__*/React.createElement("p", {
     className: "bajada"
-  }, "Tienes todos los documentos. Solo faltan dos pasos."), /*#__PURE__*/React.createElement(AvisoNavegadorApp, null), /*#__PURE__*/React.createElement(AyudaMovil, null), error && /*#__PURE__*/React.createElement("div", {
+  }, "Tienes todos los documentos. Solo faltan dos pasos."), /*#__PURE__*/React.createElement(AvisoPlazo, null), /*#__PURE__*/React.createElement(AvisoNavegadorApp, null), /*#__PURE__*/React.createElement(AyudaMovil, null), error && /*#__PURE__*/React.createElement("div", {
     className: "aviso aviso-error",
     role: "alert"
   }, error), /*#__PURE__*/React.createElement("section", {
@@ -3405,6 +3453,7 @@ function AvisoSalir(_ref20) {
   }, "Seguir aqu\xED"));
 }
 function App() {
+  const vencida = useCitaVencida(); // link de citación cuya fecha límite ya pasó (sección 7B)
   const [cargando, setCargando] = useState(true);
   const [sesion, setSesion] = useState(null);
   const [pantalla, setPantalla] = useState('inicio'); // inicio | datos | documentos | envio | final
@@ -3582,6 +3631,10 @@ function App() {
       abrirCorreccionDeEjemplo(modo);
       return;
     }
+    if (modo === 'cita' || modo === 'cita_vencida') {
+      abrirCitaDeEjemplo(modo === 'cita_vencida');
+      return;
+    }
     setModoPrueba(modo);
     if (modo === 'normal') {
       setSesion(null);
@@ -3597,6 +3650,9 @@ function App() {
   const completos = docsAplicables.filter(d => documentoCompleto(d, sesion.archivos[d.id])).length;
   const mostrarAvance = ['documentos', 'envio'].includes(pantalla);
   if (cargando) return null;
+  if (vencida && pantalla !== 'final') return /*#__PURE__*/React.createElement("div", {
+    className: "app"
+  }, /*#__PURE__*/React.createElement(PantallaCitaVencida, null));
   return /*#__PURE__*/React.createElement("div", {
     className: "app"
   }, /*#__PURE__*/React.createElement(Encabezado, {
@@ -3658,7 +3714,7 @@ function App() {
   }), MODO_PRUEBA && /*#__PURE__*/React.createElement("div", {
     className: "selector-prueba",
     "aria-label": "Datos de prueba"
-  }, [['normal', 'Normal'], ['extremo', 'Caso extremo'], ['vacio', 'Vacío'], ['correccion', 'Corrección'], ['aprendiz', 'Aprendiz']].map(_ref21 => {
+  }, [['normal', 'Normal'], ['extremo', 'Caso extremo'], ['vacio', 'Vacío'], ['correccion', 'Corrección'], ['aprendiz', 'Aprendiz'], ['cita', 'Citación'], ['cita_vencida', 'Citación vencida']].map(_ref21 => {
     let [valor, texto] = _ref21;
     return /*#__PURE__*/React.createElement("button", {
       key: valor,
@@ -4570,6 +4626,214 @@ function ListaNoCargo() {
 }
 
 /* ============================================================================
+   7B. CITACIÓN: examen médico y plazo para enviar los documentos (?cita=...)
+   ----------------------------------------------------------------------------
+   Gestión Humana arma en su panel ("Citación") un mensaje genérico para un grupo de
+   candidatos: fecha y hora del examen médico, centro médico y FECHA LÍMITE para enviar
+   los documentos. El link de ese mensaje es esta misma página con ?cita=<código>.
+     - Antes de la fecha límite: funciona como el envío normal y además muestra la tarjeta
+       "Tu examen médico" (lo que antes iba en el PDF anexo) y el plazo.
+     - Después de la fecha límite: solo muestra "Este link ya no funciona" (no deja enviar).
+   El link general (sin ?cita) sigue funcionando como respaldo.
+
+   Contrato con el panel (no cambiar sin cambiar también panel-gh.html, sección 6D):
+     código = JSON → UTF-8 → base64url sin "="
+     JSON   = { v: 1, k: "<código único>", e: "AAAA-MM-DDTHH:MM" (examen), l: "AAAA-MM-DDTHH:MM" (límite),
+                ci: "<ciudad>", cn: "<centro médico>", cd: "<dirección>" }   (horas de Colombia)
+     El ZIP lleva "citacion": { codigo, examen, limite, ciudad, centro } para que el panel la revise.
+   Las recomendaciones del examen están en examen.js (las comparte con el panel).
+   ============================================================================ */
+
+/** Código del link de citación (?cita=...) o null. */
+const CODIGO_CITA = new URLSearchParams(location.search).get('cita');
+
+/** Fecha y hora de Colombia ("2026-11-20T09:00") → Date. null si no es válida. */
+function fechaColombia(texto) {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(texto || ''))) return null;
+  const fecha = new Date(`${texto}:00-05:00`);
+  return Number.isNaN(fecha.getTime()) ? null : fecha;
+}
+
+/** Lee el link de citación. Devuelve { codigo, examen, limite, ciudad, centro, direccion } o null si está dañado. */
+function leerLinkCita(codigo) {
+  try {
+    const d = JSON.parse(desdeBase64Url(codigo));
+    if (!d || d.v !== 1) return null;
+    const examen = fechaColombia(d.e);
+    const limite = fechaColombia(d.l);
+    if (!limite || !/^[A-Z0-9]{6,20}$/.test(String(d.k || ''))) return null;
+    const limpio = (x, n) => String(x || '').replace(/[<>]/g, '').trim().slice(0, n);
+    return {
+      codigo: d.k,
+      examen,
+      limite,
+      textoExamen: d.e || '',
+      textoLimite: d.l,
+      ciudad: limpio(d.ci, 60),
+      centro: limpio(d.cn, 80),
+      direccion: limpio(d.cd, 120)
+    };
+  } catch (e) {
+    return null;
+  }
+}
+const CITA = CODIGO_CITA !== null ? leerLinkCita(CODIGO_CITA) : null;
+
+/** "viernes 20 de noviembre, 9:00 a. m." */
+function fechaHoraLegible(fecha) {
+  let conAnio = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
+  if (!fecha) return '';
+  const dia = fecha.toLocaleDateString('es-CO', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    ...(conAnio ? {
+      year: 'numeric'
+    } : {}),
+    timeZone: 'America/Bogota'
+  });
+  const hora = fecha.toLocaleTimeString('es-CO', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/Bogota'
+  });
+  return `${dia}, ${hora.replace(/\s/g, '\u00a0')}`; // "a. m." sin partirse en dos líneas
+}
+
+/** ¿Ya pasó la fecha límite de la citación? */
+function citaVencida() {
+  return !!CITA && Date.now() > CITA.limite.getTime();
+}
+
+/** Vuelve a revisar el plazo cada 30 segundos (por si vence mientras el candidato está en la página). */
+function useCitaVencida() {
+  const [vencida, setVencida] = useState(citaVencida);
+  useEffect(() => {
+    if (!CITA) return undefined;
+    const reloj = setInterval(() => setVencida(citaVencida()), 30000);
+    return () => clearInterval(reloj);
+  }, []);
+  return vencida;
+}
+
+/** ¿El cargo necesita coprológico? (lista en examen.js; basta con que el cargo contenga el nombre) */
+function cargoPideCoprologico(cargo) {
+  const lista = window.EXAMEN && window.EXAMEN.cargosCoprologico || [];
+  const c = normalizar(cargo || '');
+  return !!c && lista.some(x => c.includes(normalizar(x)));
+}
+
+/** Pantalla cuando ya pasó la fecha límite del link. */
+function PantallaCitaVencida() {
+  return /*#__PURE__*/React.createElement("main", {
+    className: "contenido final cita-vencida",
+    role: "alert"
+  }, /*#__PURE__*/React.createElement("img", {
+    className: "carga-logo",
+    src: LOGO,
+    alt: "Supertiendas Ca\xF1averal"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "final-icono vencido",
+    "aria-hidden": "true"
+  }, "!"), /*#__PURE__*/React.createElement("h1", null, "\xA1Gracias por tu inter\xE9s!"), /*#__PURE__*/React.createElement("p", {
+    className: "bajada"
+  }, "Este link ya no funciona porque pas\xF3 la fecha l\xEDmite para enviar tus documentos", CITA ? /*#__PURE__*/React.createElement(React.Fragment, null, " (", /*#__PURE__*/React.createElement("strong", null, fechaHoraLegible(CITA.limite, true)), ")") : '', "."), /*#__PURE__*/React.createElement("div", {
+    className: "aviso aviso-alerta"
+  }, "Si todav\xEDa deseas enviar tus documentos, comun\xEDcate con ", /*#__PURE__*/React.createElement("strong", null, "Gesti\xF3n Humana"), CONFIG.contactoGestionHumana ? /*#__PURE__*/React.createElement(React.Fragment, null, " (", CONFIG.contactoGestionHumana, ")") : '', " para que te env\xEDen un link nuevo."));
+}
+
+/** Aviso del plazo: "Tienes hasta el viernes 20 de noviembre, 9:00 a. m." */
+function AvisoPlazo() {
+  if (!CITA) return null;
+  const horas = (CITA.limite.getTime() - Date.now()) / 3600000;
+  return /*#__PURE__*/React.createElement("div", {
+    className: `aviso aviso-plazo ${horas < 24 ? 'urgente' : ''}`,
+    role: "status"
+  }, /*#__PURE__*/React.createElement("strong", null, "Tienes plazo hasta el ", fechaHoraLegible(CITA.limite), " para enviar tus documentos."), ' ', "Despu\xE9s de esa fecha este link deja de funcionar.");
+}
+
+/**
+ * Tarjeta "Tu examen médico" (de otro color): fecha, hora, centro y dirección, más las
+ * recomendaciones de examen.js. cargo (opcional): si ya se sabe, dice si le toca coprológico.
+ */
+function TarjetaExamen(_ref33) {
+  let {
+    cargo
+  } = _ref33;
+  const [abierta, setAbierta] = useState(false);
+  if (!CITA || !CITA.examen) return null;
+  const ex = window.EXAMEN || {};
+  const recomendaciones = ex.recomendaciones || [];
+  const conCopro = cargo ? cargoPideCoprologico(cargo) : null; // null = aún no sabemos el cargo
+  const mapa = CITA.direccion ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${CITA.direccion}, ${CITA.ciudad}, Colombia`)}` : '';
+  return /*#__PURE__*/React.createElement("section", {
+    className: "tarjeta-examen",
+    "aria-label": ex.titulo || 'Tu examen médico'
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "examen-cabeza"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "examen-icono",
+    "aria-hidden": "true"
+  }, "+"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "examen-titulo"
+  }, ex.titulo || 'Tu examen médico de ingreso'), /*#__PURE__*/React.createElement("div", {
+    className: "examen-cuando"
+  }, fechaHoraLegible(CITA.examen)))), (CITA.centro || CITA.ciudad) && /*#__PURE__*/React.createElement("div", {
+    className: "examen-lugar"
+  }, /*#__PURE__*/React.createElement("strong", null, CITA.ciudad, CITA.centro ? ` — ${CITA.centro}` : ''), CITA.direccion && /*#__PURE__*/React.createElement("span", null, CITA.direccion), mapa && /*#__PURE__*/React.createElement("a", {
+    href: mapa,
+    target: "_blank",
+    rel: "noopener noreferrer"
+  }, "Ver en el mapa")), conCopro === true && /*#__PURE__*/React.createElement("p", {
+    className: "examen-copro"
+  }, /*#__PURE__*/React.createElement("strong", null, "Tu cargo requiere coprol\xF3gico."), " ", ex.textoCoprologico), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "examen-mas",
+    "aria-expanded": abierta,
+    onClick: () => setAbierta(!abierta)
+  }, abierta ? 'Ocultar recomendaciones' : `Ver recomendaciones (${recomendaciones.length})`), abierta && /*#__PURE__*/React.createElement("div", {
+    className: "examen-detalle"
+  }, /*#__PURE__*/React.createElement("ul", null, recomendaciones.map(r => /*#__PURE__*/React.createElement("li", {
+    key: r
+  }, r))), conCopro === null && (ex.cargosCoprologico || []).length > 0 && /*#__PURE__*/React.createElement("p", {
+    className: "examen-copro"
+  }, /*#__PURE__*/React.createElement("strong", null, "Coprol\xF3gico (solo algunos cargos):"), " ", ex.textoCoprologico, ' ', "Aplica para: ", ex.cargosCoprologico.map(c => c.charAt(0) + c.slice(1).toLowerCase()).join(', '), "."), (ex.notas || []).map(n => /*#__PURE__*/React.createElement("p", {
+    key: n,
+    className: "examen-nota"
+  }, n))));
+}
+
+/** Solo modo prueba: abre un link de citación de ejemplo (vigente o ya vencido). */
+function abrirCitaDeEjemplo(vencida) {
+  const dia = n => {
+    const f = new Date(Date.now() + n * 86400000);
+    return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`;
+  };
+  const datos = {
+    v: 1,
+    k: 'PRUEBA2026',
+    e: `${dia(vencida ? -3 : 2)}T07:00`,
+    l: `${dia(vencida ? -1 : 5)}T09:00`,
+    ci: 'Cali',
+    cn: 'Unidad de Salud Ocupacional',
+    cd: 'Calle 23BN # 3N-52 B/ Versalles'
+  };
+  location.href = `${location.pathname}?prueba=1&cita=${aBase64Url(JSON.stringify(datos))}`;
+}
+
+/** Lo que va en datos_candidato.json cuando el envío viene de un link de citación. */
+function citacionParaZip() {
+  if (!CITA) return null;
+  return {
+    codigo: CITA.codigo,
+    examen: CITA.textoExamen,
+    limite: CITA.textoLimite,
+    ciudad: CITA.ciudad,
+    centro: CITA.centro
+  };
+}
+
+/* ============================================================================
    8. ARRANQUE
    ----------------------------------------------------------------------------
    Sin ?c= en la dirección → envío normal (App). Con ?c= válido → modo corrección.
@@ -4578,6 +4842,13 @@ function ListaNoCargo() {
 function Arranque() {
   // Sin la lista de documentos (documentos.js no cargó) no se abre: el candidato podría mandar un paquete vacío
   if (!CONFIG.documentos || CONFIG.documentos.length === 0) return /*#__PURE__*/React.createElement(ListaNoCargo, null);
+  if (CODIGO_CITA !== null) {
+    if (!CITA) return /*#__PURE__*/React.createElement(EnlaceCorreccionDanado, null);
+    if (citaVencida()) return /*#__PURE__*/React.createElement("div", {
+      className: "app"
+    }, /*#__PURE__*/React.createElement(PantallaCitaVencida, null));
+    return /*#__PURE__*/React.createElement(App, null);
+  }
   if (CODIGO_CORRECCION === null) return /*#__PURE__*/React.createElement(App, null);
   if (!CORRECCION) return /*#__PURE__*/React.createElement(EnlaceCorreccionDanado, null);
   return /*#__PURE__*/React.createElement(AppCorreccion, {

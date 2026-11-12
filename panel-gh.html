@@ -450,6 +450,11 @@
   .alerta.error { background: var(--alerta-fondo); color: var(--rojo); }
   .alerta.aviso { background: var(--alerta-fondo); color: var(--alerta-texto); }
   .alerta.info { background: var(--tinte-suave); color: var(--texto); }
+  /* Citación */
+  .citacion { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 24px; align-items: start; }
+  @media (max-width: 1100px) { .citacion { grid-template-columns: 1fr; } }
+  .mensaje-cita { white-space: pre-wrap; font-family: inherit; font-size: 14px; line-height: 1.45; padding: 14px 16px; margin: 0; max-height: 460px; overflow: auto; overflow-wrap: anywhere; }
+  .nota-campo { display: block; font-size: 13px; color: var(--texto-2); margin-top: 4px; }
   /* Aviso de versión nueva del panel (arriba, sobre todo) */
   .aviso-version { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 90;
     display: flex; align-items: center; gap: 14px; padding: 10px 12px 10px 18px; border-radius: 14px;
@@ -700,6 +705,7 @@
 <!-- Listas compartidas con la app del candidato: documentos y cargos -->
 <script src="documentos.js"></script>
 <script src="cargos.js"></script>
+<script src="examen.js"></script>
 <script>
 window.CONFIG_PANEL = {
   // Dirección pública de la app del candidato en GitHub Pages. Los links de
@@ -769,6 +775,40 @@ window.CONFIG_PANEL = {
     { nombre: "SC ZARZAL", sector: "Norte del Valle", ciudad: "Zarzal, Valle del Cauca" },
     { nombre: "SEDE ADMINISTRATIVA", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
   ],
+
+  // CITACIÓN (menú "Citación"): centros médicos para el examen de ingreso (se editan en Ajustes)
+  centrosMedicos: [
+    { ciudad: 'Buga', nombre: 'Unidad de Salud Ocupacional', direccion: 'Calle 8 # 8-25 B/ Centro' },
+    { ciudad: 'Tuluá', nombre: 'Unidad de Salud Ocupacional', direccion: 'Carrera 39 # 24-22 B/ Alvernia' },
+    { ciudad: 'Cali', nombre: 'Unidad de Salud Ocupacional', direccion: 'Calle 23BN # 3N-52 B/ Versalles' },
+    { ciudad: 'Cartago', nombre: 'Salud Integral Vital Vida', direccion: 'Carrera 1 # 16-107 B/ La Isabella' },
+  ],
+  // Hora límite que se propone para enviar documentos (se puede cambiar en cada citación)
+  horaLimiteCitacion: '09:00',
+  // Mensaje de la citación (WhatsApp/correo). Entre llaves va lo que el panel reemplaza:
+  // {fecha_examen} {hora_examen} {ciudad} {centro} {direccion} {fecha_limite} {hora_limite} {link}
+  // {recomendaciones} (de examen.js) {coprologico} (de examen.js). *texto* = negrita en WhatsApp.
+  plantillaCitacion: `*¡Cordial saludo!*
+
+De acuerdo con el proceso que usted adelanta con la compañía *Supertiendas Cañaveral S.A.S.*, le compartimos la información para la toma del examen médico de ingreso y el link para enviar sus documentos.
+
+*Examen médico*
+*Fecha y hora:* {fecha_examen} - {hora_examen}
+*Ciudad:* {ciudad}
+*Lugar:* {centro} — {direccion}
+
+*Recomendaciones para el examen*
+{recomendaciones}
+*Coprológico:* {coprologico}
+
+*Documentos*
+Prepare y envíe sus documentos desde este link a más tardar el *{fecha_limite}* hasta las *{hora_limite}*:
+{link}
+Después de esa fecha el link deja de funcionar.
+
+Si necesita el certificado de manipulación de alimentos, una opción es http://carnetmanipulaciondealimentos.com/ (para cargos de carnes y proteínas, bajo el Decreto 1500: https://carnicos.laborschool.com).
+
+Quedamos atentos a cualquier inquietud.`,
 
   // Motivos de rechazo rápidos que salen como botones al rechazar un documento
   motivosRapidos: ['No se lee bien', 'No es el documento pedido', 'Está incompleto', 'Está vencido'],
@@ -1273,7 +1313,8 @@ async function eliminarDePapelera(raiz, item) {
 const ARCHIVO_AJUSTES = 'ajustes.json';
 /** Lo que se puede cambiar desde la pantalla Ajustes. */
 const CAMPOS_AJUSTABLES = ['checklistGH', 'motivosRapidos', 'diasAlerta', 'diasPapelera', 'tamanoMaximoGHMB', 'enlaceAppCandidato',
-  'diasManipulacionAprendiz', 'seccionesManipulacionAprendiz', 'nombreContratoAprendiz', 'sedes'];
+  'diasManipulacionAprendiz', 'seccionesManipulacionAprendiz', 'nombreContratoAprendiz', 'sedes',
+  'centrosMedicos', 'horaLimiteCitacion', 'plantillaCitacion'];
 /** Copia de los valores de fábrica (para "Restaurar valores de fábrica"). */
 const CONFIG_FABRICA = JSON.parse(JSON.stringify(Object.fromEntries(CAMPOS_AJUSTABLES.map((k) => [k, CONFIG[k]]))));
 /** Tipos de ítem del checklist, con su explicación para la pantalla Ajustes. */
@@ -1345,6 +1386,12 @@ function validarAjustes(v) {
     sedes: (Array.isArray(v.sedes) ? v.sedes : CONFIG_FABRICA.sedes)
       .filter((x) => x && String(x.nombre || '').trim())
       .map((x) => ({ nombre: String(x.nombre).trim().slice(0, 80), sector: String(x.sector || '').trim().slice(0, 60), ciudad: String(x.ciudad || '').trim().slice(0, 60) })),
+    // Citación
+    centrosMedicos: (Array.isArray(v.centrosMedicos) ? v.centrosMedicos : CONFIG_FABRICA.centrosMedicos)
+      .filter((x) => x && String(x.ciudad || '').trim())
+      .map((x) => ({ ciudad: String(x.ciudad).trim().slice(0, 60), nombre: String(x.nombre || '').trim().slice(0, 80), direccion: String(x.direccion || '').trim().slice(0, 120) })),
+    horaLimiteCitacion: /^\d{2}:\d{2}$/.test(String(v.horaLimiteCitacion || '')) ? v.horaLimiteCitacion : CONFIG_FABRICA.horaLimiteCitacion,
+    plantillaCitacion: String(v.plantillaCitacion || '').trim().slice(0, 4000) || CONFIG_FABRICA.plantillaCitacion,
   };
 }
 
@@ -1604,6 +1651,8 @@ async function analizarArchivo(item, raiz) {
     if (existente) r.avisos.push('Este candidato ya tiene carpeta: es un envío nuevo. Los archivos actuales se guardan en "_anteriores".');
     if (await estaEnPapelera(raiz, d.cedula)) r.avisos.push('Esta cédula está en la Papelera (la marcaron como no contratada hace poco).');
   }
+  // Citación (examen + plazo): avisa si el link no está registrado, fue alterado o llegó tarde (sección 6D)
+  if (!esCorreccion && !esAprendizZip && !r.errores.length) await revisarCitacionDelZip(r, raiz, item);
   r.tipo = r.errores.length ? 'invalido' : (esAprendizZip ? 'aprendiz' : esCorreccion ? 'correccion' : 'envio');
   return r;
 }
@@ -1676,6 +1725,7 @@ async function procesarZip(raiz, item, usuario) {
     correo: correoLimpio(d.correo) || expediente.correo || '',
     autorizacionDatos: d.autorizacionDatos || expediente.autorizacionDatos,
     documentos,
+    ...(analisis.citacion ? { citacion: analisis.citacion } : {}),
     envios: [...(expediente.envios || []), {
       zip: item.nombre, generado: d.generado || null,
       procesado: new Date().toISOString(), procesadoPor: usuario,
@@ -1693,6 +1743,105 @@ async function procesarZip(raiz, item, usuario) {
   await moverArchivo(item.handle, item.carpeta, procesados);
 
   return { esNuevo, nombre: d.nombre };
+}
+
+/* ==========================================================================
+   6D. CITACIÓN (examen médico + link con fecha límite)
+   --------------------------------------------------------------------------
+   GH arma UN mensaje genérico para un grupo de candidatos: fecha y hora del examen,
+   centro médico (de Ajustes) y fecha límite para enviar documentos. El link lleva todo
+   eso (contrato con la app, sección 7B de src/app.jsx):
+     <app>?cita=<base64url de { v: 1, k, e: "AAAA-MM-DDTHH:MM", l: "AAAA-MM-DDTHH:MM", ci, cn, cd }>
+   La app muestra la tarjeta del examen y deja de funcionar después de "l".
+   Cada citación queda en "citaciones.json" (carpeta Hojas de vida) para poder revisar
+   los paquetes: si el código no existe, si la fecha del link no coincide (alterado) o
+   si el paquete se armó o subió después del plazo, la bandeja lo avisa.
+   ========================================================================== */
+const ARCHIVO_CITACIONES = 'citaciones.json';
+
+/** Lista de citaciones registradas (la más nueva primero). */
+async function leerCitaciones(raiz) {
+  try {
+    if (!(await existe(raiz, ARCHIVO_CITACIONES))) return [];
+    const datos = JSON.parse(await (await (await raiz.getFileHandle(ARCHIVO_CITACIONES)).getFile()).text());
+    return Array.isArray(datos.lista) ? datos.lista : [];
+  } catch (e) {
+    console.warn('citaciones.json está dañado', e);
+    return [];
+  }
+}
+
+/** Agrega una citación al registro (guarda las últimas 500). */
+async function registrarCitacion(raiz, cita, usuario) {
+  const lista = await leerCitaciones(raiz);
+  const nueva = { ...cita, creado: new Date().toISOString(), por: usuario };
+  const archivo = { version: 1, lista: [nueva, ...lista.filter((x) => x.k !== cita.k)].slice(0, 500) };
+  await escribir(raiz, ARCHIVO_CITACIONES, JSON.stringify(archivo, null, 2));
+  return nueva;
+}
+
+/** "2026-11-20T09:00" (hora de Colombia) → Date. */
+function fechaDeCita(texto) {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(texto || ''))) return null;
+  const f = new Date(`${texto}:00-05:00`);
+  return Number.isNaN(f.getTime()) ? null : f;
+}
+
+/** "viernes 13 de noviembre de 2026" y "7:00 a. m." para el mensaje. */
+function partesDeCita(texto) {
+  const f = fechaDeCita(texto);
+  if (!f) return { fecha: '', hora: '' };
+  return {
+    fecha: f.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' }).replace(',', ''),
+    hora: f.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }),
+  };
+}
+
+/** Link de la citación para el mensaje. */
+function linkDeCitacion(cita) {
+  const datos = { v: 1, k: cita.k, e: cita.examen, l: cita.limite, ci: cita.ciudad, cn: cita.centro, cd: cita.direccion };
+  const base = CONFIG.enlaceAppCandidato || '';
+  return `${base}${base.includes('?') ? '&' : '?'}cita=${aBase64Url(JSON.stringify(datos))}`;
+}
+
+/** Arma el mensaje con la plantilla de Ajustes: reemplaza {fecha_examen}, {link}, etc. */
+function mensajeDeCitacion(cita, plantilla = CONFIG.plantillaCitacion) {
+  const ex = partesDeCita(cita.examen);
+  const li = partesDeCita(cita.limite);
+  const examen = window.EXAMEN || {};
+  const valores = {
+    fecha_examen: ex.fecha, hora_examen: ex.hora, ciudad: cita.ciudad || '', centro: cita.centro || '',
+    direccion: cita.direccion || '', fecha_limite: li.fecha, hora_limite: li.hora, link: linkDeCitacion(cita),
+    recomendaciones: (examen.recomendaciones || []).map((x) => `• ${x}`).join('\n'),
+    coprologico: (examen.cargosCoprologico || []).length
+      ? `${examen.textoCoprologico || ''} Aplica para: ${examen.cargosCoprologico.map((c) => c.charAt(0) + c.slice(1).toLowerCase()).join(', ')}.`
+      : '',
+  };
+  return String(plantilla || '').replace(/\{([a-z_]+)\}/g, (todo, clave) => (clave in valores ? valores[clave] : todo)).trim();
+}
+
+/**
+ * Revisa la citación que trae un paquete (la llama analizarArchivo). Solo avisa (no bloquea):
+ * el link general sigue sirviendo sin citación, así que un paquete sin citación es normal.
+ */
+async function revisarCitacionDelZip(r, raiz, item) {
+  const c = r.datos.citacion;
+  if (!c || typeof c !== 'object') return;
+  const registrada = (await leerCitaciones(raiz)).find((x) => x.k === c.codigo);
+  r.citacion = { ...c, registrada: !!registrada };
+  if (!registrada) {
+    r.avisos.push('Viene de un link de citación que no está registrado en este panel: revisa que el link no haya sido alterado.');
+    return;
+  }
+  if (registrada.limite !== c.limite || registrada.examen !== c.examen) {
+    r.avisos.push(`La fecha del link no coincide con la citación que se envió (límite real: ${partesDeCita(registrada.limite).fecha}, ${partesDeCita(registrada.limite).hora}): el link pudo ser alterado.`);
+  }
+  const limite = fechaDeCita(registrada.limite);
+  const generado = r.datos.generado ? new Date(r.datos.generado) : null;
+  const subido = item && item.fecha ? new Date(item.fecha) : null;
+  if (limite && ((generado && generado > limite) || (subido && subido > limite))) {
+    r.avisos.push(`Llegó después del plazo de la citación (${partesDeCita(registrada.limite).fecha}, ${partesDeCita(registrada.limite).hora}).`);
+  }
 }
 
 /* ==========================================================================
@@ -2743,6 +2892,7 @@ function BarraLateral({ vista, setVista, pendientes, totalCandidatos, enPapelera
       <Item id="candidatos" icono="personas" texto="Candidatos" cifra={0} />
       <Item id="listos" icono="listo" texto="Listos" cifra={0} />
       <Item id="aprendices" icono="personas" texto="Aprendices" cifra={aprendicesPorAtender} />
+      <Item id="citacion" icono="historial" texto="Citación" cifra={0} />
       <Item id="papelera" icono="papelera" texto="Papelera" cifra={enPapelera} />
       <Item id="ajustes" icono="ajustes" texto="Ajustes" cifra={0} />
       <div className="lateral-pie">
@@ -2828,7 +2978,7 @@ function FilaBandeja({ item, onProcesar, procesando }) {
         {d && tipo !== 'invalido' && (
           <span className="fila-sub">
             <span className="numeros">{siglaDocumento(d.tipoDocumento)} {d.cedula}</span>{d.cargo ? ` — ${d.cargo}` : ''}{d.seccion ? `, ${d.seccion}` : ''}
-            {d.primerEmpleo ? ' — primer empleo' : ''}{tipo === 'correccion' ? ` — corrección ${a.numeroCorreccion}` : ''}{tipo === 'aprendiz' ? ` — aprendiz, solicitud ${a.numeroSolicitud}` : ''}
+            {d.primerEmpleo ? ' — primer empleo' : ''}{tipo === 'correccion' ? ` — corrección ${a.numeroCorreccion}` : ''}{tipo === 'aprendiz' ? ` — aprendiz, solicitud ${a.numeroSolicitud}` : ''}{a && a.citacion ? ` — citación: examen ${partesDeCita(a.citacion.examen).fecha} (${a.citacion.ciudad})` : ''}
           </span>
         )}
         <span className="fila-pista">
@@ -2971,6 +3121,163 @@ function FilaCandidato({ c, onAbrir, usuario }) {
         {e && !cerrado && <><strong>{dias === 0 ? 'Hoy' : dias.toLocaleString('es-CO')}</strong><span>{dias === 0 ? 'llegó' : dias === 1 ? 'día' : 'días'}</span></>}
       </div>
     </div>
+  );
+}
+
+/* ---------- Citación: examen médico + link con fecha límite (sección 6D) ---------- */
+
+/** "2026-11-13" de hoy + n días (hora del computador). */
+function diaMas(n) {
+  const f = new Date(Date.now() + n * MS_POR_DIA);
+  return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Arma el mensaje genérico de la citación para un grupo: fecha y hora del examen, centro
+ * médico y fecha límite para enviar documentos. Al copiarlo o enviarlo queda registrado en
+ * citaciones.json (así la bandeja puede revisar los paquetes que lleguen con ese link).
+ */
+function Citacion({ raiz, usuario, avisar }) {
+  const centros = CONFIG.centrosMedicos || [];
+  const [f, setF] = useState({ centro: 0, fechaExamen: diaMas(1), horaExamen: '07:00', fechaLimite: diaMas(3), horaLimite: CONFIG.horaLimiteCitacion || '09:00' });
+  const [codigo, setCodigo] = useState(codigoAleatorio);   // código del link que se está armando
+  const [registrada, setRegistrada] = useState(false);     // ¿este link ya quedó en citaciones.json?
+  const [historial, setHistorial] = useState([]);
+  const poner = (campo, valor) => { setF((x) => ({ ...x, [campo]: valor })); setCodigo(codigoAleatorio()); setRegistrada(false); };
+  const leer = useCallback(async () => setHistorial(await leerCitaciones(raiz)), [raiz]);
+  useEffect(() => { leer(); }, [leer]);
+
+  const centro = centros[f.centro] || null;
+  const cita = centro && f.fechaExamen && f.horaExamen && f.fechaLimite && f.horaLimite ? {
+    k: codigo, examen: `${f.fechaExamen}T${f.horaExamen}`, limite: `${f.fechaLimite}T${f.horaLimite}`,
+    ciudad: centro.ciudad, centro: centro.nombre, direccion: centro.direccion,
+  } : null;
+  const limite = cita && fechaDeCita(cita.limite);
+  const problema = !centros.length ? 'No hay centros médicos: agrégalos en Ajustes.'
+    : !cita ? 'Completa la fecha y hora del examen y la fecha límite.'
+    : limite <= new Date() ? 'La fecha límite ya pasó: elige una fecha futura.'
+    : null;
+  const aviso = cita && !problema && fechaDeCita(cita.examen) < new Date() ? 'Ojo: la fecha del examen ya pasó.' : null;
+  const mensaje = cita ? mensajeDeCitacion(cita) : '';
+  const listo = !!cita && !problema;
+
+  async function registrarSiFalta(c = cita) {
+    if (registrada && c === cita) return true;
+    try {
+      await registrarCitacion(raiz, c, usuario);
+      if (c === cita) setRegistrada(true);
+      await leer();
+      return true;
+    } catch (e) {
+      avisar(`No se pudo registrar la citación: ${e.message}`, 'error');
+      return false;
+    }
+  }
+  async function copiarTexto(texto, c = cita) {
+    try { await navigator.clipboard.writeText(texto); }
+    catch (e) { avisar('No se pudo copiar automáticamente: selecciona el texto y cópialo a mano', 'error'); return; }
+    if (await registrarSiFalta(c)) avisar('Copiado. La citación quedó registrada.');
+  }
+  const alEnviar = (ev) => { if (!listo) { ev.preventDefault(); return; } registrarSiFalta(); };
+  /** Desde el historial: volver a armar una citación igual, con otra fecha límite. */
+  function usarDeBase(c) {
+    const i = centros.findIndex((x) => x.ciudad === c.ciudad && x.nombre === c.centro);
+    setF({ centro: i >= 0 ? i : 0, fechaExamen: c.examen.slice(0, 10), horaExamen: c.examen.slice(11, 16),
+           fechaLimite: diaMas(2), horaLimite: c.limite.slice(11, 16) });
+    setCodigo(codigoAleatorio()); setRegistrada(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  return (
+    <>
+      <header className="encabezado">
+        <div>
+          <h1>Citación</h1>
+          <p>Mensaje para el examen médico con el link para enviar documentos. El link deja de funcionar después de la fecha límite.</p>
+        </div>
+      </header>
+
+      <div className="citacion">
+        <section className="grupo">
+          <h3 className="grupo-titulo">Examen médico</h3>
+          <div className="tarjeta formulario">
+            <div className="fila-campo ancho">
+              <label htmlFor="cita-centro">Ciudad y centro médico</label>
+              <select id="cita-centro" value={f.centro} onChange={(e) => poner('centro', Number(e.target.value))}>
+                {centros.map((c, i) => <option key={i} value={i}>{c.ciudad} — {c.nombre}</option>)}
+              </select>
+              {centro && <span className="nota-campo">{centro.direccion}</span>}
+            </div>
+            <div className="fila-campo">
+              <label htmlFor="cita-fecha">Fecha del examen</label>
+              <input id="cita-fecha" type="date" value={f.fechaExamen} onChange={(e) => poner('fechaExamen', e.target.value)} />
+            </div>
+            <div className="fila-campo">
+              <label htmlFor="cita-hora">Hora</label>
+              <input id="cita-hora" type="time" value={f.horaExamen} onChange={(e) => poner('horaExamen', e.target.value)} />
+            </div>
+          </div>
+
+          <h3 className="grupo-titulo" style={{ marginTop: 18 }}>Plazo para enviar documentos</h3>
+          <div className="tarjeta formulario">
+            <div className="fila-campo">
+              <label htmlFor="cita-limite">Fecha límite</label>
+              <input id="cita-limite" type="date" value={f.fechaLimite} onChange={(e) => poner('fechaLimite', e.target.value)} />
+            </div>
+            <div className="fila-campo">
+              <label htmlFor="cita-hora-limite">Hasta las</label>
+              <input id="cita-hora-limite" type="time" value={f.horaLimite} onChange={(e) => poner('horaLimite', e.target.value)} />
+            </div>
+          </div>
+          {problema && <div className="alerta aviso">{problema}</div>}
+          {aviso && <div className="alerta aviso">{aviso}</div>}
+          <p className="nota-seccion">El texto del mensaje y los centros médicos se cambian en Ajustes. Las recomendaciones del examen están en examen.js.</p>
+        </section>
+
+        <section className="grupo">
+          <h3 className="grupo-titulo">Mensaje</h3>
+          <pre className="tarjeta mensaje-cita" aria-label="Mensaje de la citación">{mensaje || '—'}</pre>
+          <div className="acciones-hoja">
+            <button className="boton boton-principal" disabled={!listo} onClick={() => copiarTexto(mensaje)}>Copiar mensaje</button>
+            <a className="boton boton-secundario" aria-disabled={!listo} onClick={alEnviar}
+               href={listo ? `https://wa.me/?text=${encodeURIComponent(mensaje)}` : undefined} target="_blank" rel="noopener noreferrer">Abrir WhatsApp</a>
+            <a className="boton boton-secundario" aria-disabled={!listo} onClick={alEnviar}
+               href={listo ? `mailto:?subject=${encodeURIComponent('Examen médico y documentos de ingreso — Supertiendas Cañaveral')}&body=${encodeURIComponent(mensaje)}` : undefined}>Abrir correo</a>
+            <button className="boton boton-secundario" disabled={!listo} onClick={() => copiarTexto(linkDeCitacion(cita))}>Copiar solo el link</button>
+          </div>
+          <p className="nota-seccion">{registrada
+            ? 'Esta citación quedó registrada: los paquetes que lleguen con su link se revisan en la bandeja.'
+            : 'Al copiar o enviar, la citación queda registrada. El mismo mensaje sirve para todo el grupo.'}</p>
+        </section>
+      </div>
+
+      <section className="grupo">
+        <h3 className="grupo-titulo">Citaciones enviadas</h3>
+        <div className="tarjeta">
+          {!historial.length ? <div className="vacio"><p>Aún no se ha enviado ninguna citación.</p></div>
+            : historial.slice(0, 30).map((c) => {
+              const vencida = fechaDeCita(c.limite) <= new Date();
+              const ex = partesDeCita(c.examen);
+              const li = partesDeCita(c.limite);
+              return (
+                <div className="fila" key={c.k}>
+                  <div className={`icono-caja ${vencida ? '' : 'ojo'}`}><Icono nombre="historial" /></div>
+                  <div className="fila-texto">
+                    <span className="fila-titulo">Examen {ex.fecha}, {ex.hora} — {c.ciudad}</span>
+                    <span className="fila-sub">{vencida ? 'Venció' : 'Vigente hasta'} el {li.fecha}, {li.hora}</span>
+                    <span className="fila-pista">Creada por {c.por || '—'}, {fechaCorta(c.creado)} — código {c.k}</span>
+                  </div>
+                  <div className="fila-lado" style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {!vencida && <button className="boton boton-suave" onClick={() => copiarTexto(mensajeDeCitacion(c), c)}>Copiar mensaje</button>}
+                    <button className="boton boton-secundario" onClick={() => usarDeBase(c)}>{vencida ? 'Reenviar con nueva fecha' : 'Usar de base'}</button>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+        <p className="grupo-pie">Si a alguien se le venció el plazo, toca “Reenviar con nueva fecha”: se arma un link nuevo con el mismo examen.</p>
+      </section>
+    </>
   );
 }
 
@@ -3290,6 +3597,9 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado, onEdita
                                   onClick={() => onEditarAprendiz({ ...c, expediente: exp })}>Editar datos o eliminar</button></span>
                   )}
                 </span>
+              )}
+              {exp.citacion && (
+                <span className="fila-sub">Examen médico: <strong>{partesDeCita(exp.citacion.examen).fecha}, {partesDeCita(exp.citacion.examen).hora}</strong> — {exp.citacion.ciudad}{exp.citacion.centro ? `, ${exp.citacion.centro}` : ''}{exp.citacion.registrada === false ? ' (link no registrado)' : ''}</span>
               )}
               {(exp.celular || exp.correo) && (
                 <span className="contacto">
@@ -3811,6 +4121,42 @@ function Ajustes({ info, onGuardar, onRecargar, cargando }) {
       </section>
 
       <section className="grupo">
+        <h3 className="grupo-titulo">Centros médicos (para la citación al examen)</h3>
+        <div className="tarjeta">
+          {borrador.centrosMedicos.map((x, i) => (
+            <div className="ajuste-item sede" key={i}>
+              <input className="campo-ajuste" value={x.ciudad} maxLength={60} placeholder="Ciudad, ej. Cali"
+                     aria-label={`Ciudad del centro ${i + 1}`} onChange={(e) => poner('centrosMedicos', borrador.centrosMedicos.map((c, j) => (j === i ? { ...c, ciudad: e.target.value } : c)))} />
+              <input className="campo-ajuste" value={x.nombre} maxLength={80} placeholder="Nombre del centro médico"
+                     aria-label={`Nombre del centro ${i + 1}`} onChange={(e) => poner('centrosMedicos', borrador.centrosMedicos.map((c, j) => (j === i ? { ...c, nombre: e.target.value } : c)))} />
+              <input className="campo-ajuste" value={x.direccion} maxLength={120} placeholder="Dirección y barrio"
+                     aria-label={`Dirección del centro ${i + 1}`} onChange={(e) => poner('centrosMedicos', borrador.centrosMedicos.map((c, j) => (j === i ? { ...c, direccion: e.target.value } : c)))} />
+              <button className="boton boton-texto peligro" onClick={() => poner('centrosMedicos', borrador.centrosMedicos.filter((_, j) => j !== i))}>Quitar</button>
+            </div>
+          ))}
+          <div className="ajuste-item sin-tipo">
+            <button className="boton boton-suave" onClick={() => poner('centrosMedicos', [...borrador.centrosMedicos, { ciudad: '', nombre: '', direccion: '' }])}>Agregar centro médico</button>
+          </div>
+        </div>
+        <p className="grupo-pie">Los centros sin ciudad no se guardan. La dirección sale en el mensaje y en la app del candidato (con “Ver en el mapa”).</p>
+      </section>
+
+      <section className="grupo">
+        <h3 className="grupo-titulo">Mensaje de la citación</h3>
+        <div className="tarjeta fila-campo">
+          <label htmlFor="plantilla-cita">Texto que se envía (lo que va entre llaves lo llena el panel)</label>
+          <textarea id="plantilla-cita" rows={16} value={borrador.plantillaCitacion} style={{ width: '100%', fontFamily: 'inherit', fontSize: 14 }}
+                    onChange={(e) => poner('plantillaCitacion', e.target.value)} />
+        </div>
+        <p className="grupo-pie">Puedes usar: {'{fecha_examen} {hora_examen} {ciudad} {centro} {direccion} {fecha_limite} {hora_limite} {link} {recomendaciones} {coprologico}'}.
+          No borres {'{link}'}: es por donde el candidato envía sus documentos. *texto* sale en negrita en WhatsApp.</p>
+        <div className="tarjeta fila-campo" style={{ marginTop: 10 }}>
+          <label htmlFor="hora-limite">Hora límite que se propone para enviar documentos</label>
+          <input id="hora-limite" type="time" value={borrador.horaLimiteCitacion} onChange={(e) => poner('horaLimiteCitacion', e.target.value)} />
+        </div>
+      </section>
+
+      <section className="grupo">
         <h3 className="grupo-titulo">App del candidato</h3>
         <div className="tarjeta fila-campo">
           <label htmlFor="enlace-app">Dirección de la app (va en los mensajes de corrección)</label>
@@ -4319,7 +4665,7 @@ function DialogoNombre({ actual, onGuardar, onCancelar }) {
  * Versión del panel. CÁMBIALA cada vez que subas un cambio a este archivo (fecha y un número).
  * El panel abierto compara su versión con la publicada y, si hay una más nueva, avisa que hay que recargar.
  */
-const VERSION_PANEL = '2026-11-12.4';
+const VERSION_PANEL = '2026-11-13.1';
 
 /** Revisa cada 5 minutos (y al volver a la pestaña) si se publicó una versión más nueva del panel. */
 function useVersionNueva() {
@@ -4709,6 +5055,7 @@ function App() {
                       onInscribir={() => setInscribiendo(true)}
                       onAccion={(c, x) => setSolicitud({ carpeta: c.carpeta, exp: c.expediente, solicitud: x.solicitud, registrada: !!x.registrada })} />
         )}
+        {vista === 'citacion' && <Citacion raiz={raiz} usuario={usuario} avisar={avisar} />}
         {vista === 'papelera' && (
           <Papelera lista={papelera} cargando={cargando} ocupado={ocupado} onRecargar={() => recargar()}
                     onRecuperar={recuperarCandidato} onEliminar={pedirEliminar} />

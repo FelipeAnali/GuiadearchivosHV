@@ -35,7 +35,9 @@
                              El mismo modo sirve para los APRENDICES SENA (link versión 2):
                              suben solo los documentos que se les piden.
                              Contrato del link y del ZIP con el panel (panel-gh.html).
-     8. ARRANQUE             Abre el envío normal o el modo corrección según la dirección.
+     7B. CITACIÓN            Link ?cita=... que arma el panel (examen médico + plazo para enviar
+                             documentos): tarjeta del examen y link que VENCE en la fecha límite.
+     8. ARRANQUE             Abre el envío normal, la citación o el modo corrección según la dirección.
 
    PALABRAS QUE SE REPITEN
      sesion   Todo el avance del candidato: { datos, archivos, expira, ... } (ver sesionNueva).
@@ -250,6 +252,13 @@ function documentoCompleto(doc, archivos) {
 }
 
 /** Texto de ayuda del documento; cambia para puestos bajo Decreto 1500. */
+/** Link de ayuda del documento: el de Decreto 1500 si el cargo lo pide y existe; si no, el normal. */
+function enlaceDelDocumento(doc, datos) {
+  const puesto = buscarPuesto(datos.cargo, datos.seccion);
+  if (doc.enlaceAyudaDecreto1500 && puesto && puesto.manipulacion === 'decreto1500') return doc.enlaceAyudaDecreto1500;
+  return doc.enlaceAyuda;
+}
+
 function ayudaDelDocumento(doc, datos) {
   const puesto = buscarPuesto(datos.cargo, datos.seccion);
   if (doc.ayudaDecreto1500 && puesto && puesto.manipulacion === 'decreto1500') return doc.ayudaDecreto1500;
@@ -665,6 +674,7 @@ async function armarZip(sesion) {
 
   zip.file('datos_candidato.json', JSON.stringify({
     version: 1,
+    ...(CITA ? { citacion: citacionParaZip() } : {}),
     tipoDocumento: datos.tipoDocumento || 'CC',
     cedula: datos.cedula,
     nombre: datos.nombre,
@@ -1097,6 +1107,8 @@ function PantallaInicio({ alComenzar, guardadoDisponible, avisoInicial }) {
           </p>
         </div>
 
+        <AvisoPlazo />
+        <TarjetaExamen />
         <AyudaMovil />
 
         {/* Primera pregunta: si es su primer empleo no se le pide el certificado de pensión */}
@@ -1595,6 +1607,8 @@ function PantallaDocumentos({ sesion, alAgregar, alQuitar, alEditarDatos, alCont
       <main className="contenido">
         <h1>Tus documentos</h1>
         <p className="bajada">Sube cada uno en PDF (la foto como imagen). Puedes saltar alguno y volver después.</p>
+        <AvisoPlazo />
+        <TarjetaExamen cargo={sesion.datos.cargo} />
         <AyudaMovil />
 
         <section className="grupo">
@@ -1621,7 +1635,7 @@ function PantallaDocumentos({ sesion, alAgregar, alQuitar, alEditarDatos, alCont
           <h2 className="grupo-titulo">Documentos</h2>
           <div className="lista">
             {docs.map((doc, i) => (
-              <TarjetaDocumento key={doc.id} doc={doc} posicion={i + 1}
+              <TarjetaDocumento key={doc.id} doc={{ ...doc, enlaceAyuda: enlaceDelDocumento(doc, sesion.datos) }} posicion={i + 1}
                                 ayuda={ayudaDelDocumento(doc, sesion.datos)}
                                 archivos={sesion.archivos[doc.id] || []}
                                 cedula={sesion.datos.cedula} todosLosArchivos={sesion.archivos}
@@ -1664,6 +1678,7 @@ function PantallaEnvio({ sesion, alVolver, alTerminar, nombreZip: nombreZipFijo,
 
   /** Arma el ZIP y lo descarga. */
   async function descargar() {
+    if (citaVencida()) { setError('Ya pasó la fecha límite de este link y no se puede enviar el paquete. Comunícate con Gestión Humana.'); return; }
     setArmando(true);
     setError(null);
     try {
@@ -1684,6 +1699,7 @@ function PantallaEnvio({ sesion, alVolver, alTerminar, nombreZip: nombreZipFijo,
       <main className="contenido">
         <h1>Revisa y envía</h1>
         <p className="bajada">Tienes todos los documentos. Solo faltan dos pasos.</p>
+        <AvisoPlazo />
         <AvisoNavegadorApp />
         <AyudaMovil />
 
@@ -2086,6 +2102,7 @@ function AvisoSalir({ guardaAvance, alQuedarse }) {
 }
 
 function App() {
+  const vencida = useCitaVencida(); // link de citación cuya fecha límite ya pasó (sección 7B)
   const [cargando, setCargando] = useState(true);
   const [sesion, setSesion] = useState(null);
   const [pantalla, setPantalla] = useState('inicio'); // inicio | datos | documentos | envio | final
@@ -2237,6 +2254,7 @@ function App() {
   function cambiarModoPrueba(modo) {
     // "Corrección" abre el modo corrección con un link de ejemplo (sección 7)
     if (modo === 'correccion' || modo === 'aprendiz') { abrirCorreccionDeEjemplo(modo); return; }
+    if (modo === 'cita' || modo === 'cita_vencida') { abrirCitaDeEjemplo(modo === 'cita_vencida'); return; }
     setModoPrueba(modo);
     if (modo === 'normal') { setSesion(null); setPantalla('inicio'); return; }
     setSesion(sesionDePrueba(modo));
@@ -2249,6 +2267,7 @@ function App() {
   const mostrarAvance = ['documentos', 'envio'].includes(pantalla);
 
   if (cargando) return null;
+  if (vencida && pantalla !== 'final') return <div className="app"><PantallaCitaVencida /></div>;
 
   return (
     <div className="app">
@@ -2299,7 +2318,8 @@ function App() {
 
       {MODO_PRUEBA && (
         <div className="selector-prueba" aria-label="Datos de prueba">
-          {[['normal', 'Normal'], ['extremo', 'Caso extremo'], ['vacio', 'Vacío'], ['correccion', 'Corrección'], ['aprendiz', 'Aprendiz']].map(([valor, texto]) => (
+          {[['normal', 'Normal'], ['extremo', 'Caso extremo'], ['vacio', 'Vacío'], ['correccion', 'Corrección'], ['aprendiz', 'Aprendiz'],
+            ['cita', 'Citación'], ['cita_vencida', 'Citación vencida']].map(([valor, texto]) => (
             <button key={valor} type="button" className={modoPrueba === valor ? 'activo' : ''}
                     onClick={() => cambiarModoPrueba(valor)}>{texto}</button>
           ))}
@@ -2973,6 +2993,178 @@ function ListaNoCargo() {
 }
 
 /* ============================================================================
+   7B. CITACIÓN: examen médico y plazo para enviar los documentos (?cita=...)
+   ----------------------------------------------------------------------------
+   Gestión Humana arma en su panel ("Citación") un mensaje genérico para un grupo de
+   candidatos: fecha y hora del examen médico, centro médico y FECHA LÍMITE para enviar
+   los documentos. El link de ese mensaje es esta misma página con ?cita=<código>.
+     - Antes de la fecha límite: funciona como el envío normal y además muestra la tarjeta
+       "Tu examen médico" (lo que antes iba en el PDF anexo) y el plazo.
+     - Después de la fecha límite: solo muestra "Este link ya no funciona" (no deja enviar).
+   El link general (sin ?cita) sigue funcionando como respaldo.
+
+   Contrato con el panel (no cambiar sin cambiar también panel-gh.html, sección 6D):
+     código = JSON → UTF-8 → base64url sin "="
+     JSON   = { v: 1, k: "<código único>", e: "AAAA-MM-DDTHH:MM" (examen), l: "AAAA-MM-DDTHH:MM" (límite),
+                ci: "<ciudad>", cn: "<centro médico>", cd: "<dirección>" }   (horas de Colombia)
+     El ZIP lleva "citacion": { codigo, examen, limite, ciudad, centro } para que el panel la revise.
+   Las recomendaciones del examen están en examen.js (las comparte con el panel).
+   ============================================================================ */
+
+/** Código del link de citación (?cita=...) o null. */
+const CODIGO_CITA = new URLSearchParams(location.search).get('cita');
+
+/** Fecha y hora de Colombia ("2026-11-20T09:00") → Date. null si no es válida. */
+function fechaColombia(texto) {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(texto || ''))) return null;
+  const fecha = new Date(`${texto}:00-05:00`);
+  return Number.isNaN(fecha.getTime()) ? null : fecha;
+}
+
+/** Lee el link de citación. Devuelve { codigo, examen, limite, ciudad, centro, direccion } o null si está dañado. */
+function leerLinkCita(codigo) {
+  try {
+    const d = JSON.parse(desdeBase64Url(codigo));
+    if (!d || d.v !== 1) return null;
+    const examen = fechaColombia(d.e);
+    const limite = fechaColombia(d.l);
+    if (!limite || !/^[A-Z0-9]{6,20}$/.test(String(d.k || ''))) return null;
+    const limpio = (x, n) => String(x || '').replace(/[<>]/g, '').trim().slice(0, n);
+    return {
+      codigo: d.k, examen, limite, textoExamen: d.e || '', textoLimite: d.l,
+      ciudad: limpio(d.ci, 60), centro: limpio(d.cn, 80), direccion: limpio(d.cd, 120),
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+const CITA = CODIGO_CITA !== null ? leerLinkCita(CODIGO_CITA) : null;
+
+/** "viernes 20 de noviembre, 9:00 a. m." */
+function fechaHoraLegible(fecha, conAnio = false) {
+  if (!fecha) return '';
+  const dia = fecha.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', ...(conAnio ? { year: 'numeric' } : {}), timeZone: 'America/Bogota' });
+  const hora = fecha.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
+  return `${dia}, ${hora.replace(/\s/g, '\u00a0')}`; // "a. m." sin partirse en dos líneas
+}
+
+/** ¿Ya pasó la fecha límite de la citación? */
+function citaVencida() {
+  return !!CITA && Date.now() > CITA.limite.getTime();
+}
+
+/** Vuelve a revisar el plazo cada 30 segundos (por si vence mientras el candidato está en la página). */
+function useCitaVencida() {
+  const [vencida, setVencida] = useState(citaVencida);
+  useEffect(() => {
+    if (!CITA) return undefined;
+    const reloj = setInterval(() => setVencida(citaVencida()), 30000);
+    return () => clearInterval(reloj);
+  }, []);
+  return vencida;
+}
+
+/** ¿El cargo necesita coprológico? (lista en examen.js; basta con que el cargo contenga el nombre) */
+function cargoPideCoprologico(cargo) {
+  const lista = (window.EXAMEN && window.EXAMEN.cargosCoprologico) || [];
+  const c = normalizar(cargo || '');
+  return !!c && lista.some((x) => c.includes(normalizar(x)));
+}
+
+/** Pantalla cuando ya pasó la fecha límite del link. */
+function PantallaCitaVencida() {
+  return (
+    <main className="contenido final cita-vencida" role="alert">
+      <img className="carga-logo" src={LOGO} alt="Supertiendas Cañaveral" />
+      <div className="final-icono vencido" aria-hidden="true">!</div>
+      <h1>¡Gracias por tu interés!</h1>
+      <p className="bajada">
+        Este link ya no funciona porque pasó la fecha límite para enviar tus documentos
+        {CITA ? <> (<strong>{fechaHoraLegible(CITA.limite, true)}</strong>)</> : ''}.
+      </p>
+      <div className="aviso aviso-alerta">
+        Si todavía deseas enviar tus documentos, comunícate con <strong>Gestión Humana</strong>
+        {CONFIG.contactoGestionHumana ? <> ({CONFIG.contactoGestionHumana})</> : ''} para que te envíen un link nuevo.
+      </div>
+    </main>
+  );
+}
+
+/** Aviso del plazo: "Tienes hasta el viernes 20 de noviembre, 9:00 a. m." */
+function AvisoPlazo() {
+  if (!CITA) return null;
+  const horas = (CITA.limite.getTime() - Date.now()) / 3600000;
+  return (
+    <div className={`aviso aviso-plazo ${horas < 24 ? 'urgente' : ''}`} role="status">
+      <strong>Tienes plazo hasta el {fechaHoraLegible(CITA.limite)} para enviar tus documentos.</strong>{' '}
+      Después de esa fecha este link deja de funcionar.
+    </div>
+  );
+}
+
+/**
+ * Tarjeta "Tu examen médico" (de otro color): fecha, hora, centro y dirección, más las
+ * recomendaciones de examen.js. cargo (opcional): si ya se sabe, dice si le toca coprológico.
+ */
+function TarjetaExamen({ cargo }) {
+  const [abierta, setAbierta] = useState(false);
+  if (!CITA || !CITA.examen) return null;
+  const ex = window.EXAMEN || {};
+  const recomendaciones = ex.recomendaciones || [];
+  const conCopro = cargo ? cargoPideCoprologico(cargo) : null; // null = aún no sabemos el cargo
+  const mapa = CITA.direccion
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${CITA.direccion}, ${CITA.ciudad}, Colombia`)}`
+    : '';
+  return (
+    <section className="tarjeta-examen" aria-label={ex.titulo || 'Tu examen médico'}>
+      <div className="examen-cabeza">
+        <span className="examen-icono" aria-hidden="true">+</span>
+        <div>
+          <div className="examen-titulo">{ex.titulo || 'Tu examen médico de ingreso'}</div>
+          <div className="examen-cuando">{fechaHoraLegible(CITA.examen)}</div>
+        </div>
+      </div>
+      {(CITA.centro || CITA.ciudad) && (
+        <div className="examen-lugar">
+          <strong>{CITA.ciudad}{CITA.centro ? ` — ${CITA.centro}` : ''}</strong>
+          {CITA.direccion && <span>{CITA.direccion}</span>}
+          {mapa && <a href={mapa} target="_blank" rel="noopener noreferrer">Ver en el mapa</a>}
+        </div>
+      )}
+      {conCopro === true && <p className="examen-copro"><strong>Tu cargo requiere coprológico.</strong> {ex.textoCoprologico}</p>}
+      <button type="button" className="examen-mas" aria-expanded={abierta} onClick={() => setAbierta(!abierta)}>
+        {abierta ? 'Ocultar recomendaciones' : `Ver recomendaciones (${recomendaciones.length})`}
+      </button>
+      {abierta && (
+        <div className="examen-detalle">
+          <ul>{recomendaciones.map((r) => <li key={r}>{r}</li>)}</ul>
+          {conCopro === null && (ex.cargosCoprologico || []).length > 0 && (
+            <p className="examen-copro"><strong>Coprológico (solo algunos cargos):</strong> {ex.textoCoprologico}{' '}
+              Aplica para: {ex.cargosCoprologico.map((c) => c.charAt(0) + c.slice(1).toLowerCase()).join(', ')}.</p>
+          )}
+          {(ex.notas || []).map((n) => <p key={n} className="examen-nota">{n}</p>)}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Solo modo prueba: abre un link de citación de ejemplo (vigente o ya vencido). */
+function abrirCitaDeEjemplo(vencida) {
+  const dia = (n) => { const f = new Date(Date.now() + n * 86400000); return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`; };
+  const datos = { v: 1, k: 'PRUEBA2026', e: `${dia(vencida ? -3 : 2)}T07:00`, l: `${dia(vencida ? -1 : 5)}T09:00`,
+                  ci: 'Cali', cn: 'Unidad de Salud Ocupacional', cd: 'Calle 23BN # 3N-52 B/ Versalles' };
+  location.href = `${location.pathname}?prueba=1&cita=${aBase64Url(JSON.stringify(datos))}`;
+}
+
+/** Lo que va en datos_candidato.json cuando el envío viene de un link de citación. */
+function citacionParaZip() {
+  if (!CITA) return null;
+  return { codigo: CITA.codigo, examen: CITA.textoExamen, limite: CITA.textoLimite, ciudad: CITA.ciudad, centro: CITA.centro };
+}
+
+/* ============================================================================
    8. ARRANQUE
    ----------------------------------------------------------------------------
    Sin ?c= en la dirección → envío normal (App). Con ?c= válido → modo corrección.
@@ -2981,6 +3173,11 @@ function ListaNoCargo() {
 function Arranque() {
   // Sin la lista de documentos (documentos.js no cargó) no se abre: el candidato podría mandar un paquete vacío
   if (!CONFIG.documentos || CONFIG.documentos.length === 0) return <ListaNoCargo />;
+  if (CODIGO_CITA !== null) {
+    if (!CITA) return <EnlaceCorreccionDanado />;
+    if (citaVencida()) return <div className="app"><PantallaCitaVencida /></div>;
+    return <App />;
+  }
   if (CODIGO_CORRECCION === null) return <App />;
   if (!CORRECCION) return <EnlaceCorreccionDanado />;
   return <AppCorreccion correccion={CORRECCION} />;

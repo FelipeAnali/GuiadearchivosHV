@@ -78,6 +78,9 @@ window.DOCUMENTOS = [
     { id: 'manipulacion', codigo: '04', nombre: 'Certificado de manipulación de alimentos', nombreCorto: 'Manipulación de alimentos', paraAprendiz: true,
       ayuda: 'Vigente y con mínimo 10 horas de formación.',
       ayudaDecreto1500: 'Vigente y bajo el Decreto 1500 de 2007. Es obligatorio para tu cargo.',
+      // ¿No lo tiene? Una opción para sacarlo (página externa). La de Decreto 1500 es para cargos de carnes y proteínas.
+      enlaceAyuda: { texto: '¿No lo tienes? Una opción para sacarlo', url: 'http://carnetmanipulaciondealimentos.com/' },
+      enlaceAyudaDecreto1500: { texto: '¿No lo tienes? Una opción (Decreto 1500)', url: 'https://carnicos.laborschool.com' },
       requerido: 'segunCargo',
       revision: {
         nombreArchivo: ['MANIPULA', 'ALIMENTO', 'INOCUIDAD'], ejemploNombre: 'manipulacion_alimentos.pdf',
