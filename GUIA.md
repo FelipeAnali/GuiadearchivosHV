@@ -122,6 +122,9 @@ Si usas otro nombre, cambia también `enlaceManual` en la CONFIGURACIÓN.
 2. En `index.html` busca `enlaceManualAprendiz` y pon: `enlaceManualAprendiz: 'manual/Manual_aprendiz_Documentos_de_ingreso.pdf',`
 3. Mientras `enlaceManualAprendiz` esté vacío (`''`), los aprendices ven el manual general.
 
+Hoy ya está conectado. Para cambiarlo, reemplaza el PDF con el mismo nombre. Lo ven los aprendices en su link
+y también cuando Gestión Humana le pide una corrección a un aprendiz.
+
 ## 7B. Aprendices SENA
 
 Los aprendices **no** usan el link normal. Gestión Humana los inscribe en el panel (**Aprendices → Inscribir**:

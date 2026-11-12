@@ -956,7 +956,7 @@ function AvisoNavegadorApp() {
  * (y CONFIG.enlaceManualAprendiz tiene un PDF); si no, el manual general.
  */
 function manualDelCandidato() {
-  return (CORRECCION && CORRECCION.tipo === 'aprendiz' && CONFIG.enlaceManualAprendiz) || CONFIG.enlaceManual;
+  return (CORRECCION && CORRECCION.esAprendiz && CONFIG.enlaceManualAprendiz) || CONFIG.enlaceManual;
 }
 
 /** Enlace al manual para celular (en PC ya está en el panel de ayuda de la derecha). */
@@ -2452,6 +2452,8 @@ function leerLinkCorreccion(codigo) {
     return {
       tipo, n, h: datos.h, k, documentos, ignorados,
       pedirAutorizacion: datos.v === 2 && datos.a === 1,
+      // ¿Es aprendiz? (links de aprendiz, o corrección a un aprendiz con m: 'aprendiz'): ve su propio manual
+      esAprendiz: tipo === 'aprendiz' || datos.m === 'aprendiz',
       nombre: datos.v === 2 ? String(datos.p || '').replace(/[<>]/g, '').slice(0, 40) : '',
     };
   } catch {

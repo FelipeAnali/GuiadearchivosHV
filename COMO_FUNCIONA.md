@@ -84,6 +84,7 @@ El detalle está en `src/app.jsx` (sección 7) y en `panel-gh.html` (sección 6B
 - `k` = código único que el panel guarda en `expediente.json`. El ZIP lo devuelve en `codigo` y el panel **rechaza**
   el ZIP si no coincide (link alterado o de otra persona). Correcciones viejas sin código se siguen aceptando.
 - `a` = pedir la autorización de datos (aprendices). `p` = nombre para saludar.
+- `m: "aprendiz"` (opcional, en correcciones) = el candidato es aprendiz: la app le muestra el manual de aprendiz.
 - Los links `v: 1` siguen funcionando.
 
 ## Modo aprendiz (`?c=...` con `t: "aprendiz"`)

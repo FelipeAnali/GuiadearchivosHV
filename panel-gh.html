@@ -1720,10 +1720,12 @@ function aBase64Url(texto) {
  * Arma el link de corrección para el candidato (versión 2: con código único).
  * n: número de la corrección; huella: huellaCedula(); documentos: [{ id, motivo }];
  * codigo: código único que queda en el expediente y debe volver en el ZIP.
+ * esAprendiz: si es true, el link lleva m: 'aprendiz' para que la app le muestre el manual de aprendiz.
  */
-function linkDeCorreccion(n, huella, documentos, codigo) {
+function linkDeCorreccion(n, huella, documentos, codigo, esAprendizCandidato = false) {
   const datos = {
     v: 2, t: 'correccion', n, h: huella, k: codigo, a: 0,
+    ...(esAprendizCandidato ? { m: 'aprendiz' } : {}),
     d: documentos.map((x) => ({ id: x.id, m: String(x.motivo || '').slice(0, MAXIMO_MOTIVO) })),
   };
   const base = CONFIG.enlaceAppCandidato || '';
@@ -3410,7 +3412,7 @@ function HojaCorrecciones({ exp, rechazados, faltantes, guardando, avisar, usuar
 
   const elegidos = Object.entries(eleccion).filter(([, v]) => v.activo).map(([id, v]) => ({ id, motivo: v.motivo.slice(0, MAXIMO_MOTIVO) }));
   const listo = elegidos.length > 0 && !!huella;
-  const link = listo ? linkDeCorreccion(n, huella, elegidos, codigo) : '';
+  const link = listo ? linkDeCorreccion(n, huella, elegidos, codigo, esAprendiz(exp)) : '';
   const mensaje = listo ? mensajeDeCorreccion(exp.nombre, elegidos, link) : '';
   const celular = String(exp.celular || '').replace(/\D/g, '');
 
