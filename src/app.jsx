@@ -32,6 +32,8 @@
      6. APP PRINCIPAL        Envío normal: decide qué pantalla mostrar y guarda cada cambio.
      7. MODO CORRECCIÓN      Link ?c=... que manda Gestión Humana desde su panel: el candidato
                              vuelve a subir SOLO los documentos que le rechazaron o le faltan.
+                             El mismo modo sirve para los APRENDICES SENA (link versión 2):
+                             suben solo los documentos que se les piden.
                              Contrato del link y del ZIP con el panel (panel-gh.html).
      8. ARRANQUE             Abre el envío normal o el modo corrección según la dirección.
 
@@ -2122,7 +2124,7 @@ function App() {
   /** Solo modo prueba: cambia entre datos normales y casos difíciles. */
   function cambiarModoPrueba(modo) {
     // "Corrección" abre el modo corrección con un link de ejemplo (sección 7)
-    if (modo === 'correccion') { abrirCorreccionDeEjemplo(); return; }
+    if (modo === 'correccion' || modo === 'aprendiz') { abrirCorreccionDeEjemplo(modo); return; }
     setModoPrueba(modo);
     if (modo === 'normal') { setSesion(null); setPantalla('inicio'); return; }
     setSesion(sesionDePrueba(modo));
@@ -2181,7 +2183,7 @@ function App() {
 
       {MODO_PRUEBA && (
         <div className="selector-prueba" aria-label="Datos de prueba">
-          {[['normal', 'Normal'], ['extremo', 'Caso extremo'], ['vacio', 'Vacío'], ['correccion', 'Corrección']].map(([valor, texto]) => (
+          {[['normal', 'Normal'], ['extremo', 'Caso extremo'], ['vacio', 'Vacío'], ['correccion', 'Corrección'], ['aprendiz', 'Aprendiz']].map(([valor, texto]) => (
             <button key={valor} type="button" className={modoPrueba === valor ? 'activo' : ''}
                     onClick={() => cambiarModoPrueba(valor)}>{texto}</button>
           ))}
@@ -2232,18 +2234,51 @@ class PantallaDeError extends React.Component {
                      "d": [ { "id": "adres", "m": "No se lee bien" } ] }
             "id" es el de CONFIG.documentos (si no existe, se ignora y se avisa).
             El link no lleva nombre ni cédula a la vista: solo la huella "h".
+     Link versión 2 (aprendices; el panel también lo usará en correcciones):
+            { "v": 2, "t": "aprendiz" | "correccion", "n": 1, "h": "<huella>", "k": "<código único>",
+              "a": 1 si se debe aceptar la autorización de datos, "p": "<nombre de pila>", "d": [...] }
+            El código "k" vuelve en el JSON del ZIP como "codigo": así el panel sabe que el
+            paquete viene del link que mandó.
+     ZIP de aprendiz: <cedula>_APRENDIZ_<n>.zip y datos_candidato.json =
+            { "version": 1, "tipo": "aprendiz", "solicitud": n, "codigo": "<k>", "cedula",
+              "autorizacionDatos": { aceptada, fecha } | null, "generado", "archivos": [...] }
      ZIP:   <cedula>_CORRECCION_<n>.zip, archivos con nombreArchivoEnZip() y
             datos_candidato.json = { "version": 1, "tipo": "correccion", "correccion": n,
             "cedula", "generado", "archivos": [ { "documento", "archivo", "nombreOriginal",
             "revisadoAutomaticamente", "conContrasena", "contrasenaEsCedula" } ] }
    ============================================================================ */
 
-/** Versión del contrato del link que entiende esta página. */
-const VERSION_LINK_CORRECCION = 1;
+/** Versiones del contrato del link que entiende esta página (1: corrección; 2: aprendiz o corrección con código). */
+const VERSIONES_LINK = [1, 2];
 /** Largo máximo del motivo que se muestra (igual que en el panel). */
 const MAXIMO_MOTIVO = 160;
 /** Nombres de los 4 pasos del modo corrección (panel izquierdo en PC). */
 const PASOS_CORRECCION = ['Lo que debes corregir', 'Verifica tu documento', 'Corrige tus documentos', 'Descarga y envía'];
+
+/**
+ * Textos de cada tipo de link: corrección (GH rechazó algo) o aprendiz (GH lo inscribió y
+ * le pide sus documentos). Las pantallas son las mismas; solo cambian estos textos.
+ */
+const TEXTOS_SOLICITUD = {
+  correccion: {
+    portada: 'Corrige tus documentos',
+    detalle: (c) => `Gestión Humana te pide corregir ${plural(c.documentos.length, 'documento', 'documentos')}.`,
+    lista: 'Lo que debes corregir',
+    pasos: PASOS_CORRECCION,
+    tituloDocumentos: 'Corrige tus documentos',
+    bajadaDocumentos: 'Sube de nuevo cada documento en PDF (la foto como imagen).',
+    final: 'Listo, Gestión Humana revisará tu corrección.',
+  },
+  aprendiz: {
+    portada: 'Tus documentos de aprendiz',
+    detalle: (c) => `${c.nombre ? `Hola ${c.nombre}. ` : ''}Para tu contrato de aprendizaje SENA, Gestión Humana te pide ${plural(c.documentos.length, 'documento', 'documentos')}.`,
+    lista: 'Lo que debes enviar',
+    pasos: ['Lo que debes enviar', 'Verifica tu documento', 'Sube tus documentos', 'Descarga y envía'],
+    tituloDocumentos: 'Sube tus documentos',
+    bajadaDocumentos: 'Sube cada documento en PDF (la foto como imagen).',
+    final: 'Listo, Gestión Humana revisará tus documentos.',
+  },
+};
 /** Cédula del link de ejemplo del modo prueba (?prueba=1 → "Corrección"). */
 const CEDULA_PRUEBA_CORRECCION = '1144098765';
 
@@ -2272,13 +2307,18 @@ function desdeBase64Url(codigo) {
 }
 
 /**
- * Lee el código del link. Devuelve { n, h, documentos: [{ doc, motivo }], ignorados: [id] }
- * o null si el código está dañado, tiene otra versión o no pide ningún documento conocido.
+ * Lee el código del link. Devuelve { tipo: 'correccion' | 'aprendiz', n, h, k, pedirAutorizacion,
+ * nombre, documentos: [{ doc, motivo }], ignorados: [id] } o null si el código está dañado, tiene
+ * otra versión o no pide ningún documento conocido.
  */
 function leerLinkCorreccion(codigo) {
   try {
     const datos = JSON.parse(desdeBase64Url(String(codigo || '').trim()));
-    if (!datos || datos.v !== VERSION_LINK_CORRECCION) return null;
+    if (!datos || !VERSIONES_LINK.includes(datos.v)) return null;
+    const tipo = datos.v === 2 ? datos.t : 'correccion';
+    if (tipo !== 'correccion' && tipo !== 'aprendiz') return null;
+    const k = datos.v === 2 ? String(datos.k || '') : '';
+    if (datos.v === 2 && !/^[A-Z0-9]{6,20}$/.test(k)) return null; // la versión 2 siempre trae su código
     const n = Number(datos.n);
     if (!Number.isInteger(n) || n < 1) return null;
     if (!/^[0-9a-f]{16}$/.test(String(datos.h || ''))) return null;
@@ -2293,7 +2333,11 @@ function leerLinkCorreccion(codigo) {
     // En el mismo orden de la CONFIGURACIÓN, como en el envío normal
     const documentos = CONFIG.documentos.filter((d) => d.id in pedidos).map((doc) => ({ doc, motivo: pedidos[doc.id] }));
     if (documentos.length === 0) return null;
-    return { n, h: datos.h, documentos, ignorados };
+    return {
+      tipo, n, h: datos.h, k, documentos, ignorados,
+      pedirAutorizacion: datos.v === 2 && datos.a === 1,
+      nombre: datos.v === 2 ? String(datos.p || '').replace(/[<>]/g, '').slice(0, 40) : '',
+    };
   } catch {
     return null;
   }
@@ -2302,9 +2346,9 @@ function leerLinkCorreccion(codigo) {
 /** La corrección del link de esta dirección (null si no hay ?c= o si está dañado). */
 const CORRECCION = CODIGO_CORRECCION !== null ? leerLinkCorreccion(CODIGO_CORRECCION) : null;
 
-/** Clave con la que se guarda el avance de una corrección (distinta de "actual"). */
+/** Clave con la que se guarda el avance de una corrección o de un aprendiz (distinta de "actual"). */
 function claveCorreccion(correccion) {
-  return `correccion_${correccion.h}_${correccion.n}`;
+  return `${correccion.tipo === 'aprendiz' ? 'aprendiz' : 'correccion'}_${correccion.h}_${correccion.n}`;
 }
 
 /** Sesión nueva de corrección. "cedula" se llena cuando el candidato la verifica. */
@@ -2312,9 +2356,11 @@ function sesionCorreccionNueva(correccion, dispositivoPersonal) {
   const ahora = Date.now();
   return {
     version: 1,
-    tipo: 'correccion',
+    tipo: correccion.tipo,      // 'correccion' | 'aprendiz'
     n: correccion.n,
     h: correccion.h,
+    k: correccion.k,            // código único del link (versión 2); vuelve en el ZIP
+    autorizacion: null,         // { aceptada, fecha } si el link pedía aceptar la autorización
     creado: ahora,
     expira: ahora + CONFIG.diasConservacion * MS_POR_DIA,
     dispositivoPersonal,
@@ -2323,9 +2369,9 @@ function sesionCorreccionNueva(correccion, dispositivoPersonal) {
   };
 }
 
-/** Nombre del ZIP de corrección: 1144098765_CORRECCION_1.zip */
+/** Nombre del ZIP: 1144098765_CORRECCION_1.zip o 1144098765_APRENDIZ_1.zip */
 function nombreZipCorreccion(sesion) {
-  return `${sesion.cedula}_CORRECCION_${sesion.n}.zip`;
+  return `${sesion.cedula}_${sesion.tipo === 'aprendiz' ? 'APRENDIZ' : 'CORRECCION'}_${sesion.n}.zip`;
 }
 
 /** Arma el ZIP de corrección (solo los documentos pedidos) con el JSON del contrato. */
@@ -2343,24 +2389,30 @@ async function armarZipCorreccion(sesion, correccion) {
                      contrasenaEsCedula: !!item.claveEsCedula });
     });
   });
-  zip.file('datos_candidato.json', JSON.stringify({
-    version: 1,
-    tipo: 'correccion',
-    correccion: sesion.n,
-    cedula: sesion.cedula,
-    generado: new Date().toISOString(),
-    archivos: listado,
-  }, null, 2));
+  // JSON del contrato (ver comentario de la sección 7). El código "k" vuelve como "codigo".
+  const datos = sesion.tipo === 'aprendiz'
+    ? { version: 1, tipo: 'aprendiz', solicitud: sesion.n, codigo: sesion.k, cedula: sesion.cedula,
+        autorizacionDatos: sesion.autorizacion || null, generado: new Date().toISOString(), archivos: listado }
+    : { version: 1, tipo: 'correccion', correccion: sesion.n, ...(sesion.k ? { codigo: sesion.k } : {}),
+        cedula: sesion.cedula, generado: new Date().toISOString(), archivos: listado };
+  zip.file('datos_candidato.json', JSON.stringify(datos, null, 2));
   return zip.generateAsync({ type: 'blob', compression: 'STORE' });
 }
 
-/** Modo prueba: abre el modo corrección con un link de ejemplo (pide EPS y diplomas). */
-async function abrirCorreccionDeEjemplo() {
+/**
+ * Modo prueba: abre un link de ejemplo de la cédula 1144098765.
+ *   'correccion' → pide EPS ("No se lee bien") y diplomas ("Falta el acta de bachiller").
+ *   'aprendiz'   → link de aprendiz (versión 2) con sus documentos y la autorización.
+ */
+async function abrirCorreccionDeEjemplo(tipo = 'correccion') {
   const h = await huellaCedula(CEDULA_PRUEBA_CORRECCION);
-  const codigo = aBase64Url(JSON.stringify({ v: 1, n: 1, h, d: [
-    { id: 'adres', m: 'No se lee bien' },
-    { id: 'diplomas', m: 'Falta el acta de bachiller' },
-  ] }));
+  const codigo = aBase64Url(JSON.stringify(tipo === 'aprendiz'
+    ? { v: 2, t: 'aprendiz', n: 1, h, k: 'PRUEBA1234', a: 1, p: 'Laura',
+        d: CONFIG.documentos.filter((d) => d.paraAprendiz).map((d) => ({ id: d.id, m: '' })) }
+    : { v: 1, n: 1, h, d: [
+      { id: 'adres', m: 'No se lee bien' },
+      { id: 'diplomas', m: 'Falta el acta de bachiller' },
+    ] }));
   location.href = `${location.pathname}?prueba=1&c=${codigo}`;
 }
 
@@ -2369,7 +2421,8 @@ function EnlaceCorreccionDanado() {
   return (
     <div className="carga-inicial" role="alert">
       <img className="carga-logo" src={LOGO} alt="Supertiendas Cañaveral" />
-      <p className="carga-texto">Este enlace de corrección está incompleto. Pide uno nuevo a Gestión Humana.</p>
+      {/* Sirve para los links de corrección y de aprendiz (no siempre se puede saber cuál era) */}
+      <p className="carga-texto">Este enlace está incompleto o ya no sirve. Pide uno nuevo a Gestión Humana.</p>
     </div>
   );
 }
@@ -2377,7 +2430,9 @@ function EnlaceCorreccionDanado() {
 /** Corrección, pantalla 1: qué pide Gestión Humana y ¿el dispositivo es propio o prestado? */
 function InicioCorreccion({ correccion, guardadoDisponible, avisoInicial, alComenzar }) {
   const [dispositivo, setDispositivo] = useState(null); // 'propio' | 'prestado'
-  const cuantos = correccion.documentos.length;
+  const [autoriza, setAutoriza] = useState(false);      // solo si el link pide la autorización (aprendiz, primer link)
+  const textos = TEXTOS_SOLICITUD[correccion.tipo];
+  const puedeSeguir = dispositivo && (!correccion.pedirAutorizacion || autoriza);
   // Mismas opciones y reglas de guardado que en el envío normal
   const opciones = [
     { valor: 'propio', titulo: 'Sí, es mío',
@@ -2396,8 +2451,8 @@ function InicioCorreccion({ correccion, guardadoDisponible, avisoInicial, alCome
 
         <div className="portada">
           <img className="logo logo-blanco" src={LOGO} alt="Supertiendas Cañaveral" />
-          <h1>Corrige tus documentos</h1>
-          <p>Gestión Humana te pide corregir {plural(cuantos, 'documento', 'documentos')}.</p>
+          <h1>{textos.portada}</h1>
+          <p>{textos.detalle(correccion)}</p>
         </div>
 
         <AyudaMovil />
@@ -2412,12 +2467,12 @@ function InicioCorreccion({ correccion, guardadoDisponible, avisoInicial, alCome
         )}
 
         <section className="grupo">
-          <h2 className="grupo-titulo">Lo que debes corregir</h2>
+          <h2 className="grupo-titulo">{textos.lista}</h2>
           <div className="lista">
             {correccion.documentos.map(({ doc, motivo }) => (
               <div className="fila" key={doc.id}>
                 <div className="fila-cuerpo">
-                  <div className="fila-titulo">{doc.nombre}</div>
+                  <div className="fila-titulo">{doc.nombre}{doc.cantidad ? ` (${doc.cantidad})` : ''}</div>
                   {motivo && <p className="motivo-gh">Gestión Humana dice: {motivo}</p>}
                 </div>
               </div>
@@ -2441,15 +2496,37 @@ function InicioCorreccion({ correccion, guardadoDisponible, avisoInicial, alCome
             ))}
           </div>
         </section>
+
+        {/* Primer link de un aprendiz: acepta la autorización de datos (igual que en el envío normal) */}
+        {correccion.pedirAutorizacion && (
+          <section className="grupo">
+            <h2 className="grupo-titulo">Tratamiento de datos</h2>
+            <div className="lista">
+              <label className="fila fila-tocable">
+                <div className="fila-cuerpo fila-titulo">Acepto la autorización</div>
+                <input className="interruptor" type="checkbox" role="switch" checked={autoriza}
+                       onChange={(e) => setAutoriza(e.target.checked)} />
+              </label>
+            </div>
+            <p className="grupo-pie">
+              {CONFIG.textoAutorizacion}{' '}
+              {CONFIG.enlacePoliticaDatos && (
+                <a href={CONFIG.enlacePoliticaDatos} target="_blank" rel="noopener noreferrer">Leer la política</a>
+              )}
+            </p>
+          </section>
+        )}
       </main>
 
       <div className="barra-accion">
         <div className="barra-accion-interna">
-          <button className="boton boton-principal" disabled={!dispositivo}
-                  onClick={() => alComenzar(guardadoDisponible && dispositivo === 'propio')}>
+          <button className="boton boton-principal" disabled={!puedeSeguir}
+                  onClick={() => alComenzar(guardadoDisponible && dispositivo === 'propio', autoriza)}>
             Comenzar
           </button>
-          {!dispositivo && <p className="nota">Responde la pregunta para continuar.</p>}
+          {!puedeSeguir && (
+            <p className="nota">{correccion.pedirAutorizacion ? 'Responde la pregunta y acepta la autorización para continuar.' : 'Responde la pregunta para continuar.'}</p>
+          )}
         </div>
       </div>
     </>
@@ -2519,8 +2596,8 @@ function DocumentosCorreccion({ correccion, sesion, alAgregar, alQuitar, alConti
   return (
     <>
       <main className="contenido">
-        <h1>Corrige tus documentos</h1>
-        <p className="bajada">Sube de nuevo cada documento en PDF (la foto como imagen).</p>
+        <h1>{TEXTOS_SOLICITUD[correccion.tipo].tituloDocumentos}</h1>
+        <p className="bajada">{TEXTOS_SOLICITUD[correccion.tipo].bajadaDocumentos}</p>
         <AyudaMovil />
         <section className="grupo">
           <h2 className="grupo-titulo">Documentos</h2>
@@ -2550,12 +2627,12 @@ function DocumentosCorreccion({ correccion, sesion, alAgregar, alQuitar, alConti
 }
 
 /** Corrección, pantalla 5: cierre. */
-function FinalCorreccion({ nombreZip }) {
+function FinalCorreccion({ nombreZip, texto }) {
   return (
     <main className="contenido final">
       <div className="final-icono"><Palomita tamano={44} /></div>
       <h1>¡Listo!</h1>
-      <p className="bajada">Listo, Gestión Humana revisará tu corrección.</p>
+      <p className="bajada">{texto}</p>
       <div className="aviso aviso-alerta">
         El archivo <strong style={{ overflowWrap: 'anywhere' }}>{nombreZip}</strong> sigue en tu carpeta de
         Descargas. Si este dispositivo no es tuyo, bórralo.
@@ -2630,8 +2707,9 @@ function AppCorreccion({ correccion }) {
     }
   );
 
-  function comenzar(dispositivoPersonal) {
+  function comenzar(dispositivoPersonal, autoriza) {
     const nueva = sesionCorreccionNueva(correccion, dispositivoPersonal);
+    if (correccion.pedirAutorizacion && autoriza) nueva.autorizacion = { aceptada: true, fecha: new Date().toISOString() };
     if (MODO_PRUEBA) nueva.esPrueba = true; // en modo prueba no se guarda nada
     setAvisoInicial(null);
     setSesion(nueva);
@@ -2668,7 +2746,7 @@ function AppCorreccion({ correccion }) {
     <div className="app">
       <Encabezado paso={paso} completos={completos} total={mostrarAvance ? correccion.documentos.length : 0} />
       <div className="escritorio">
-        <PanelPasos paso={paso} pasos={PASOS_CORRECCION} />
+        <PanelPasos paso={paso} pasos={TEXTOS_SOLICITUD[correccion.tipo].pasos} />
         <div className="columna-central">
           {pantalla === 'inicio' && (
             <InicioCorreccion correccion={correccion} guardadoDisponible={guardadoDisponible}
@@ -2687,7 +2765,7 @@ function AppCorreccion({ correccion }) {
                            armar={(s) => armarZipCorreccion(s, correccion)}
                            alVolver={() => setPantalla('documentos')} alTerminar={terminar} />
           )}
-          {pantalla === 'final' && <FinalCorreccion nombreZip={zipFinal} />}
+          {pantalla === 'final' && <FinalCorreccion nombreZip={zipFinal} texto={TEXTOS_SOLICITUD[correccion.tipo].final} />}
         </div>
         <PanelAyuda />
       </div>
@@ -2704,7 +2782,10 @@ function AppCorreccion({ correccion }) {
       {MODO_PRUEBA && (
         <div className="selector-prueba" aria-label="Datos de prueba">
           <button type="button" onClick={() => { location.href = `${location.pathname}?prueba=1`; }}>Envío normal</button>
-          <button type="button" className="activo">Corrección</button>
+          {[['correccion', 'Corrección'], ['aprendiz', 'Aprendiz']].map(([tipo, texto]) => (
+            <button key={tipo} type="button" className={correccion.tipo === tipo ? 'activo' : ''}
+                    onClick={() => correccion.tipo !== tipo && abrirCorreccionDeEjemplo(tipo)}>{texto}</button>
+          ))}
         </div>
       )}
     </div>
