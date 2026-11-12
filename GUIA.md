@@ -151,6 +151,13 @@ algo por enviar, esperando que suba, completos y contratados, no contratados, o 
 En **Candidatos** y **Listos** salen candidatos y aprendices juntos (los aprendices con la etiqueta "Aprendiz");
 el filtro de tipo deja ver **Solo candidatos** o **Solo aprendices**.
 
+**Corregir o eliminar un aprendiz:** abre su ficha y toca **Editar datos o eliminar**.
+- Puedes corregir nombre, celular, correo, cargo, sección, sede y fechas. Lo cambiado queda en la bitácora.
+- El **número de documento** solo se puede cambiar si todavía no se le ha enviado ningún link (el link va atado a ese
+  número). Si ya se envió y está mal: elimínalo e inscríbelo otra vez.
+- **Eliminar aprendiz** lo pasa a la **Papelera** por los días de Ajustes: ahí lo puedes **Recuperar**. Los links que
+  ya tenía dejan de funcionar.
+
 Seguridad: cada link de aprendiz lleva un **código único**. Si alguien cambia el link o sube un ZIP que no
 corresponde, el panel lo rechaza. Y el número de documento debe coincidir con el que escribió Gestión Humana.
 

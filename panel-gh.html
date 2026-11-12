@@ -1138,7 +1138,7 @@ async function estaEnPapelera(raiz, cedula) {
  * sus ZIP de Recibidos/Procesados (quedan dentro, en _zips_recibidos). En el expediente
  * anota cuándo, quién y desde qué fecha se puede eliminar. Devuelve cuántos ZIP movió.
  */
-async function enviarAPapelera(raiz, c, usuario) {
+async function enviarAPapelera(raiz, c, usuario, motivo = 'no_contratado') {
   const cedula = String((c.expediente && c.expediente.cedula) || c.cedula || '').replace(/[^0-9A-Za-z]/g, '');
   const zipsDelExpediente = new Set(((c.expediente && c.expediente.envios) || []).map((e) => e.zip));
   const candidatos = await subcarpeta(raiz, C.candidatos);
@@ -1163,10 +1163,12 @@ async function enviarAPapelera(raiz, c, usuario) {
     const ahora = new Date();
     expediente.estado = 'no_contratado';
     expediente.enPapelera = {
-      fecha: ahora.toISOString(), por: usuario, zips,
+      fecha: ahora.toISOString(), por: usuario, zips, motivo,
       eliminarDesde: new Date(ahora.getTime() + CONFIG.diasPapelera * MS_POR_DIA).toISOString(),
     };
-    anotar(expediente, usuario, `No contratado: pasó a la Papelera por ${plural(CONFIG.diasPapelera, 'día', 'días')}`);
+    anotar(expediente, usuario, motivo === 'eliminado'
+      ? `Eliminó al aprendiz (inscripción): pasó a la Papelera por ${plural(CONFIG.diasPapelera, 'día', 'días')}`
+      : `No contratado: pasó a la Papelera por ${plural(CONFIG.diasPapelera, 'día', 'días')}`);
     await guardarExpediente(destino, expediente);
   }
   return { zips: zips.length };
@@ -1230,9 +1232,10 @@ async function recuperarDePapelera(raiz, item, usuario) {
   let expediente = null;
   try { expediente = await leerExpediente(destino); } catch (e) { expediente = null; }
   if (expediente) {
-    expediente.estado = 'revision';
+    // Sin documentos recibidos (ej. un aprendiz eliminado antes de mandar nada) vuelve a "Esperando documentos"
+    expediente.estado = Object.keys(expediente.documentos || {}).length ? 'revision' : 'esperando';
     delete expediente.enPapelera;
-    anotar(expediente, usuario, 'Lo recuperó de la Papelera (vuelve a "En revisión")');
+    anotar(expediente, usuario, `Lo recuperó de la Papelera (vuelve a "${nombreEstado(expediente.estado)}")`);
     await guardarExpediente(destino, expediente);
   }
 }
@@ -2012,6 +2015,51 @@ async function inscribirAprendiz(raiz, datos, usuario) {
   anotar(exp, usuario, `Inscribió al aprendiz (${datos.seccion}, ${datos.sede}; prácticas el ${fechaLarga(datos.fechaPracticas)})`);
   await guardarExpediente(carpeta, exp);
   return carpeta;
+}
+
+/**
+ * Corrige los datos de un aprendiz ya inscrito (nombre, documento, contacto, cargo, sede o fechas).
+ * El número de documento solo se puede cambiar si todavía no se le ha enviado ningún link
+ * (cada link lleva la huella del documento: con otro número dejaría de servir).
+ * Si cambia el nombre o el documento, la carpeta se renombra (copia + borra, como la Papelera).
+ * Devuelve { carpeta, cambios } — cambios es la lista de lo que cambió (vacía si nada).
+ */
+async function editarAprendiz(raiz, c, datos, usuario) {
+  const exp = await leerExpediente(c.carpeta);
+  if (!exp) throw new Error('No se encontró el expediente del aprendiz.');
+  const antes = { ...exp, ...(exp.aprendiz || {}) };
+  const cambioDocumento = datos.cedula !== exp.cedula || (datos.tipoDocumento || 'CC') !== (exp.tipoDocumento || 'CC');
+  if (cambioDocumento && (exp.solicitudes || []).length) {
+    throw new Error('Ya se le envió un link: el número de documento no se puede cambiar. Elimínalo e inscríbelo otra vez.');
+  }
+  if (datos.cedula !== exp.cedula && await buscarCarpetaCandidato(raiz, datos.cedula)) {
+    throw new Error('Ya hay un candidato con ese número de documento en Candidatos.');
+  }
+  const etiquetas = { nombre: 'Nombre', tipoDocumento: 'Tipo de documento', cedula: 'Documento', celular: 'Celular', correo: 'Correo',
+                      cargo: 'Cargo', seccion: 'Sección', sede: 'Sede', fechaContrato: 'Fecha del contrato', fechaPracticas: 'Fecha de prácticas' };
+  const mostrar = (k, v) => (k.startsWith('fecha') && v ? fechaLarga(v) : (v || '—'));
+  const cambios = Object.keys(etiquetas)
+    .filter((k) => String(antes[k] || '') !== String(datos[k] || ''))
+    .map((k) => `${etiquetas[k]}: ${mostrar(k, antes[k])} → ${mostrar(k, datos[k])}`);
+  if (!cambios.length) return { carpeta: c.carpeta, cambios };
+
+  ['nombre', 'tipoDocumento', 'cedula', 'celular', 'correo', 'cargo', 'seccion'].forEach((k) => { exp[k] = datos[k]; });
+  exp.aprendiz = { ...(exp.aprendiz || {}), sede: datos.sede, fechaContrato: datos.fechaContrato, fechaPracticas: datos.fechaPracticas };
+  anotar(exp, usuario, `Corrigió los datos del aprendiz — ${cambios.join('; ')}`);
+  await guardarExpediente(c.carpeta, exp);
+
+  // Carpeta con el nombre nuevo (<documento>_<NOMBRE>) si cambió el nombre o el documento
+  const nombreNuevo = `${datos.cedula}_${textoParaArchivo(datos.nombre, 40)}`;
+  if (nombreNuevo === c.nombreCarpeta) return { carpeta: c.carpeta, cambios };
+  const candidatos = await subcarpeta(raiz, C.candidatos);
+  const destino = await subcarpeta(candidatos, await nombreLibre(candidatos, nombreNuevo));
+  await copiarContenido(c.carpeta, destino);
+  try { await destino.removeEntry(ARCHIVO_EN_USO); } catch (e) { /* no tenía marca de ficha abierta */ }
+  if ((await contarArchivos(destino)) < (await contarArchivos(c.carpeta)) - 1) {
+    throw new Error('Se guardaron los datos, pero la carpeta no se pudo renombrar completa. Revisa en OneDrive.');
+  }
+  await candidatos.removeEntry(c.nombreCarpeta, { recursive: true });
+  return { carpeta: destino, cambios };
 }
 
 /** Registra en el expediente una solicitud enviada (copia del link o WhatsApp/correo). */
@@ -2914,7 +2962,7 @@ async function tipoDeArchivo(archivo) {
 }
 
 
-function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
+function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado, onEditarAprendiz }) {
   // onNoContratado: lo llama el selector de estado al elegir "No contratado" (App pide confirmar y borra)
   const [exp, setExp] = useState(c.expediente);
   const [archivosCandidato, setArchivosCandidato] = useState({});  // nombre → handle
@@ -3213,6 +3261,10 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
                   <span><strong>Aprendiz SENA</strong> — {exp.aprendiz.sede || 'sin sede'} — contrato desde el {fechaLarga(exp.aprendiz.fechaContrato)}</span>
                   <span>{faseAprendiz(exp)}</span>
                   <span className={`manip ${estadoManipulacion(exp).clave}`}>{estadoManipulacion(exp).texto}</span>
+                  {onEditarAprendiz && (
+                    <span><button className="boton boton-texto" style={{ padding: 0, minHeight: 0 }} disabled={guardando}
+                                  onClick={() => onEditarAprendiz({ ...c, expediente: exp })}>Editar datos o eliminar</button></span>
+                  )}
                 </span>
               )}
               {(exp.celular || exp.correo) && (
@@ -3564,7 +3616,7 @@ function Papelera({ lista, cargando, onRecuperar, onEliminar, onRecargar, ocupad
                 <span className="fila-titulo">{nombreBonito(item.nombre)}</span>
                 <span className="fila-sub"><span className="numeros">{siglaDocumento(e && e.tipoDocumento)} {item.cedula || '—'}</span>{e && e.cargo ? ` — ${e.cargo}` : ''}</span>
                 <span className="fila-pista">
-                  {e && e.enPapelera ? `${e.enPapelera.por || '—'} lo marcó como no contratado el ${fechaCorta(e.enPapelera.fecha)} — ` : ''}
+                  {e && e.enPapelera ? `${e.enPapelera.por || '—'} ${e.enPapelera.motivo === 'eliminado' ? 'eliminó al aprendiz' : 'lo marcó como no contratado'} el ${fechaCorta(e.enPapelera.fecha)} — ` : ''}
                   {quedan === null ? 'Sin fecha: elimínalo a mano.' : quedan === 0 ? 'Se elimina la próxima vez que se actualice.' : `Se elimina en ${plural(quedan, 'día', 'días')} (${fechaCorta(item.eliminarDesde)}).`}
                 </span>
               </div>
@@ -3850,9 +3902,20 @@ const CARGOS_UNICOS = [...new Set(PUESTOS.map((x) => x.cargo))].sort((a, b) => a
  * Hoja "Inscribir aprendiz": GH llena los datos y las fechas. Muestra si su sección pide
  * manipulación y cuándo se pedirá. onInscribir(datos) crea la carpeta y abre el link.
  */
-function HojaInscribir({ onInscribir, onCerrar }) {
-  const [d, setD] = useState({ tipoDocumento: 'CC', cedula: '', nombre: '', celular: '', correo: '', cargo: '', seccion: '',
-                                sede: '', fechaContrato: '', fechaPracticas: '' });
+/**
+ * Hoja para inscribir un aprendiz o, con "inicial" (su expediente), para corregir sus datos.
+ * Al editar: el documento queda bloqueado si ya se le envió algún link, y abajo está "Eliminar aprendiz".
+ */
+function HojaInscribir({ onInscribir, onCerrar, inicial = null, onEliminar }) {
+  const editando = !!inicial;
+  const documentoBloqueado = editando && (inicial.solicitudes || []).length > 0;
+  const [d, setD] = useState(editando
+    ? { tipoDocumento: inicial.tipoDocumento || 'CC', cedula: inicial.cedula || '', nombre: inicial.nombre || '',
+        celular: inicial.celular || '', correo: inicial.correo || '', cargo: inicial.cargo || '', seccion: inicial.seccion || '',
+        sede: (inicial.aprendiz || {}).sede || '', fechaContrato: (inicial.aprendiz || {}).fechaContrato || '',
+        fechaPracticas: (inicial.aprendiz || {}).fechaPracticas || '' }
+    : { tipoDocumento: 'CC', cedula: '', nombre: '', celular: '', correo: '', cargo: '', seccion: '',
+        sede: '', fechaContrato: '', fechaPracticas: '' });
   const [errores, setErrores] = useState({});
   const [guardando, setGuardando] = useState(false);
   useCerrarConEscape(onCerrar, !guardando);
@@ -3898,12 +3961,13 @@ function HojaInscribir({ onInscribir, onCerrar }) {
   return (
     <>
       <div className="velo" onClick={() => !guardando && onCerrar()} />
-      <aside className="detalle" role="dialog" aria-modal="true" aria-label="Inscribir aprendiz">
+      <aside className="detalle" role="dialog" aria-modal="true" aria-label={editando ? 'Editar aprendiz' : 'Inscribir aprendiz'}>
         <div className="agarre" aria-hidden="true" />
         <div className="detalle-cabeza">
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
-            <div className="fila-texto"><h2>Inscribir aprendiz</h2>
-              <span className="fila-sub">Después se arma el link para que suba solo sus documentos.</span></div>
+            <div className="fila-texto"><h2>{editando ? 'Editar aprendiz' : 'Inscribir aprendiz'}</h2>
+              <span className="fila-sub">{editando ? 'Corrige lo que esté mal y toca Guardar cambios. Queda anotado en la bitácora.'
+                : 'Después se arma el link para que suba solo sus documentos.'}</span></div>
             <button className="boton boton-texto" style={{ fontWeight: 600, fontSize: 17 }} disabled={guardando} onClick={onCerrar}>Cancelar</button>
           </div>
         </div>
@@ -3914,18 +3978,25 @@ function HojaInscribir({ onInscribir, onCerrar }) {
               {Campo({ campo: 'nombre', etiqueta: 'Nombre completo', ancho: true, children:
                 <input id="ins-nombre" value={d.nombre} maxLength={120} onChange={(e) => poner('nombre', e.target.value)} placeholder="Como aparece en su documento" /> })}
               {Campo({ campo: 'tipoDocumento', etiqueta: 'Tipo de documento', children:
-                <select id="ins-tipoDocumento" value={d.tipoDocumento} onChange={(e) => poner('tipoDocumento', e.target.value)}>
+                <select id="ins-tipoDocumento" value={d.tipoDocumento} disabled={documentoBloqueado} onChange={(e) => poner('tipoDocumento', e.target.value)}>
                   <option value="CC">Cédula de ciudadanía</option><option value="CE">Cédula de extranjería</option>
                   <option value="PPT">Permiso por Protección Temporal (PPT)</option><option value="PA">Pasaporte</option>
                   <option value="TI">Tarjeta de identidad</option>
                 </select> })}
               {Campo({ campo: 'cedula', etiqueta: 'Número de documento', children:
-                <input id="ins-cedula" value={d.cedula} maxLength={20} onChange={(e) => poner('cedula', e.target.value)} /> })}
+                <input id="ins-cedula" value={d.cedula} maxLength={20} disabled={documentoBloqueado} onChange={(e) => poner('cedula', e.target.value)} /> })}
               {Campo({ campo: 'celular', etiqueta: 'Celular con WhatsApp', children:
                 <input id="ins-celular" type="tel" value={d.celular} maxLength={20} onChange={(e) => poner('celular', e.target.value)} placeholder="3001234567" /> })}
               {Campo({ campo: 'correo', etiqueta: 'Correo', children:
                 <input id="ins-correo" type="email" value={d.correo} maxLength={120} onChange={(e) => poner('correo', e.target.value)} placeholder="nombre@correo.com" /> })}
             </div>
+            {documentoBloqueado && (
+              <p className="nota-seccion">El documento no se puede cambiar porque ya se le envió un link (el link va atado a ese número).
+                Si está mal, elimina al aprendiz e inscríbelo otra vez.</p>
+            )}
+            {editando && !documentoBloqueado && (
+              <p className="nota-seccion">Aún no se le ha enviado ningún link: puedes corregir también el documento.</p>
+            )}
           </section>
           <section>
             <h3>Cargo y sede</h3>
@@ -3941,6 +4012,7 @@ function HojaInscribir({ onInscribir, onCerrar }) {
               {Campo({ campo: 'sede', etiqueta: 'Sede', children:
                 <select id="ins-sede" value={d.sede} onChange={(e) => poner('sede', e.target.value)}>
                   <option value="">Elige la sede</option>
+                  {d.sede && !CONFIG.sedes.some((x) => x.nombre === d.sede) && <option value={d.sede}>{d.sede}</option>}
                   {CONFIG.sedes.map((x) => <option key={x.nombre} value={x.nombre}>{x.nombre}{x.ciudad ? ` — ${x.ciudad.split(',')[0]}` : ''}</option>)}
                 </select> })}
             </div>
@@ -3965,8 +4037,18 @@ function HojaInscribir({ onInscribir, onCerrar }) {
             )}
           </section>
           <button className="boton boton-principal boton-grande" disabled={guardando} onClick={inscribir}>
-            {guardando ? 'Inscribiendo…' : 'Inscribir y preparar el link'}
+            {editando ? (guardando ? 'Guardando…' : 'Guardar cambios') : (guardando ? 'Inscribiendo…' : 'Inscribir y preparar el link')}
           </button>
+          {editando && onEliminar && (
+            <section style={{ marginTop: 28 }}>
+              <h3>Eliminar aprendiz</h3>
+              <p className="nota-seccion" style={{ marginTop: 0 }}>
+                Si lo inscribiste por error o ya no va a entrar. Pasa a la Papelera {plural(CONFIG.diasPapelera, 'día', 'días')}
+                (ahí lo puedes recuperar) y los links que ya le enviaste dejan de funcionar.
+              </p>
+              <button className="boton boton-peligro" disabled={guardando} onClick={onEliminar}>Eliminar aprendiz</button>
+            </section>
+          )}
         </div>
       </aside>
     </>
@@ -4200,7 +4282,7 @@ function DialogoNombre({ actual, onGuardar, onCancelar }) {
  * Versión del panel. CÁMBIALA cada vez que subas un cambio a este archivo (fecha y un número).
  * El panel abierto compara su versión con la publicada y, si hay una más nueva, avisa que hay que recargar.
  */
-const VERSION_PANEL = '2026-11-12.2';
+const VERSION_PANEL = '2026-11-12.3';
 
 /** Revisa cada 5 minutos (y al volver a la pestaña) si se publicó una versión más nueva del panel. */
 function useVersionNueva() {
@@ -4247,6 +4329,7 @@ function App() {
   const [ocupado, setOcupado] = useState(false);      // moviendo carpetas (Papelera)
   const [ajustesInfo, setAjustesInfo] = useState(null); // lo leído de ajustes.json (o null = valores de fábrica)
   const [inscribiendo, setInscribiendo] = useState(false);     // hoja "Inscribir aprendiz" abierta
+  const [editandoAprendiz, setEditandoAprendiz] = useState(null); // aprendiz cuya hoja "Editar" está abierta
   const [solicitud, setSolicitud] = useState(null);           // hoja del link de aprendiz abierta: { c, exp, solicitud, registrada }
   const temporizador = useRef(null);
 
@@ -4471,6 +4554,50 @@ function App() {
     }
   }
 
+  /** Guarda lo corregido de un aprendiz y vuelve a abrir su ficha con los datos nuevos. */
+  async function guardarEdicionAprendiz(datos) {
+    const c = editandoAprendiz;
+    try {
+      setAbierto(null); // se cierra la ficha (y su marca "abierta") antes de tocar la carpeta
+      const { carpeta, cambios } = await editarAprendiz(raiz, c, datos, usuario);
+      setEditandoAprendiz(null);
+      const lista = await leerCandidatos(raiz);
+      setCandidatos(lista);
+      const nuevo = lista.find((x) => x.nombreCarpeta === carpeta.name);
+      if (nuevo) setAbierto(nuevo);
+      avisar(cambios.length ? `Datos guardados (${plural(cambios.length, 'cambio', 'cambios')}).` : 'No había nada que cambiar.');
+      return true;
+    } catch (e) {
+      console.error(e);
+      setAbierto(c);
+      avisar(e instanceof ErrorChoque ? e.message : `No se pudo guardar: ${e.message}`, 'error');
+      return false;
+    }
+  }
+
+  /** "Eliminar aprendiz": pide confirmar y lo pasa a la Papelera (se puede recuperar). */
+  function pedirEliminarAprendiz() {
+    const c = editandoAprendiz;
+    setConfirmar({
+      titulo: `¿Eliminar a ${nombreBonito(c.expediente.nombre)}?`,
+      texto: `Pasa a la Papelera ${plural(CONFIG.diasPapelera, 'día', 'días')}: en ese tiempo lo puedes recuperar; después se borra todo. Los links que ya le enviaste dejan de funcionar.`,
+      textoBoton: 'Eliminar aprendiz', textoTrabajando: 'Eliminando…',
+      onConfirmar: async () => {
+        try {
+          setAbierto(null);
+          await enviarAPapelera(raiz, c, usuario, 'eliminado');
+          setEditandoAprendiz(null);
+          avisar(`${nombreBonito(c.expediente.nombre)} se eliminó (queda en la Papelera ${plural(CONFIG.diasPapelera, 'día', 'días')}).`);
+        } catch (e) {
+          console.error(e);
+          avisar(`No se pudo eliminar: ${e.message}`, 'error');
+        }
+        setConfirmar(null);
+        await recargar();
+      },
+    });
+  }
+
   /** Registra en el expediente una solicitud de aprendiz enviada desde la vista Aprendices. */
   async function registrarSolicitud(sol) {
     try {
@@ -4558,7 +4685,12 @@ function App() {
       </main>
       {/* Al cerrar la ficha se revisa otra vez la bandeja: una corrección recién pedida cambia los avisos */}
       {abierto && <Ficha c={abierto} usuario={usuario} avisar={avisar} onCambio={recargarCandidatos}
-                         onCerrar={() => { setAbierto(null); recargar(); }} onNoContratado={pedirNoContratado} />}
+                         onCerrar={() => { setAbierto(null); recargar(); }} onNoContratado={pedirNoContratado}
+                         onEditarAprendiz={esAprendiz(abierto.expediente) ? (x) => setEditandoAprendiz(x) : null} />}
+      {editandoAprendiz && (
+        <HojaInscribir key={editandoAprendiz.nombreCarpeta} inicial={editandoAprendiz.expediente} onInscribir={guardarEdicionAprendiz}
+                       onEliminar={pedirEliminarAprendiz} onCerrar={() => setEditandoAprendiz(null)} />
+      )}
       {confirmar && <DialogoConfirmar {...confirmar} onCancelar={() => setConfirmar(null)} />}
       {inscribiendo && <HojaInscribir onInscribir={inscribir} onCerrar={() => setInscribiendo(false)} />}
       {solicitud && (
