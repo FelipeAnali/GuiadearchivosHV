@@ -1817,7 +1817,10 @@ function mensajeDeCitacion(cita, plantilla = CONFIG.plantillaCitacion) {
       ? `${examen.textoCoprologico || ''} Aplica para: ${examen.textoCargosCoprologico ? examen.textoCargosCoprologico() : ''}.`
       : '',
   };
-  return String(plantilla || '').replace(/\{([a-z_]+)\}/g, (todo, clave) => (clave in valores ? valores[clave] : todo)).trim();
+  let texto = String(plantilla || '').replace(/\{([a-z_]+)\}/g, (todo, clave) => (clave in valores ? valores[clave] : todo)).trim();
+  // Si alguien borró {link} de la plantilla en Ajustes, el link va igual al final (sin él no sirve el mensaje)
+  if (!String(plantilla || '').includes('{link}')) texto += `\n\nEnvíe sus documentos aquí: ${valores.link}`;
+  return texto;
 }
 
 /**
@@ -3162,6 +3165,7 @@ function Citacion({ raiz, usuario, avisar }) {
   const listo = !!cita && !problema;
 
   async function registrarSiFalta(c = cita) {
+    if (c && c.creado) return true;              // del historial: ya está registrada (no se cambia quién la creó)
     if (registrada && c === cita) return true;
     try {
       await registrarCitacion(raiz, c, usuario);
@@ -3176,9 +3180,22 @@ function Citacion({ raiz, usuario, avisar }) {
   async function copiarTexto(texto, c = cita) {
     try { await navigator.clipboard.writeText(texto); }
     catch (e) { avisar('No se pudo copiar automáticamente: selecciona el texto y cópialo a mano', 'error'); return; }
-    if (await registrarSiFalta(c)) avisar('Copiado. La citación quedó registrada.');
+    if (await registrarSiFalta(c)) avisar(c && c.creado ? 'Copiado.' : 'Copiado. La citación quedó registrada.');
   }
   const alEnviar = (ev) => { if (!listo) { ev.preventDefault(); return; } registrarSiFalta(); };
+  // Correo: Outlook de escritorio no abre enlaces "mailto" de más de ~2.000 caracteres. Si el mensaje es largo,
+  // se copia completo y el correo se abre con una línea que dice que lo pegue.
+  const asunto = encodeURIComponent('Examen médico y documentos de ingreso — Supertiendas Cañaveral');
+  const cuerpoLargo = encodeURIComponent(mensaje).length > 1800;
+  const enlaceCorreo = `mailto:?subject=${asunto}&body=${encodeURIComponent(cuerpoLargo ? '(Pega aquí el mensaje de la citación: ya está copiado. Ctrl + V)' : mensaje)}`;
+  const alCorreo = async (ev) => {
+    if (!listo) { ev.preventDefault(); return; }
+    if (cuerpoLargo) {
+      try { await navigator.clipboard.writeText(mensaje); avisar('El mensaje es largo: ya está copiado, pégalo en el correo (Ctrl + V).'); }
+      catch (e) { avisar('Copia el mensaje con “Copiar mensaje” y pégalo en el correo.', 'error'); }
+    }
+    registrarSiFalta();
+  };
   /** Desde el historial: volver a armar una citación igual, con otra fecha límite. */
   function usarDeBase(c) {
     const i = centros.findIndex((x) => x.ciudad === c.ciudad && x.nombre === c.centro);
@@ -3241,8 +3258,8 @@ function Citacion({ raiz, usuario, avisar }) {
             <button className="boton boton-principal" disabled={!listo} onClick={() => copiarTexto(mensaje)}>Copiar mensaje</button>
             <a className="boton boton-secundario" aria-disabled={!listo} onClick={alEnviar}
                href={listo ? `https://wa.me/?text=${encodeURIComponent(mensaje)}` : undefined} target="_blank" rel="noopener noreferrer">Abrir WhatsApp</a>
-            <a className="boton boton-secundario" aria-disabled={!listo} onClick={alEnviar}
-               href={listo ? `mailto:?subject=${encodeURIComponent('Examen médico y documentos de ingreso — Supertiendas Cañaveral')}&body=${encodeURIComponent(mensaje)}` : undefined}>Abrir correo</a>
+            <a className="boton boton-secundario" aria-disabled={!listo} onClick={alCorreo}
+               href={listo ? enlaceCorreo : undefined}>Abrir correo</a>
             <button className="boton boton-secundario" disabled={!listo} onClick={() => copiarTexto(linkDeCitacion(cita))}>Copiar solo el link</button>
           </div>
           <p className="nota-seccion">{registrada
@@ -4665,7 +4682,7 @@ function DialogoNombre({ actual, onGuardar, onCancelar }) {
  * Versión del panel. CÁMBIALA cada vez que subas un cambio a este archivo (fecha y un número).
  * El panel abierto compara su versión con la publicada y, si hay una más nueva, avisa que hay que recargar.
  */
-const VERSION_PANEL = '2026-11-13.2';
+const VERSION_PANEL = '2026-11-13.3';
 
 /** Revisa cada 5 minutos (y al volver a la pestaña) si se publicó una versión más nueva del panel. */
 function useVersionNueva() {
