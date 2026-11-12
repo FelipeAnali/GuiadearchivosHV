@@ -57,6 +57,12 @@
        el panel la detecta y deja elegir con qué versión quedarse; la bitácora de
        las dos se une y la copia sobrante va a _anteriores.
 
+  APRENDICES SENA (ver PLAN_APRENDICES.md):
+    "Inscribir aprendiz" crea su carpeta con sus datos y fechas, y arma el link para
+    que suba solo sus documentos. La vista "Aprendices" muestra cuántos días le faltan
+    para prácticas y avisa cuándo pedir la manipulación de alimentos (si su sección la
+    pide, a CONFIG.diasManipulacionAprendiz días). Sección 6C.
+
   LO QUE LLEGA EN LAS SIGUIENTES PARTES:
     4. Entrega final en un solo PDF (el ZIP ya está: "Descargar ZIP" en la ficha).
 
@@ -91,6 +97,8 @@
     6. PROCESAR        Pasar un ZIP a la carpeta del candidato (envío normal).
     6B. CORRECCIONES   Contrato con la app del candidato (link y ZIP), armar el
                        link y el mensaje, y procesar los ZIP de corrección.
+    6C. APRENDICES     Inscribir, días para prácticas, regla de la manipulación y
+                       links de solicitud (con código único).
     7. CANDIDATOS      Leer el listado y calcular el avance.
     8. EJEMPLO         Carpeta falsa en memoria con datos de prueba.
     9. PANTALLAS       Inicio, Bandeja, Candidatos (en proceso), Listos, Papelera, Ajustes, Ficha
@@ -335,6 +343,7 @@
     display: inline-flex; align-items: center; height: 26px; padding: 0 10px;
     border-radius: 13px; font-size: 13px; font-weight: 600; white-space: nowrap; flex-shrink: 0;
   }
+  .e-esperando { background: var(--relleno); color: var(--texto-2); }
   .e-recibido { background: var(--azul-suave); color: var(--azul); }
   .e-revision { background: var(--alerta-fondo); color: var(--alerta-texto); }
   .e-correcciones { background: var(--rojo-suave); color: var(--rojo); }
@@ -513,7 +522,26 @@
      ========================================================================== */
   .cabeza-estado { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
   .selector-estado { height: 32px; border-radius: 16px; font-size: 14px; }
+  .cabeza-estado .e-esperando { background-color: var(--relleno); color: var(--texto-2); }
   .cabeza-estado .e-recibido { background-color: var(--azul-suave); color: var(--azul); }
+  /* Aprendices */
+  .chip-aprendiz { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 10px; margin-left: 8px;
+                   background: var(--tinte-suave); color: var(--tinte); font-size: 12px; font-weight: 600; vertical-align: middle; }
+  .bloque-aprendiz { display: flex; flex-direction: column; gap: 4px; font-size: 15px; color: var(--texto-2); }
+  .bloque-aprendiz strong { color: var(--texto); font-weight: 600; }
+  .manip { font-size: 14px; font-weight: 600; }
+  .manip.pedir { color: var(--rojo); }
+  .manip.esperar, .manip.no_aplica { color: var(--texto-2); font-weight: 400; }
+  .manip.pedida { color: var(--alerta-texto); }
+  .manip.recibida { color: var(--tinte); }
+  .formulario { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .formulario .fila-campo { position: relative; }
+  .formulario .fila-campo.ancho { grid-column: 1 / -1; }
+  .formulario .fila-campo select { width: 100%; border: 0; background: transparent; font-size: 17px; min-height: 28px; color: var(--texto); }
+  .formulario .fila-campo select option { color: #08200F; background: #FFFFFF; }
+  .formulario .fila-campo + .fila-campo::before { content: ''; position: absolute; top: 0; left: 16px; right: 0; height: 0.5px; background: var(--separador); }
+  .formulario .fila-campo.con-error label { color: var(--rojo); }
+  @media (max-width: 600px) { .formulario { grid-template-columns: minmax(0, 1fr); } }
   .cabeza-estado .e-revision { background-color: var(--alerta-fondo); color: var(--alerta-texto); }
   .cabeza-estado .e-correcciones { background-color: var(--rojo-suave); color: var(--rojo); }
   .cabeza-estado .e-completo { background-color: var(--tinte-suave); color: var(--tinte); }
@@ -754,6 +782,7 @@ window.CONFIG_PANEL = {
 
   // Estados del candidato, en orden
   estados: [
+    { id: 'esperando',     nombre: 'Esperando documentos' }, // aprendiz inscrito que aún no manda su paquete
     { id: 'recibido',      nombre: 'Recibido' },
     { id: 'revision',      nombre: 'En revisión' },
     { id: 'correcciones',  nombre: 'Con correcciones' },
@@ -1640,6 +1669,11 @@ async function procesarZip(raiz, item, usuario) {
                        "d": [ { "id": "adres", "m": "No se lee bien" } ] }
             "id" es el de CONFIG.documentos; "m" tiene máximo 160 caracteres.
             El link NUNCA lleva el nombre ni la cédula a la vista: solo la huella "h".
+     Link de APRENDIZ (versión 2, sección 6C):
+            { "v": 2, "t": "aprendiz", "n": 1, "h": "<huella>", "k": "<código único de la solicitud>",
+              "a": 1 si debe aceptar la autorización de datos (primer link), "p": "<nombre de pila>",
+              "d": [ { "id": "foto", "m": "" } ] }
+            El código "k" solo queda en el expediente: el ZIP debe traerlo de vuelta.
      ZIP:   <cedula>_CORRECCION_<n>.zip, con los archivos de siempre
             (<cedula>_<codigo>_<ID>[_n].pdf|jpg) y un datos_candidato.json:
             { "version": 1, "tipo": "correccion", "correccion": 1, "cedula": "...",
@@ -1798,6 +1832,169 @@ async function procesarCorreccion(raiz, item, usuario) {
   await moverArchivo(item.handle, item.carpeta, procesados);
 
   return { nombre: expediente.nombre, n, cuantos };
+}
+
+/* ==========================================================================
+   6C. APRENDICES SENA
+   GH los inscribe aquí con sus datos y fechas. Se les manda un link (versión 2
+   del contrato, ver 6B) para que suban solo sus documentos. La manipulación de
+   alimentos se pide si su sección está en CONFIG.seccionesManipulacionAprendiz y
+   cuando falten CONFIG.diasManipulacionAprendiz días o menos para prácticas.
+   En el expediente: tipoCandidato 'aprendiz', aprendiz { sede, fechaContrato,
+   fechaPracticas } y solicitudes [{ n, tipo, codigo, fecha, por, documentos, recibida }].
+   ========================================================================== */
+
+/** ¿El expediente es de un aprendiz? */
+function esAprendiz(exp) { return !!exp && exp.tipoCandidato === 'aprendiz'; }
+
+/** Fecha "2026-06-15" → días que faltan desde hoy (negativo = ya pasó). */
+function diasHasta(fecha) {
+  if (!fecha) return null;
+  const objetivo = new Date(`${fecha}T00:00:00`);
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  return Math.round((objetivo - hoy) / MS_POR_DIA);
+}
+
+/** Fecha "2026-06-15" → "15 de junio de 2026". */
+function fechaLarga(fecha) {
+  if (!fecha) return '—';
+  return new Date(`${fecha}T00:00:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/** Días que le faltan al aprendiz para entrar a prácticas (null si no tiene fecha). */
+function diasParaPracticas(exp) { return diasHasta(exp && exp.aprendiz && exp.aprendiz.fechaPracticas); }
+
+/** "En etapa lectiva — faltan 215 días" o "En prácticas desde el 15 de junio de 2026". */
+function faseAprendiz(exp) {
+  const dias = diasParaPracticas(exp);
+  if (dias === null) return 'Sin fecha de prácticas';
+  if (dias > 0) return `En etapa lectiva — entra a prácticas el ${fechaLarga(exp.aprendiz.fechaPracticas)} (faltan ${plural(dias, 'día', 'días')})`;
+  if (dias === 0) return 'Entra a prácticas hoy';
+  return `En prácticas desde el ${fechaLarga(exp.aprendiz.fechaPracticas)}`;
+}
+
+/** ¿En esta sección se le pide manipulación de alimentos a los aprendices? (Ajustes) */
+function seccionPideManipulacion(seccion) { return CONFIG.seccionesManipulacionAprendiz.includes(seccion); }
+
+/**
+ * Cómo va la manipulación de alimentos del aprendiz:
+ *   no_aplica · esperar (falta más del plazo) · pedir (ya toca y no se ha pedido) · pedida · recibida
+ */
+function estadoManipulacion(exp) {
+  if (!seccionPideManipulacion(exp.seccion)) return { clave: 'no_aplica', texto: 'Manipulación: no aplica en su sección' };
+  if ((exp.documentos || {}).manipulacion) return { clave: 'recibida', texto: 'Manipulación recibida' };
+  const pedida = (exp.solicitudes || []).find((s) => s.documentos.some((d) => d.id === 'manipulacion'));
+  if (pedida) return { clave: 'pedida', texto: `Manipulación pedida el ${fechaCorta(pedida.fecha)}` };
+  const dias = diasParaPracticas(exp);
+  const plazo = CONFIG.diasManipulacionAprendiz;
+  if (dias !== null && dias > plazo) {
+    return { clave: 'esperar', texto: `Manipulación: se pide a ${plural(plazo, 'día', 'días')} de prácticas (en ${plural(dias - plazo, 'día', 'días')})` };
+  }
+  return { clave: 'pedir', texto: dias === null ? 'Manipulación: falta pedirla' : `Manipulación: ya toca pedirla (faltan ${plural(Math.max(dias, 0), 'día', 'días')} para prácticas)` };
+}
+
+/** Documentos del primer link: los de aprendiz; la manipulación solo si ya toca. */
+function documentosPrimerLink(exp) {
+  const conManipulacion = estadoManipulacion(exp).clave === 'pedir';
+  return CONFIG.documentos
+    .filter((d) => d.paraAprendiz && (d.id !== 'manipulacion' || conManipulacion))
+    .map((d) => ({ id: d.id, motivo: '' }));
+}
+
+/** Código único de una solicitud (solo queda en el expediente y en el link). */
+function codigoAleatorio() {
+  const letras = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from(crypto.getRandomValues(new Uint8Array(10)), (b) => letras[b % letras.length]).join('');
+}
+
+/** Número de la próxima solicitud del aprendiz (empieza en 1). */
+function siguienteSolicitud(exp) {
+  return Math.max(0, ...(exp.solicitudes || []).map((s) => Number(s.n) || 0)) + 1;
+}
+
+/**
+ * ¿Qué toca hacer con este aprendiz? Devuelve { accion, solicitud, texto } o null:
+ *   enviar        → todavía no se le ha mandado el link de documentos
+ *   manipulacion  → ya está a los días de prácticas y falta pedirle la manipulación
+ *   reenviar      → tiene un link enviado que no ha respondido (para mandarlo otra vez)
+ */
+function accionAprendiz(exp) {
+  const solicitudes = exp.solicitudes || [];
+  if (!solicitudes.length) {
+    return { accion: 'enviar', texto: 'Enviar link de documentos',
+             solicitud: { n: 1, tipo: 'documentos', codigo: codigoAleatorio(), documentos: documentosPrimerLink(exp) } };
+  }
+  if (estadoManipulacion(exp).clave === 'pedir') {
+    return { accion: 'manipulacion', texto: 'Pedir manipulación',
+             solicitud: { n: siguienteSolicitud(exp), tipo: 'manipulacion', codigo: codigoAleatorio(), documentos: [{ id: 'manipulacion', motivo: '' }] } };
+  }
+  const pendiente = [...solicitudes].reverse().find((s) => !s.recibida);
+  if (pendiente) return { accion: 'reenviar', texto: 'Ver / reenviar link', solicitud: pendiente, registrada: true };
+  return null;
+}
+
+/** Nombre de pila para el saludo del link y del mensaje ("Laura María Gómez" → "Laura"). */
+function nombrePila(nombre) { return nombreBonito(String(nombre || '').trim().split(/\s+/)[0] || ''); }
+
+/** Arma el link de una solicitud de aprendiz (contrato versión 2, ver 6B). */
+function linkDeSolicitudAprendiz(exp, solicitud, huella) {
+  const datos = {
+    v: 2, t: 'aprendiz', n: solicitud.n, h: huella, k: solicitud.codigo,
+    a: solicitud.tipo === 'documentos' ? 1 : 0, p: nombrePila(exp.nombre),
+    d: solicitud.documentos.map((x) => ({ id: x.id, m: String(x.motivo || '').slice(0, MAXIMO_MOTIVO) })),
+  };
+  const base = CONFIG.enlaceAppCandidato || '';
+  return `${base}${base.includes('?') ? '&' : '?'}c=${aBase64Url(JSON.stringify(datos))}`;
+}
+
+/** Mensaje para el aprendiz (primer link o el de manipulación). */
+function mensajeSolicitudAprendiz(exp, solicitud, link) {
+  const pila = nombrePila(exp.nombre);
+  if (solicitud.tipo === 'manipulacion') {
+    return [
+      `Hola ${pila}, ya se acerca tu ingreso a prácticas en Supertiendas Cañaveral (${fechaLarga(exp.aprendiz.fechaPracticas)}).`,
+      'Necesitamos tu certificado de manipulación de alimentos vigente.',
+      `Súbelo aquí desde tu celular (te pedirá tu número de documento): ${link}`,
+    ].join('\n');
+  }
+  return [
+    `Hola ${pila}, te damos la bienvenida a Supertiendas Cañaveral. Para tu contrato de aprendizaje SENA necesitamos estos documentos:`,
+    ...solicitud.documentos.map((x) => `• ${nombreDocumento(x.id)}`),
+    `Entra aquí desde tu celular y súbelos (te pedirá tu número de documento): ${link}`,
+  ].join('\n');
+}
+
+/** Número de documento limpio, igual que en la app: cédula solo números; otros, letras y números. */
+function documentoLimpio(numero, tipo) {
+  return tipo === 'CC' ? String(numero || '').replace(/\D/g, '') : String(numero || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+}
+
+/**
+ * Inscribe un aprendiz: crea su carpeta en Candidatos y su expediente en "Esperando documentos".
+ * datos = { tipoDocumento, cedula, nombre, celular, correo, cargo, seccion, sede, fechaContrato, fechaPracticas }.
+ * Lanza error si ya hay una carpeta con ese documento.
+ */
+async function inscribirAprendiz(raiz, datos, usuario) {
+  if (await buscarCarpetaCandidato(raiz, datos.cedula)) throw new Error('Ya hay un candidato con este número de documento en Candidatos.');
+  const candidatos = await subcarpeta(raiz, C.candidatos);
+  const carpeta = await subcarpeta(candidatos, `${datos.cedula}_${textoParaArchivo(datos.nombre, 40)}`);
+  const exp = expedienteNuevo({ ...datos, primerEmpleo: false }, usuario);
+  exp.tipoCandidato = 'aprendiz';
+  exp.estado = 'esperando';
+  exp.aprendiz = { sede: datos.sede, fechaContrato: datos.fechaContrato, fechaPracticas: datos.fechaPracticas };
+  exp.solicitudes = [];
+  anotar(exp, usuario, `Inscribió al aprendiz (${datos.seccion}, ${datos.sede}; prácticas el ${fechaLarga(datos.fechaPracticas)})`);
+  await guardarExpediente(carpeta, exp);
+  return carpeta;
+}
+
+/** Registra en el expediente una solicitud enviada (copia del link o WhatsApp/correo). */
+function agregarSolicitud(exp, solicitud, usuario) {
+  exp.solicitudes = [...(exp.solicitudes || []), { ...solicitud, fecha: new Date().toISOString(), por: usuario, recibida: null }];
+  const lista = solicitud.documentos.map((d) => nombreDocumento(d.id)).join(', ');
+  anotar(exp, usuario, solicitud.tipo === 'manipulacion'
+    ? `Pidió la manipulación de alimentos (solicitud ${solicitud.n})`
+    : `Envió el link de documentos (solicitud ${solicitud.n}): ${lista}`);
 }
 
 /* ==========================================================================
@@ -2093,6 +2290,35 @@ async function crearCarpetaDeEjemplo(modo) {
       await zipDeEjemplo({ cedula: 'AV1234567', tipoDocumento: 'PA', nombre: 'Yuleidy Pérez', cargo: 'AUXILIAR DE CAJA', seccion: 'CAJAS', docs: DOCS_COMPLETOS, celular: '3209876543' }, foto), hace(0, 2));
     recibidos.poner('1144556677_SEBASTIAN_TORRES_SURTIDOR.zip',
       await zipDeEjemplo({ cedula: '1144556677', nombre: 'Sebastián Torres', cargo: 'SURTIDOR', seccion: 'PGC', docs: DOCS_COMPLETOS, celular: '3157654321' }, foto), hace(0, 1));
+    // Aprendices SENA de ejemplo (fechas relativas a hoy)
+    const dia = (n) => { const f = new Date(Date.now() + n * MS_POR_DIA); return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`; };
+    // Cargo de ejemplo de la sección: mejor "APRENDIZ SENA" o uno de auxiliar
+    const cargoDe = (seccion) => {
+      const deLaSeccion = PUESTOS.filter((x) => x.seccion === seccion);
+      return (deLaSeccion.find((x) => /APRENDIZ/.test(x.cargo)) || deLaSeccion.find((x) => /AUXILIAR/.test(x.cargo)) || deLaSeccion[0] || { cargo: 'APRENDIZ SENA' }).cargo;
+    };
+    const aprendices = [
+      // Lectiva: le faltan 200 días; ya se le mandó el link (sin manipulación)
+      { tipoDocumento: 'CC', cedula: '1112345678', nombre: 'Mariana López Arias', celular: '3014567890', correo: 'mariana.lopez@ejemplo.com',
+        seccion: 'SURTIDO', sede: 'SC PANCE', fechaContrato: dia(-30), fechaPracticas: dia(200), enviado: 20 },
+      // Le faltan 20 días: ya toca pedirle la manipulación
+      { tipoDocumento: 'CC', cedula: '1113456789', nombre: 'Kevin Andrés Rojas', celular: '3025678901', correo: 'kevin.rojas@ejemplo.com',
+        seccion: 'PANADERIA Y RESTAURANTE', sede: 'SC TULUA', fechaContrato: dia(-150), fechaPracticas: dia(20), enviado: 60 },
+      // Su sección no pide manipulación; todavía no se le manda el link
+      { tipoDocumento: 'CC', cedula: '1114567890', nombre: 'Sofía Castaño', celular: '3036789012', correo: 'sofia.castano@ejemplo.com',
+        seccion: 'ADMINISTRACION', sede: 'SEDE ADMINISTRATIVA', fechaContrato: dia(-5), fechaPracticas: dia(10) },
+    ];
+    for (const a of aprendices) {
+      const carpeta = await inscribirAprendiz(raiz, { ...a, cargo: cargoDe(a.seccion) }, 'Analista de ejemplo');
+      if (a.enviado) {
+        const exp = await leerExpediente(carpeta);
+        exp.creado = new Date(hace(a.enviado)).toISOString();
+        agregarSolicitud(exp, { n: 1, tipo: 'documentos', codigo: codigoAleatorio(),
+          documentos: CONFIG.documentos.filter((d) => d.paraAprendiz && d.id !== 'manipulacion').map((d) => ({ id: d.id, motivo: '' })) }, 'Analista de ejemplo');
+        exp.solicitudes[0].fecha = new Date(hace(a.enviado)).toISOString();
+        await guardarExpediente(carpeta, exp);
+      }
+    }
     // Corrección 1 de Camilo (tiene la cédula rechazada): lo que mandaría la app del candidato
     recibidos.poner('1006223344_CORRECCION_1.zip',
       await zipDeEjemplo({ cedula: '1006223344', tipo: 'correccion', n: 1, docs: ['cedula'] }, foto), hace(0, 0.5));
@@ -2254,7 +2480,7 @@ function PantallaArranque({ onCarpeta, onEjemplo, carpetaRecordada, onReabrir, e
 }
 
 /* ---------- Barra lateral ---------- */
-function BarraLateral({ vista, setVista, pendientes, totalCandidatos, enPapelera = 0, usuario, carpeta, esEjemplo, onCambiarUsuario, onSalir }) {
+function BarraLateral({ vista, setVista, pendientes, totalCandidatos, enPapelera = 0, aprendicesPorAtender = 0, usuario, carpeta, esEjemplo, onCambiarUsuario, onSalir }) {
   // "Listos" va debajo de Candidatos: ahí pasan los que llegan a Completo o Contratado
   const Item = ({ id, icono, texto, cifra, pronto }) => (
     <button className="menu-item" aria-current={vista === id ? 'page' : undefined} disabled={pronto} onClick={() => setVista(id)}>
@@ -2268,6 +2494,7 @@ function BarraLateral({ vista, setVista, pendientes, totalCandidatos, enPapelera
       <Item id="bandeja" icono="bandeja" texto="Bandeja" cifra={pendientes} />
       <Item id="candidatos" icono="personas" texto="Candidatos" cifra={0} />
       <Item id="listos" icono="listo" texto="Listos" cifra={0} />
+      <Item id="aprendices" icono="personas" texto="Aprendices" cifra={aprendicesPorAtender} />
       <Item id="papelera" icono="papelera" texto="Papelera" cifra={enPapelera} />
       <Item id="ajustes" icono="ajustes" texto="Ajustes" cifra={0} />
       <div className="lateral-pie">
@@ -2470,7 +2697,7 @@ function FilaCandidato({ c, onAbrir, usuario }) {
     <div className="cand fila-tocable" role="button" tabIndex={0} onClick={() => onAbrir(c)}
          onKeyDown={(ev) => (ev.key === 'Enter' || ev.key === ' ') && (ev.preventDefault(), onAbrir(c))}>
       <div className="fila-texto">
-        <span className="fila-titulo">{nombreBonito(c.nombre)}</span>
+        <span className="fila-titulo">{nombreBonito(c.nombre)}{esAprendiz(e) && <span className="chip-aprendiz">Aprendiz</span>}</span>
         <span className="fila-sub numeros">{siglaDocumento(e && e.tipoDocumento)} {c.cedula || '—'}{e && e.primerEmpleo ? ' — primer empleo' : ''}</span>
         {c.enUso && c.enUso.por !== usuario && <span className="fila-pista">Abierta por {c.enUso.por}</span>}
         {c.conflictos && c.conflictos.length > 0 && <span className="mensaje aviso">OneDrive creó una copia en conflicto: ábrelo para resolverla.</span>}
@@ -2517,6 +2744,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
   const [otraPersona, setOtraPersona] = useState(null);            // { por, desde } si alguien más la tiene abierta
   const [conflicto, setConflicto] = useState(null);                // versiones del expediente si hay copias en conflicto
   const [resolviendo, setResolviendo] = useState(false);           // diálogo para elegir versión abierto
+  const [solicitando, setSolicitando] = useState(null);            // hoja del link de aprendiz abierta: { solicitud, registrada }
   const campoArchivo = useRef(null);
   const destino = useRef(null);                                    // a qué ítem va el archivo que se está subiendo
 
@@ -2578,7 +2806,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
       copia.gestionHumana = copia.gestionHumana || {};
       modificar(copia);
       if (avanzarEstado && copia.estado === 'recibido') copia.estado = 'revision';
-      anotar(copia, usuario, accion);
+      if (accion) anotar(copia, usuario, accion); // (sin texto: la modificación ya anotó en la bitácora)
       setExp(await guardarExpediente(c.carpeta, copia));
       onCambio();
       return true;
@@ -2708,6 +2936,9 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
   const modoInduccion = (gh._induccion || {}).modo || 'unico';
   const av = avanceDe(exp);
 
+  /** Nombre de un ítem del checklist: a los aprendices el contrato se les muestra como "Contrato de aprendizaje SENA". */
+  const nombreItemGH = (id) => (esAprendiz(exp) && id === 'contrato' ? CONFIG.nombreContratoAprendiz : (ITEMS_GH[id] || {}).nombre);
+
   /** "Abrir página ↗": la plataforma del ítem (si en Ajustes le pusieron página), en otra pestaña. */
   const EnlacePagina = ({ itemId, clase = 'enlace-pagina' }) => {
     const enlace = (ITEMS_GH[itemId] || {}).enlace;
@@ -2724,7 +2955,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
       <div className="item-ficha">
         <span className={`punto ${tiene ? 'hecho' : ''}`} aria-hidden="true">{tiene && <Icono nombre="listo" tamano={13} />}</span>
         <div className="fila-texto">
-          <span className="item-titulo">{titulo || ITEMS_GH[itemId].nombre}</span>
+          <span className="item-titulo">{titulo || nombreItemGH(itemId)}</span>
           <span className="nombre-archivo">{tiene ? `${archivos[0]} — ${(gh[itemId].por || '')}, ${fechaCorta(gh[itemId].fecha)}` : (pista || 'Falta subir el archivo')}</span>
           {children}
         </div>
@@ -2746,11 +2977,11 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
     const hecho = !!(gh[itemId] || {}).hecho;
     return (
       <label className="casilla">
-        <span>{texto || ITEMS_GH[itemId].nombre}{conEnlace && <EnlacePagina itemId={itemId} />}
+        <span>{texto || nombreItemGH(itemId)}{conEnlace && <EnlacePagina itemId={itemId} />}
           {hecho && gh[itemId].por && <small>{gh[itemId].por}, {fechaCorta(gh[itemId].fecha)}</small>}</span>
         {/* Interruptor de iOS (es una casilla de chequeo con otro aspecto) */}
         <input type="checkbox" role="switch" className="interruptor" checked={hecho} disabled={guardando}
-               onChange={() => marcar(itemId, 'hecho', !hecho, `${hecho ? 'Desmarcó' : 'Marcó'} "${texto || ITEMS_GH[itemId].nombre}"`)} />
+               onChange={() => marcar(itemId, 'hecho', !hecho, `${hecho ? 'Desmarcó' : 'Marcó'} "${texto || nombreItemGH(itemId)}"`)} />
       </label>
     );
   };
@@ -2775,7 +3006,11 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
   const todoListo = av.total > 0 && av.hechos === av.total;
   // Para "Pedir correcciones": documentos rechazados y documentos que no mandó
   const rechazados = docsOrdenados.filter(([, doc]) => doc.revision === 'rechazado').map(([id, doc]) => ({ id, motivo: doc.motivo || 'No se acepta' }));
-  const faltantes = CONFIG.documentos.filter((d) => !(exp.documentos || {})[d.id]).map((d) => d.id);
+  // A un aprendiz solo se le pueden pedir documentos de aprendiz; a los demás, todos menos los de aprendiz
+  const faltantes = CONFIG.documentos
+    .filter((d) => !(exp.documentos || {})[d.id] && (esAprendiz(exp) ? d.paraAprendiz : !d.soloAprendiz))
+    .map((d) => d.id);
+  const accion = esAprendiz(exp) ? accionAprendiz(exp) : null;
 
   return (
     <>
@@ -2791,6 +3026,13 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
             <div className="fila-texto">
               <h2 style={{ overflowWrap: 'anywhere' }}>{nombreBonito(exp.nombre)}</h2>
               <span className="fila-sub numeros">{siglaDocumento(exp.tipoDocumento)} {exp.cedula} — {exp.cargo || 'sin cargo'}{exp.seccion ? `, ${exp.seccion}` : ''}{exp.primerEmpleo ? ' — primer empleo' : ''}</span>
+              {esAprendiz(exp) && (
+                <span className="bloque-aprendiz">
+                  <span><strong>Aprendiz SENA</strong> — {exp.aprendiz.sede || 'sin sede'} — contrato desde el {fechaLarga(exp.aprendiz.fechaContrato)}</span>
+                  <span>{faseAprendiz(exp)}</span>
+                  <span className={`manip ${estadoManipulacion(exp).clave}`}>{estadoManipulacion(exp).texto}</span>
+                </span>
+              )}
               {(exp.celular || exp.correo) && (
                 <span className="contacto">
                   {exp.celular && <a className="numeros" href={`tel:+57${exp.celular}`}>Cel. {exp.celular}</a>}
@@ -2815,6 +3057,12 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
               <div className="cana cana-ancha" aria-hidden="true">{av.nudos.map((n, i) => <span key={i} className={`nudo ${n}`} />)}</div>
               <div className="avance-texto">{av.hechos} de {av.total} listos{guardando ? ' — guardando…' : ''}</div>
             </div>
+            {accion && (
+              <button className="boton boton-principal" disabled={guardando}
+                      onClick={() => setSolicitando({ solicitud: accion.solicitud, registrada: !!accion.registrada })}>
+                {accion.texto}
+              </button>
+            )}
             <button className="boton boton-secundario" disabled={guardando || (!rechazados.length && !faltantes.length)}
                     title={!rechazados.length && !faltantes.length ? 'No hay documentos rechazados ni faltantes' : undefined}
                     onClick={() => setPidiendo(true)}>
@@ -2917,7 +3165,7 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
               {modoInduccion === 'unico' ? (
                 <FilaArchivo itemId="paquete_induccion">
                   <div className="casillas">
-                    {CONFIG.checklistGH.filter((i) => i.tipo === 'induccion').map((i) => <Casilla key={i.id} itemId={i.id} texto={`${i.nombre}: revisado`} />)}
+                    {CONFIG.checklistGH.filter((i) => i.tipo === 'induccion').map((i) => <Casilla key={i.id} itemId={i.id} texto={`${nombreItemGH(i.id)}: revisado`} />)}
                   </div>
                 </FilaArchivo>
               ) : CONFIG.checklistGH.filter((i) => i.tipo === 'induccion').map((i) => (
@@ -2962,6 +3210,11 @@ function Ficha({ c, usuario, avisar, onCambio, onCerrar, onNoContratado }) {
           </section>
         </div>
       </aside>
+      {solicitando && (
+        <HojaSolicitudAprendiz exp={exp} solicitud={solicitando.solicitud} registrada={solicitando.registrada}
+                               guardando={guardando} avisar={avisar} onCerrar={() => setSolicitando(null)}
+                               onRegistrar={(sol) => cambiar((e) => agregarSolicitud(e, sol, usuario), null, false)} />
+      )}
       {resolviendo && conflicto && (
         <DialogoVersiones versiones={conflicto} onElegir={elegirVersion} onCancelar={() => setResolviendo(false)} />
       )}
@@ -3315,6 +3568,286 @@ function Ajustes({ info, onGuardar, onRecargar, cargando }) {
   );
 }
 
+/* ---------- Aprendices: hoja del link (primer envío, manipulación o reenviar) ---------- */
+
+/**
+ * Muestra lo que se le pide al aprendiz, el mensaje con el link (versión 2) y los botones
+ * Copiar / WhatsApp / correo. La primera vez que se copia o se manda, la solicitud queda
+ * registrada en el expediente (onRegistrar). Si ya estaba registrada, solo deja reenviarla.
+ */
+function HojaSolicitudAprendiz({ exp, solicitud, registrada: yaRegistrada, guardando, avisar, onRegistrar, onCerrar }) {
+  const [huella, setHuella] = useState('');
+  const [registrada, setRegistrada] = useState(!!yaRegistrada);
+  useEffect(() => { huellaCedula(exp.cedula).then(setHuella); }, [exp.cedula]);
+  useEffect(() => {
+    const alTeclear = (ev) => ev.key === 'Escape' && onCerrar();
+    window.addEventListener('keydown', alTeclear);
+    return () => window.removeEventListener('keydown', alTeclear);
+  }, []);
+  const link = huella ? linkDeSolicitudAprendiz(exp, solicitud, huella) : '';
+  const mensaje = huella ? mensajeSolicitudAprendiz(exp, solicitud, link) : '';
+  const celular = String(exp.celular || '').replace(/\D/g, '');
+
+  async function registrarSiFalta() {
+    if (registrada) return true;
+    const ok = await onRegistrar(solicitud);
+    if (ok) setRegistrada(true);
+    return ok;
+  }
+  async function copiar() {
+    try { await navigator.clipboard.writeText(mensaje); }
+    catch (e) { avisar('No se pudo copiar automáticamente: selecciona el mensaje y cópialo a mano', 'error'); return; }
+    if (await registrarSiFalta()) avisar('Mensaje copiado');
+  }
+  const alEnviar = (ev) => { if (!huella || guardando) { ev.preventDefault(); return; } registrarSiFalta(); };
+  const titulo = solicitud.tipo === 'manipulacion' ? 'Pedir manipulación de alimentos' : 'Link de documentos';
+
+  return (
+    <>
+      <div className="velo encima" onClick={onCerrar} />
+      <aside className="detalle hoja-encima" role="dialog" aria-modal="true" aria-label={titulo}>
+        <div className="agarre" aria-hidden="true" />
+        <div className="detalle-cabeza">
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+            <div className="fila-texto">
+              <h2>{titulo}</h2>
+              <span className="fila-sub">{nombreBonito(exp.nombre)} — solicitud {solicitud.n}</span>
+            </div>
+            <button className="boton boton-texto" style={{ fontWeight: 600, fontSize: 17 }} onClick={onCerrar}>{registrada ? 'Listo' : 'Cancelar'}</button>
+          </div>
+        </div>
+        <div className="detalle-cuerpo">
+          <section>
+            <h3>Se le pide</h3>
+            <div className="tarjeta">
+              {solicitud.documentos.map((d) => (
+                <div key={d.id} className="item-ficha sin-punto"><span className="item-titulo">{nombreDocumento(d.id)}</span></div>
+              ))}
+            </div>
+            {solicitud.tipo === 'documentos' && !solicitud.documentos.some((d) => d.id === 'manipulacion') && seccionPideManipulacion(exp.seccion) && (
+              <p className="nota-seccion">La manipulación de alimentos no va en este link: se pide cuando falten {plural(CONFIG.diasManipulacionAprendiz, 'día', 'días')} para prácticas.</p>
+            )}
+          </section>
+          <section>
+            <h3>Mensaje para el aprendiz</h3>
+            {mensaje ? <pre className="mensaje-previo">{mensaje}</pre> : <p className="nota-seccion">Preparando el link…</p>}
+            <p className="nota-seccion">
+              {registrada ? 'Esta solicitud ya quedó registrada. Puedes copiar o reenviar el mismo link.'
+                          : 'Al copiar o enviar el mensaje, la solicitud queda registrada en el expediente.'}
+              {' '}El link lleva un código único: solo sirve para este aprendiz y pide su número de documento.
+            </p>
+          </section>
+          <div className="acciones-hoja">
+            <button className="boton boton-principal" disabled={!mensaje || guardando} onClick={copiar}>Copiar mensaje</button>
+            {celular && (
+              <a className="boton boton-secundario" aria-disabled={!mensaje || guardando} onClick={alEnviar}
+                 href={mensaje ? `https://wa.me/57${celular}?text=${encodeURIComponent(mensaje)}` : undefined}
+                 target="_blank" rel="noopener noreferrer">Abrir WhatsApp</a>
+            )}
+            {exp.correo && (
+              <a className="boton boton-secundario" aria-disabled={!mensaje || guardando} onClick={alEnviar}
+                 href={mensaje ? `mailto:${exp.correo}?subject=${encodeURIComponent('Documentos de ingreso — Supertiendas Cañaveral')}&body=${encodeURIComponent(mensaje)}` : undefined}>
+                Abrir correo
+              </a>
+            )}
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+/* ---------- Aprendices: formulario de inscripción ---------- */
+
+/** Cargos sin repetir (para el buscador del formulario). */
+const CARGOS_UNICOS = [...new Set(PUESTOS.map((x) => x.cargo))].sort((a, b) => a.localeCompare(b, 'es'));
+
+/**
+ * Hoja "Inscribir aprendiz": GH llena los datos y las fechas. Muestra si su sección pide
+ * manipulación y cuándo se pedirá. onInscribir(datos) crea la carpeta y abre el link.
+ */
+function HojaInscribir({ onInscribir, onCerrar }) {
+  const [d, setD] = useState({ tipoDocumento: 'CC', cedula: '', nombre: '', celular: '', correo: '', cargo: '', seccion: '',
+                                sede: '', fechaContrato: '', fechaPracticas: '' });
+  const [errores, setErrores] = useState({});
+  const [guardando, setGuardando] = useState(false);
+  // Al cambiar un campo se borra su error (y al cambiar el cargo, la sección elegida)
+  const poner = (campo, valor) => {
+    setD((x) => ({ ...x, [campo]: valor, ...(campo === 'cargo' ? { seccion: '' } : {}) }));
+    setErrores((e) => ({ ...e, [campo]: undefined }));
+  };
+  const secciones = [...new Set(PUESTOS.filter((x) => x.cargo === d.cargo).map((x) => x.seccion))];
+  // Si el cargo tiene una sola sección, se elige sola
+  useEffect(() => { if (secciones.length === 1 && d.seccion !== secciones[0]) setD((x) => ({ ...x, seccion: secciones[0] })); }, [d.cargo]);
+  const dias = diasHasta(d.fechaPracticas);
+  const pide = d.seccion && seccionPideManipulacion(d.seccion);
+
+  async function inscribir() {
+    const cedula = documentoLimpio(d.cedula, d.tipoDocumento);
+    const celular = d.celular.replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, '');
+    const correo = d.correo.trim().toLowerCase();
+    const e = {};
+    if (d.nombre.trim().length < 3) e.nombre = 'Escribe el nombre completo.';
+    if (d.tipoDocumento === 'CC' ? !/^\d{5,12}$/.test(cedula) : !/^[0-9A-Z]{3,15}$/.test(cedula)) e.cedula = 'Revisa el número de documento.';
+    if (!/^3\d{9}$/.test(celular)) e.celular = 'Celular con WhatsApp: 10 números y empieza por 3.';
+    if (!correoLimpio(correo)) e.correo = 'Escribe un correo válido.';
+    if (!CARGOS_UNICOS.includes(d.cargo)) e.cargo = 'Elige el cargo de la lista.';
+    if (!d.seccion) e.seccion = 'Elige la sección.';
+    if (!d.sede) e.sede = 'Elige la sede.';
+    if (!d.fechaContrato) e.fechaContrato = 'Escribe la fecha del contrato.';
+    if (!d.fechaPracticas) e.fechaPracticas = 'Escribe la fecha de ingreso a prácticas.';
+    setErrores(e);
+    if (Object.keys(e).length) return;
+    setGuardando(true);
+    const ok = await onInscribir({ ...d, cedula, celular, correo, nombre: d.nombre.trim().replace(/\s+/g, ' ') });
+    if (!ok) setGuardando(false);
+  }
+
+  const Campo = ({ campo, etiqueta, ancho, children }) => (
+    <div className={`fila-campo ${ancho ? 'ancho' : ''} ${errores[campo] ? 'con-error' : ''}`}>
+      <label htmlFor={`ins-${campo}`}>{errores[campo] || etiqueta}</label>
+      {children}
+    </div>
+  );
+
+  return (
+    <>
+      <div className="velo" onClick={() => !guardando && onCerrar()} />
+      <aside className="detalle" role="dialog" aria-modal="true" aria-label="Inscribir aprendiz">
+        <div className="agarre" aria-hidden="true" />
+        <div className="detalle-cabeza">
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+            <div className="fila-texto"><h2>Inscribir aprendiz</h2>
+              <span className="fila-sub">Después se arma el link para que suba solo sus documentos.</span></div>
+            <button className="boton boton-texto" style={{ fontWeight: 600, fontSize: 17 }} disabled={guardando} onClick={onCerrar}>Cancelar</button>
+          </div>
+        </div>
+        <div className="detalle-cuerpo">
+          <section>
+            <h3>Datos del aprendiz</h3>
+            <div className="tarjeta formulario">
+              {Campo({ campo: 'nombre', etiqueta: 'Nombre completo', ancho: true, children:
+                <input id="ins-nombre" value={d.nombre} maxLength={120} onChange={(e) => poner('nombre', e.target.value)} placeholder="Como aparece en su documento" /> })}
+              {Campo({ campo: 'tipoDocumento', etiqueta: 'Tipo de documento', children:
+                <select id="ins-tipoDocumento" value={d.tipoDocumento} onChange={(e) => poner('tipoDocumento', e.target.value)}>
+                  <option value="CC">Cédula de ciudadanía</option><option value="CE">Cédula de extranjería</option>
+                  <option value="PPT">Permiso por Protección Temporal (PPT)</option><option value="PA">Pasaporte</option>
+                  <option value="TI">Tarjeta de identidad</option>
+                </select> })}
+              {Campo({ campo: 'cedula', etiqueta: 'Número de documento', children:
+                <input id="ins-cedula" value={d.cedula} maxLength={20} onChange={(e) => poner('cedula', e.target.value)} /> })}
+              {Campo({ campo: 'celular', etiqueta: 'Celular con WhatsApp', children:
+                <input id="ins-celular" type="tel" value={d.celular} maxLength={20} onChange={(e) => poner('celular', e.target.value)} placeholder="3001234567" /> })}
+              {Campo({ campo: 'correo', etiqueta: 'Correo', children:
+                <input id="ins-correo" type="email" value={d.correo} maxLength={120} onChange={(e) => poner('correo', e.target.value)} placeholder="nombre@correo.com" /> })}
+            </div>
+          </section>
+          <section>
+            <h3>Cargo y sede</h3>
+            <div className="tarjeta formulario">
+              {Campo({ campo: 'cargo', etiqueta: 'Cargo (escribe y elige de la lista)', ancho: true, children: <>
+                <input id="ins-cargo" list="lista-cargos" value={d.cargo} onChange={(e) => poner('cargo', e.target.value.toUpperCase())} placeholder="Ej. APRENDIZ" />
+                <datalist id="lista-cargos">{CARGOS_UNICOS.map((x) => <option key={x} value={x} />)}</datalist></> })}
+              {Campo({ campo: 'seccion', etiqueta: 'Sección', children:
+                <select id="ins-seccion" value={d.seccion} onChange={(e) => poner('seccion', e.target.value)} disabled={!secciones.length}>
+                  <option value="">{secciones.length ? 'Elige la sección' : 'Primero elige el cargo'}</option>
+                  {secciones.map((x) => <option key={x} value={x}>{x}</option>)}
+                </select> })}
+              {Campo({ campo: 'sede', etiqueta: 'Sede', children:
+                <select id="ins-sede" value={d.sede} onChange={(e) => poner('sede', e.target.value)}>
+                  <option value="">Elige la sede</option>
+                  {CONFIG.sedes.map((x) => <option key={x.nombre} value={x.nombre}>{x.nombre}{x.ciudad ? ` — ${x.ciudad.split(',')[0]}` : ''}</option>)}
+                </select> })}
+            </div>
+            <p className="nota-seccion">Las sedes se cambian en Ajustes.</p>
+          </section>
+          <section>
+            <h3>Fechas</h3>
+            <div className="tarjeta formulario">
+              {Campo({ campo: 'fechaContrato', etiqueta: 'Fecha del contrato', children:
+                <input id="ins-fechaContrato" type="date" value={d.fechaContrato} onChange={(e) => poner('fechaContrato', e.target.value)} /> })}
+              {Campo({ campo: 'fechaPracticas', etiqueta: 'Fecha de ingreso a prácticas', children:
+                <input id="ins-fechaPracticas" type="date" value={d.fechaPracticas} onChange={(e) => poner('fechaPracticas', e.target.value)} /> })}
+            </div>
+            {d.fechaPracticas && (
+              <div className="mensaje info" style={{ marginTop: 10 }}>
+                {dias > 0 ? `Le faltan ${plural(dias, 'día', 'días')} para prácticas (etapa lectiva). ` : 'Ya está en prácticas o entra hoy. '}
+                {!d.seccion ? '' : !pide ? 'Su sección no pide manipulación de alimentos.'
+                  : dias > CONFIG.diasManipulacionAprendiz
+                    ? `Su sección pide manipulación: no va en el primer link; se pedirá cuando falten ${plural(CONFIG.diasManipulacionAprendiz, 'día', 'días')}.`
+                    : 'Su sección pide manipulación y ya toca: va en el primer link.'}
+              </div>
+            )}
+          </section>
+          <button className="boton boton-principal boton-grande" disabled={guardando} onClick={inscribir}>
+            {guardando ? 'Inscribiendo…' : 'Inscribir y preparar el link'}
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+/* ---------- Aprendices: listado con los días para prácticas ---------- */
+
+/**
+ * Todos los aprendices, los que entran a prácticas más pronto primero. Muestra la fase,
+ * la manipulación y lo que toca hacer (enviar link, pedir manipulación o reenviar).
+ */
+function Aprendices({ lista, cargando, onAbrir, onRecargar, onInscribir, onAccion }) {
+  const aprendices = lista.filter((c) => esAprendiz(c.expediente))
+    .sort((a, b) => (diasParaPracticas(a.expediente) ?? 99999) - (diasParaPracticas(b.expediente) ?? 99999));
+  const porPedir = aprendices.filter((c) => { const x = accionAprendiz(c.expediente); return x && x.accion !== 'reenviar'; }).length;
+  return (
+    <>
+      <header className="encabezado">
+        <div>
+          <h1>Aprendices</h1>
+          <p>{plural(aprendices.length, 'aprendiz', 'aprendices')}. Los que entran a prácticas más pronto aparecen primero.</p>
+        </div>
+        <div className="acciones">
+          <button className="boton boton-secundario" onClick={onRecargar} disabled={cargando}><Icono nombre="recargar" tamano={18} /> Actualizar</button>
+          <button className="boton boton-principal" onClick={onInscribir}><Icono nombre="personas" tamano={18} /> Inscribir aprendiz</button>
+        </div>
+      </header>
+      {porPedir > 0 && (
+        <div className="alerta aviso" style={{ marginBottom: 14 }} role="status">
+          {porPedir === 1 ? 'Hay 1 aprendiz' : `Hay ${porPedir} aprendices`} con algo por enviar (link de documentos o manipulación de alimentos).
+        </div>
+      )}
+      <div className="tarjeta">
+        {!aprendices.length ? (
+          <div className="vacio">
+            <div className="icono-caja"><Icono nombre="personas" tamano={28} /></div>
+            <h3>Aún no hay aprendices</h3>
+            <p>Toca “Inscribir aprendiz”, llena sus datos y fechas, y mándale el link para que suba sus documentos.</p>
+          </div>
+        ) : aprendices.map((c) => {
+          const e = c.expediente;
+          const x = accionAprendiz(e);
+          const m = estadoManipulacion(e);
+          return (
+            <div className="fila" key={c.nombreCarpeta}>
+              <div className={`icono-caja ${x && x.accion !== 'reenviar' ? 'ojo' : ''}`}><Icono nombre="personas" /></div>
+              <div className="fila-texto fila-tocable" role="button" tabIndex={0} onClick={() => onAbrir(c)}
+                   onKeyDown={(ev) => (ev.key === 'Enter' || ev.key === ' ') && (ev.preventDefault(), onAbrir(c))}>
+                <span className="fila-titulo">{nombreBonito(e.nombre)}</span>
+                <span className="fila-sub">{siglaDocumento(e.tipoDocumento)} {e.cedula} — {e.cargo}, {e.seccion} — {e.aprendiz.sede}</span>
+                <span className="fila-pista">{faseAprendiz(e)}</span>
+                <span className={`manip ${m.clave}`}>{m.texto}</span>
+                <span className="fila-pista">{nombreEstado(e.estado)}{(e.solicitudes || []).length ? ` — ${plural(e.solicitudes.length, 'link enviado', 'links enviados')}` : ' — falta enviar el link'}</span>
+              </div>
+              <div className="fila-lado">
+                {x && <button className={`boton ${x.accion === 'reenviar' ? 'boton-secundario' : 'boton-principal'}`} onClick={() => onAccion(c, x)}>{x.texto}</button>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 /* ---------- Diálogo: elegir versión del expediente (copias en conflicto) ---------- */
 
 /**
@@ -3431,6 +3964,8 @@ function App() {
   const [papelera, setPapelera] = useState([]);       // no contratados en la Papelera
   const [ocupado, setOcupado] = useState(false);      // moviendo carpetas (Papelera)
   const [ajustesInfo, setAjustesInfo] = useState(null); // lo leído de ajustes.json (o null = valores de fábrica)
+  const [inscribiendo, setInscribiendo] = useState(false);     // hoja "Inscribir aprendiz" abierta
+  const [solicitud, setSolicitud] = useState(null);           // hoja del link de aprendiz abierta: { c, exp, solicitud, registrada }
   const temporizador = useRef(null);
 
   /** Muestra un aviso abajo por unos segundos. */
@@ -3632,6 +4167,37 @@ function App() {
     });
   }
 
+  /** Inscribe un aprendiz y abre la hoja con su primer link. */
+  async function inscribir(datos) {
+    try {
+      const carpeta = await inscribirAprendiz(raiz, datos, usuario);
+      const exp = await leerExpediente(carpeta);
+      setInscribiendo(false);
+      await recargarCandidatos();
+      avisar(`${nombreBonito(datos.nombre)} quedó inscrito. Ahora mándale el link.`);
+      const x = accionAprendiz(exp);
+      setSolicitud({ carpeta, exp, solicitud: x.solicitud, registrada: false });
+      return true;
+    } catch (e) {
+      avisar(`No se pudo inscribir: ${e.message}`, 'error'); // por ejemplo, documento repetido
+      return false;
+    }
+  }
+
+  /** Registra en el expediente una solicitud de aprendiz enviada desde la vista Aprendices. */
+  async function registrarSolicitud(sol) {
+    try {
+      const exp = await leerExpediente(solicitud.carpeta);
+      agregarSolicitud(exp, sol, usuario);
+      await guardarExpediente(solicitud.carpeta, exp);
+      await recargarCandidatos();
+      return true;
+    } catch (e) {
+      avisar(e instanceof ErrorChoque ? e.message : `No se pudo registrar: ${e.message}`, 'error');
+      return false;
+    }
+  }
+
   /** Guarda los ajustes del equipo (pantalla Ajustes). */
   async function guardarAjustesDelEquipo(valores) {
     try {
@@ -3670,6 +4236,7 @@ function App() {
   return (
     <div className="marco">
       <BarraLateral vista={vista} setVista={setVista} pendientes={pendientes} enPapelera={papelera.length} usuario={usuario}
+                    aprendicesPorAtender={candidatos.filter((c) => esAprendiz(c.expediente) && (accionAprendiz(c.expediente) || {}).accion && accionAprendiz(c.expediente).accion !== 'reenviar').length}
                     carpeta={raiz && raiz.name} esEjemplo={!!modoEjemplo}
                     onCambiarUsuario={() => setEditarNombre(true)} onSalir={salir} />
       <main className="trabajo">
@@ -3679,6 +4246,11 @@ function App() {
         )}
         {vista === 'ajustes' && (
           <Ajustes info={ajustesInfo} cargando={cargando} onRecargar={() => recargar()} onGuardar={guardarAjustesDelEquipo} />
+        )}
+        {vista === 'aprendices' && (
+          <Aprendices lista={candidatos} cargando={cargando} onAbrir={setAbierto} onRecargar={() => recargar()}
+                      onInscribir={() => setInscribiendo(true)}
+                      onAccion={(c, x) => setSolicitud({ carpeta: c.carpeta, exp: c.expediente, solicitud: x.solicitud, registrada: !!x.registrada })} />
         )}
         {vista === 'papelera' && (
           <Papelera lista={papelera} cargando={cargando} ocupado={ocupado} onRecargar={() => recargar()}
@@ -3695,6 +4267,11 @@ function App() {
       {abierto && <Ficha c={abierto} usuario={usuario} avisar={avisar} onCambio={recargarCandidatos}
                          onCerrar={() => { setAbierto(null); recargar(); }} onNoContratado={pedirNoContratado} />}
       {confirmar && <DialogoConfirmar {...confirmar} onCancelar={() => setConfirmar(null)} />}
+      {inscribiendo && <HojaInscribir onInscribir={inscribir} onCerrar={() => setInscribiendo(false)} />}
+      {solicitud && (
+        <HojaSolicitudAprendiz exp={solicitud.exp} solicitud={solicitud.solicitud} registrada={solicitud.registrada}
+                               avisar={avisar} onRegistrar={registrarSolicitud} onCerrar={() => setSolicitud(null)} />
+      )}
       {editarNombre && <DialogoNombre actual={usuario} onGuardar={guardarNombre} onCancelar={() => setEditarNombre(false)} />}
       {aviso && (
         <div className={`aviso-flotante ${aviso.tipo === 'error' ? 'error' : ''} ${modoEjemplo ? 'sobre-selector' : ''}`} role="status">
