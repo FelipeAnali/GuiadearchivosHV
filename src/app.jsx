@@ -2240,7 +2240,7 @@ class PantallaDeError extends React.Component {
             El código "k" vuelve en el JSON del ZIP como "codigo": así el panel sabe que el
             paquete viene del link que mandó.
      ZIP de aprendiz: <cedula>_APRENDIZ_<n>.zip y datos_candidato.json =
-            { "version": 1, "tipo": "aprendiz", "solicitud": n, "codigo": "<k>", "cedula",
+            { "version": 1, "tipo": "aprendiz", "solicitud": n, "codigo": "<k>", "cedula", "celular", "correo",
               "autorizacionDatos": { aceptada, fecha } | null, "generado", "archivos": [...] }
      ZIP:   <cedula>_CORRECCION_<n>.zip, archivos con nombreArchivoEnZip() y
             datos_candidato.json = { "version": 1, "tipo": "correccion", "correccion": n,
@@ -2361,6 +2361,7 @@ function sesionCorreccionNueva(correccion, dispositivoPersonal) {
     h: correccion.h,
     k: correccion.k,            // código único del link (versión 2); vuelve en el ZIP
     autorizacion: null,         // { aceptada, fecha } si el link pedía aceptar la autorización
+    contacto: null,             // aprendiz: { celular, correo } que confirmó (doble verificación)
     creado: ahora,
     expira: ahora + CONFIG.diasConservacion * MS_POR_DIA,
     dispositivoPersonal,
@@ -2392,6 +2393,7 @@ async function armarZipCorreccion(sesion, correccion) {
   // JSON del contrato (ver comentario de la sección 7). El código "k" vuelve como "codigo".
   const datos = sesion.tipo === 'aprendiz'
     ? { version: 1, tipo: 'aprendiz', solicitud: sesion.n, codigo: sesion.k, cedula: sesion.cedula,
+        celular: (sesion.contacto || {}).celular || '', correo: (sesion.contacto || {}).correo || '',
         autorizacionDatos: sesion.autorizacion || null, generado: new Date().toISOString(), archivos: listado }
     : { version: 1, tipo: 'correccion', correccion: sesion.n, ...(sesion.k ? { codigo: sesion.k } : {}),
         cedula: sesion.cedula, generado: new Date().toISOString(), archivos: listado };
@@ -2534,11 +2536,17 @@ function InicioCorreccion({ correccion, guardadoDisponible, avisoInicial, alCome
 }
 
 /**
- * Corrección, pantalla 2: el candidato escribe su número de documento y se compara su
- * huella con la del link. No sigue hasta que coincida.
+ * Corrección o aprendiz, pantalla 2: el candidato escribe su número de documento y se
+ * compara su huella con la del link. No sigue hasta que coincida.
+ * Si es APRENDIZ, además confirma su celular con WhatsApp y su correo ACTUALES (doble
+ * verificación: GH pudo registrar datos viejos). Van en el ZIP y el panel los actualiza.
  */
 function VerificarCedula({ correccion, alVerificar }) {
+  const esAprendiz = correccion.tipo === 'aprendiz';
   const [cedula, setCedula] = useState('');
+  const [celular, setCelular] = useState('');
+  const [correo, setCorreo] = useState('');
+  const [errorContacto, setErrorContacto] = useState({});
   const [conLetras, setConLetras] = useState(false); // teclado con letras para pasaporte, PPT o CE
   const [error, setError] = useState('');
   const [revisando, setRevisando] = useState(false);
@@ -2547,18 +2555,30 @@ function VerificarCedula({ correccion, alVerificar }) {
     // Cédulas: solo números. Pasaporte, CE o PPT: letras y números (en mayúscula)
     const digitos = cedula.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
     if (digitos.length < 3 || digitos.length > 15) { setError('Escribe tu número de documento como aparece en él.'); return; }
+    // Aprendiz: celular con WhatsApp y correo actuales (mismas reglas que en "Tus datos")
+    const celularLimpio = celular.replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, '');
+    const correoLimpio = correo.trim().toLowerCase();
+    if (esAprendiz) {
+      const e = {};
+      if (!CELULAR_VALIDO.test(celularLimpio)) e.celular = 'Escribe tu celular con WhatsApp: 10 números y empieza por 3.';
+      if (!CORREO_VALIDO.test(correoLimpio)) e.correo = 'Escribe tu correo, por ejemplo nombre@correo.com.';
+      setErrorContacto(e);
+      if (Object.keys(e).length) return;
+    }
     setRevisando(true);
     const coincide = (await huellaCedula(digitos)) === correccion.h;
     setRevisando(false);
     if (!coincide) { setError('Ese número no coincide con el de esta solicitud. Revisa que esté bien escrito.'); return; }
-    alVerificar(digitos);
+    alVerificar(digitos, esAprendiz ? { celular: celularLimpio, correo: correoLimpio } : null);
   }
 
   return (
     <div style={{ display: 'contents' }}>
       <main className="contenido">
-        <h1>Verifica tu documento</h1>
-        <p className="bajada">Para proteger tus datos, escribe el número de documento con el que mandaste tus documentos.</p>
+        <h1>{esAprendiz ? 'Verifica tus datos' : 'Verifica tu documento'}</h1>
+        <p className="bajada">{esAprendiz
+          ? 'Para proteger tus datos, escribe tu número de documento. Y confirma tu celular con WhatsApp y tu correo actuales: por ahí te escribe Gestión Humana.'
+          : 'Para proteger tus datos, escribe el número de documento con el que mandaste tus documentos.'}</p>
         <section className="grupo">
           <div className="lista">
             <label className={`fila fila-campo ${error ? 'con-error' : ''}`}>
@@ -2578,10 +2598,30 @@ function VerificarCedula({ correccion, alVerificar }) {
           </p>
           {MODO_PRUEBA && <p className="grupo-pie">Modo prueba: el número es {CEDULA_PRUEBA_CORRECCION}.</p>}
         </section>
+        {esAprendiz && (
+          <section className="grupo">
+            <h2 className="grupo-titulo">Tus datos de contacto actuales</h2>
+            <div className="lista">
+              <label className={`fila fila-campo ${errorContacto.celular ? 'con-error' : ''}`}>
+                <span className="etiqueta">Celular con WhatsApp</span>
+                <input type="tel" inputMode="tel" autoComplete="tel-national" placeholder="Número donde tienes WhatsApp"
+                       value={celular} maxLength={20} onChange={(e) => { setCelular(e.target.value); setErrorContacto((x) => ({ ...x, celular: undefined })); }} />
+              </label>
+              <label className={`fila fila-campo ${errorContacto.correo ? 'con-error' : ''}`}>
+                <span className="etiqueta">Correo</span>
+                <input type="email" inputMode="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                       placeholder="nombre@correo.com" value={correo} maxLength={120}
+                       onChange={(e) => { setCorreo(e.target.value); setErrorContacto((x) => ({ ...x, correo: undefined })); }} />
+              </label>
+            </div>
+            {Object.values(errorContacto).filter(Boolean).map((texto) => <p key={texto} className="grupo-pie error" role="alert">{texto}</p>)}
+            <p className="grupo-pie">El celular debe tener <strong>WhatsApp</strong> (no uno solo para llamadas).</p>
+          </section>
+        )}
       </main>
       <div className="barra-accion">
         <div className="barra-accion-interna">
-          <button type="button" className="boton boton-principal" disabled={revisando || !cedula.trim()} onClick={verificar}>
+          <button type="button" className="boton boton-principal" disabled={revisando || !cedula.trim() || (esAprendiz && (!celular.trim() || !correo.trim()))} onClick={verificar}>
             {revisando ? 'Verificando…' : 'Verificar'}
           </button>
         </div>
@@ -2667,7 +2707,8 @@ function AppCorreccion({ correccion }) {
             setAvisoInicial(`Tu avance anterior se borró porque pasaron más de ${CONFIG.diasConservacion} días. Empieza de nuevo.`);
           } else {
             setSesion(guardada);
-            setPantalla(guardada.cedula ? 'documentos' : 'verificar');
+            // Un aprendiz sin datos de contacto confirmados (avance de antes) vuelve a "Verifica tus datos"
+            setPantalla(guardada.cedula && (guardada.tipo !== 'aprendiz' || guardada.contacto) ? 'documentos' : 'verificar');
           }
         }
       } catch {
@@ -2754,7 +2795,7 @@ function AppCorreccion({ correccion }) {
           )}
           {pantalla === 'verificar' && sesion && (
             <VerificarCedula correccion={correccion}
-                             alVerificar={(cedula) => { setSesion((s) => ({ ...s, cedula })); setPantalla('documentos'); }} />
+                             alVerificar={(cedula, contacto) => { setSesion((s) => ({ ...s, cedula, contacto })); setPantalla('documentos'); }} />
           )}
           {pantalla === 'documentos' && sesion?.cedula && (
             <DocumentosCorreccion correccion={correccion} sesion={sesion} alAgregar={agregarArchivos}

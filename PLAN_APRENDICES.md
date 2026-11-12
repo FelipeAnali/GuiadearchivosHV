@@ -49,7 +49,8 @@ El link abre la app en modo **aprendiz** (igual que el modo corrección, que ya 
 1. *"Hola Laura, sube tus documentos de aprendiz"* y la lista de lo que se le pide.
 2. ¿El dispositivo es suyo o prestado? (misma regla de guardado y borrado).
 3. **Acepta la autorización de datos** (solo en el primer link; en el de manipulación ya la aceptó).
-4. **Verifica su número de documento.**
+4. **Verifica su número de documento y confirma su celular con WhatsApp y su correo actuales** (doble verificación:
+   si son distintos a los que registró GH, el panel actualiza la ficha y lo anota en la bitácora).
 5. Sube solo lo pedido, con las mismas revisiones de siempre.
 6. Descarga el ZIP (`<documento>_APRENDIZ_<n>.zip`) y lo sube con el mismo link de OneDrive.
 

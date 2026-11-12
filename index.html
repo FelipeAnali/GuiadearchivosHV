@@ -3580,7 +3580,7 @@ class PantallaDeError extends React.Component {
             El código "k" vuelve en el JSON del ZIP como "codigo": así el panel sabe que el
             paquete viene del link que mandó.
      ZIP de aprendiz: <cedula>_APRENDIZ_<n>.zip y datos_candidato.json =
-            { "version": 1, "tipo": "aprendiz", "solicitud": n, "codigo": "<k>", "cedula",
+            { "version": 1, "tipo": "aprendiz", "solicitud": n, "codigo": "<k>", "cedula", "celular", "correo",
               "autorizacionDatos": { aceptada, fecha } | null, "generado", "archivos": [...] }
      ZIP:   <cedula>_CORRECCION_<n>.zip, archivos con nombreArchivoEnZip() y
             datos_candidato.json = { "version": 1, "tipo": "correccion", "correccion": n,
@@ -3715,6 +3715,8 @@ function sesionCorreccionNueva(correccion, dispositivoPersonal) {
     // código único del link (versión 2); vuelve en el ZIP
     autorizacion: null,
     // { aceptada, fecha } si el link pedía aceptar la autorización
+    contacto: null,
+    // aprendiz: { celular, correo } que confirmó (doble verificación)
     creado: ahora,
     expira: ahora + CONFIG.diasConservacion * MS_POR_DIA,
     dispositivoPersonal,
@@ -3757,6 +3759,8 @@ async function armarZipCorreccion(sesion, correccion) {
     solicitud: sesion.n,
     codigo: sesion.k,
     cedula: sesion.cedula,
+    celular: (sesion.contacto || {}).celular || '',
+    correo: (sesion.contacto || {}).correo || '',
     autorizacionDatos: sesion.autorizacion || null,
     generado: new Date().toISOString(),
     archivos: listado
@@ -3944,15 +3948,21 @@ function InicioCorreccion(_ref21) {
 }
 
 /**
- * Corrección, pantalla 2: el candidato escribe su número de documento y se compara su
- * huella con la del link. No sigue hasta que coincida.
+ * Corrección o aprendiz, pantalla 2: el candidato escribe su número de documento y se
+ * compara su huella con la del link. No sigue hasta que coincida.
+ * Si es APRENDIZ, además confirma su celular con WhatsApp y su correo ACTUALES (doble
+ * verificación: GH pudo registrar datos viejos). Van en el ZIP y el panel los actualiza.
  */
 function VerificarCedula(_ref23) {
   let {
     correccion,
     alVerificar
   } = _ref23;
+  const esAprendiz = correccion.tipo === 'aprendiz';
   const [cedula, setCedula] = useState('');
+  const [celular, setCelular] = useState('');
+  const [correo, setCorreo] = useState('');
+  const [errorContacto, setErrorContacto] = useState({});
   const [conLetras, setConLetras] = useState(false); // teclado con letras para pasaporte, PPT o CE
   const [error, setError] = useState('');
   const [revisando, setRevisando] = useState(false);
@@ -3963,6 +3973,16 @@ function VerificarCedula(_ref23) {
       setError('Escribe tu número de documento como aparece en él.');
       return;
     }
+    // Aprendiz: celular con WhatsApp y correo actuales (mismas reglas que en "Tus datos")
+    const celularLimpio = celular.replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, '');
+    const correoLimpio = correo.trim().toLowerCase();
+    if (esAprendiz) {
+      const e = {};
+      if (!CELULAR_VALIDO.test(celularLimpio)) e.celular = 'Escribe tu celular con WhatsApp: 10 números y empieza por 3.';
+      if (!CORREO_VALIDO.test(correoLimpio)) e.correo = 'Escribe tu correo, por ejemplo nombre@correo.com.';
+      setErrorContacto(e);
+      if (Object.keys(e).length) return;
+    }
     setRevisando(true);
     const coincide = (await huellaCedula(digitos)) === correccion.h;
     setRevisando(false);
@@ -3970,7 +3990,10 @@ function VerificarCedula(_ref23) {
       setError('Ese número no coincide con el de esta solicitud. Revisa que esté bien escrito.');
       return;
     }
-    alVerificar(digitos);
+    alVerificar(digitos, esAprendiz ? {
+      celular: celularLimpio,
+      correo: correoLimpio
+    } : null);
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -3978,9 +4001,9 @@ function VerificarCedula(_ref23) {
     }
   }, /*#__PURE__*/React.createElement("main", {
     className: "contenido"
-  }, /*#__PURE__*/React.createElement("h1", null, "Verifica tu documento"), /*#__PURE__*/React.createElement("p", {
+  }, /*#__PURE__*/React.createElement("h1", null, esAprendiz ? 'Verifica tus datos' : 'Verifica tu documento'), /*#__PURE__*/React.createElement("p", {
     className: "bajada"
-  }, "Para proteger tus datos, escribe el n\xFAmero de documento con el que mandaste tus documentos."), /*#__PURE__*/React.createElement("section", {
+  }, esAprendiz ? 'Para proteger tus datos, escribe tu número de documento. Y confirma tu celular con WhatsApp y tu correo actuales: por ahí te escribe Gestión Humana.' : 'Para proteger tus datos, escribe el número de documento con el que mandaste tus documentos.'), /*#__PURE__*/React.createElement("section", {
     className: "grupo"
   }, /*#__PURE__*/React.createElement("div", {
     className: "lista"
@@ -4017,14 +4040,65 @@ function VerificarCedula(_ref23) {
     onClick: () => setConLetras(!conLetras)
   }, conLetras ? 'Mi documento es una cédula (solo números)' : 'Mi documento tiene letras (pasaporte, PPT…)')), MODO_PRUEBA && /*#__PURE__*/React.createElement("p", {
     className: "grupo-pie"
-  }, "Modo prueba: el n\xFAmero es ", CEDULA_PRUEBA_CORRECCION, "."))), /*#__PURE__*/React.createElement("div", {
+  }, "Modo prueba: el n\xFAmero es ", CEDULA_PRUEBA_CORRECCION, ".")), esAprendiz && /*#__PURE__*/React.createElement("section", {
+    className: "grupo"
+  }, /*#__PURE__*/React.createElement("h2", {
+    className: "grupo-titulo"
+  }, "Tus datos de contacto actuales"), /*#__PURE__*/React.createElement("div", {
+    className: "lista"
+  }, /*#__PURE__*/React.createElement("label", {
+    className: `fila fila-campo ${errorContacto.celular ? 'con-error' : ''}`
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "etiqueta"
+  }, "Celular con WhatsApp"), /*#__PURE__*/React.createElement("input", {
+    type: "tel",
+    inputMode: "tel",
+    autoComplete: "tel-national",
+    placeholder: "N\xFAmero donde tienes WhatsApp",
+    value: celular,
+    maxLength: 20,
+    onChange: e => {
+      setCelular(e.target.value);
+      setErrorContacto(x => ({
+        ...x,
+        celular: undefined
+      }));
+    }
+  })), /*#__PURE__*/React.createElement("label", {
+    className: `fila fila-campo ${errorContacto.correo ? 'con-error' : ''}`
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "etiqueta"
+  }, "Correo"), /*#__PURE__*/React.createElement("input", {
+    type: "email",
+    inputMode: "email",
+    autoComplete: "email",
+    autoCapitalize: "none",
+    autoCorrect: "off",
+    spellCheck: false,
+    placeholder: "nombre@correo.com",
+    value: correo,
+    maxLength: 120,
+    onChange: e => {
+      setCorreo(e.target.value);
+      setErrorContacto(x => ({
+        ...x,
+        correo: undefined
+      }));
+    }
+  }))), Object.values(errorContacto).filter(Boolean).map(texto => /*#__PURE__*/React.createElement("p", {
+    key: texto,
+    className: "grupo-pie error",
+    role: "alert"
+  }, texto)), /*#__PURE__*/React.createElement("p", {
+    className: "grupo-pie"
+  }, "El celular debe tener ", /*#__PURE__*/React.createElement("strong", null, "WhatsApp"), " (no uno solo para llamadas)."))), /*#__PURE__*/React.createElement("div", {
     className: "barra-accion"
   }, /*#__PURE__*/React.createElement("div", {
     className: "barra-accion-interna"
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
     className: "boton boton-principal",
-    disabled: revisando || !cedula.trim(),
+    disabled: revisando || !cedula.trim() || esAprendiz && (!celular.trim() || !correo.trim()),
     onClick: verificar
   }, revisando ? 'Verificando…' : 'Verificar'))));
 }
@@ -4139,7 +4213,8 @@ function AppCorreccion(_ref28) {
             setAvisoInicial(`Tu avance anterior se borró porque pasaron más de ${CONFIG.diasConservacion} días. Empieza de nuevo.`);
           } else {
             setSesion(guardada);
-            setPantalla(guardada.cedula ? 'documentos' : 'verificar');
+            // Un aprendiz sin datos de contacto confirmados (avance de antes) vuelve a "Verifica tus datos"
+            setPantalla(guardada.cedula && (guardada.tipo !== 'aprendiz' || guardada.contacto) ? 'documentos' : 'verificar');
           }
         }
       } catch {
@@ -4255,10 +4330,11 @@ function AppCorreccion(_ref28) {
     alComenzar: comenzar
   }), pantalla === 'verificar' && sesion && /*#__PURE__*/React.createElement(VerificarCedula, {
     correccion: correccion,
-    alVerificar: cedula => {
+    alVerificar: (cedula, contacto) => {
       setSesion(s => ({
         ...s,
-        cedula
+        cedula,
+        contacto
       }));
       setPantalla('documentos');
     }
