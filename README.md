@@ -8,8 +8,9 @@ Página para que los candidatos de **Supertiendas Cañaveral S.A.S.** preparen y
 |---|---|
 | [`index.html`](index.html) | La página de documentos de ingreso (todo en un solo archivo). |
 | [`documentos.js`](documentos.js) | Lista de documentos que se piden. La usan **las dos** apps: se cambia en un solo lugar. |
+| [`cargos.js`](cargos.js) | Lista de cargos y secciones (se pega desde Excel). La usan **las dos** apps. |
 | [`panel-gh.html`](panel-gh.html) | **Panel de Gestión Humana**: recibe los ZIP de los candidatos desde la carpeta de OneDrive, los revisa y lleva el avance de cada uno. Se abre en Chrome o Edge de computador: https://felipeanali.github.io/GuiadearchivosHV/panel-gh.html |
-| [`manual/Manual_candidato_Documentos_de_ingreso.pdf`](manual/Manual_candidato_Documentos_de_ingreso.pdf) | Manual del candidato, paso a paso con imágenes. |
+| [`manual/Manual_candidato_Documentos_de_ingreso.pdf`](manual/Manual_candidato_Documentos_de_ingreso.pdf) | Manual del candidato, paso a paso con imágenes. Los aprendices pueden tener el suyo (`enlaceManualAprendiz`, ver [GUIA.md](GUIA.md) punto 7). |
 | [`src/app.jsx`](src/app.jsx) | Código fuente de la app (se compila dentro de `index.html`). |
 | [`herramientas/compilar.js`](herramientas/compilar.js) | Compila `src/app.jsx` y lo pone en `index.html`. |
 | [`GUIA.md`](GUIA.md) | **Cómo hacer los cambios más comunes**, paso a paso y sin programar. |
@@ -44,6 +45,13 @@ link (por WhatsApp, correo o copiado). Ese link abre esta misma página en **mod
 verifica su número de documento, sube solo lo que le pidieron y envía un ZIP `CEDULA_CORRECCION_N.zip`, que el
 panel procesa sin tocar los demás documentos. Ver [COMO_FUNCIONA.md](COMO_FUNCIONA.md).
 
+## Aprendices SENA
+
+Gestión Humana inscribe al aprendiz en el panel (**Aprendices**) y le manda un link personal. El aprendiz verifica
+su número de documento, escribe su celular y correo, y sube solo sus documentos en un ZIP `DOCUMENTO_APRENDIZ_N.zip`.
+El panel avisa cuándo pedir el certificado de manipulación de alimentos según la sección y la fecha de prácticas.
+Sedes, días y secciones se cambian en **Ajustes** del panel. Ver [GUIA.md](GUIA.md) punto 7B.
+
 ## Revisión automática de documentos
 
 - **PDF con texto** (descargados de una página, como ADRES o el fondo de pensión): la página lee el contenido y rechaza el archivo si no corresponde o si se parece más a otro documento. El nombre del archivo no importa.
@@ -55,7 +63,7 @@ panel procesa sin tocar los demás documentos. Ver [COMO_FUNCIONA.md](COMO_FUNCI
 
 ### Configuración (sin programar)
 
-Solo hace falta tocar el bloque **CONFIGURACIÓN** dentro de `index.html` (cargos, documentos, textos, link de subida a OneDrive, link de la política de datos y página para comprimir PDF). El resto es el código de la app.
+Solo hace falta tocar el bloque **CONFIGURACIÓN** dentro de `index.html` (cargos en `cargos.js`, documentos en `documentos.js`, textos, link de subida a OneDrive, link de la política de datos y página para comprimir PDF). El resto es el código de la app.
 
 **Modo prueba:** abre la página con `?prueba=1` al final de la dirección para llenarla con datos de prueba (no guarda nada). Con `?prueba=1&app=1` se ve el aviso que sale cuando la página se abre dentro de Instagram o Facebook.
 

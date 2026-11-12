@@ -1,6 +1,8 @@
 # Plan: aprendices SENA
 
-Documento para revisar **antes** de construir. Las dos apps (la del candidato y el panel de Gestión Humana) cambian.
+> **Estado: construido (partes 1 a 5).** Este documento queda como registro de lo que se decidió. Cómo usarlo: [GUIA.md](GUIA.md) punto 7B; detalle técnico: [COMO_FUNCIONA.md](COMO_FUNCIONA.md).
+
+Las dos apps (la del candidato y el panel de Gestión Humana) cambian.
 
 ## La idea en una frase
 Gestión Humana **inscribe al aprendiz en el panel** con sus datos y fechas, el panel le arma **un link** y el aprendiz

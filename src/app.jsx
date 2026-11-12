@@ -920,11 +920,19 @@ function AvisoNavegadorApp() {
   );
 }
 
+/**
+ * Manual que le toca a este candidato: el de aprendices si abrió un link de aprendiz
+ * (y CONFIG.enlaceManualAprendiz tiene un PDF); si no, el manual general.
+ */
+function manualDelCandidato() {
+  return (CORRECCION && CORRECCION.tipo === 'aprendiz' && CONFIG.enlaceManualAprendiz) || CONFIG.enlaceManual;
+}
+
 /** Enlace al manual para celular (en PC ya está en el panel de ayuda de la derecha). */
 function AyudaMovil() {
-  if (!CONFIG.enlaceManual) return null;
+  if (!manualDelCandidato()) return null;
   return (
-    <a className="ayuda-movil" href={CONFIG.enlaceManual} target="_blank" rel="noopener noreferrer">
+    <a className="ayuda-movil" href={manualDelCandidato()} target="_blank" rel="noopener noreferrer">
       <span className="ayuda-movil-icono" aria-hidden="true">?</span>
       <span className="fila-cuerpo">
         <span className="ayuda-movil-titulo">¿Necesitas ayuda?</span>
@@ -971,7 +979,7 @@ function PanelAyuda() {
       <div className="tarjeta-ayuda">
         <h3>¿Primera vez?</h3>
         <p>El manual te muestra cada paso con imágenes de la página.</p>
-        <a className="boton boton-tintado" href={CONFIG.enlaceManual}
+        <a className="boton boton-tintado" href={manualDelCandidato()}
            target="_blank" rel="noopener noreferrer">Ver manual (PDF)</a>
       </div>
       <div className="tarjeta-ayuda">

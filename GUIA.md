@@ -44,7 +44,8 @@ linkSubida: 'https://...nuevo link...',
 
 ## 2. Agregar, quitar o cambiar cargos y secciones
 
-Busca `cargosTexto`. La lista se pega directo desde Excel, con 3 columnas: **CARGO | SECCIÓN | MANIPULACIÓN**.
+Los cargos están en el archivo **`cargos.js`** (no en `index.html`). Ábrelo en GitHub con el lápiz ✏️, igual que `index.html`.
+La lista se pega directo desde Excel, con 3 columnas: **CARGO | SECCIÓN | MANIPULACIÓN**.
 
 - `NO`: no se pide certificado de manipulación de alimentos.
 - `GENERAL`: se pide el certificado normal (mínimo 10 horas).
@@ -115,6 +116,29 @@ documento. **Si acepta documentos que no son**: quita palabras muy comunes de `p
 Reemplaza el archivo `manual/Manual_candidato_Documentos_de_ingreso.pdf` con **el mismo nombre**
 (en GitHub: abre la carpeta `manual` → **Add file → Upload files** → arrastra el PDF nuevo → **Commit changes**).
 Si usas otro nombre, cambia también `enlaceManual` en la CONFIGURACIÓN.
+
+**Manual de aprendices SENA.** Los aprendices ven su propio manual (solo cuando abren su link de aprendiz):
+1. Sube el PDF a la carpeta `manual` con el nombre `Manual_aprendiz_Documentos_de_ingreso.pdf`.
+2. En `index.html` busca `enlaceManualAprendiz` y pon: `enlaceManualAprendiz: 'manual/Manual_aprendiz_Documentos_de_ingreso.pdf',`
+3. Mientras `enlaceManualAprendiz` esté vacío (`''`), los aprendices ven el manual general.
+
+## 7B. Aprendices SENA
+
+Los aprendices **no** usan el link normal. Gestión Humana los inscribe en el panel (**Aprendices → Inscribir**:
+nombre, documento, sede, sección, fecha de contrato y fecha de prácticas) y les manda un link personal por WhatsApp.
+Con ese link el aprendiz verifica su número de documento, escribe su celular y correo y sube solo los documentos de
+aprendiz (los que tienen `paraAprendiz` o `soloAprendiz` en `documentos.js`, por ejemplo la constancia del SENA).
+
+| Qué quieres cambiar | Dónde |
+|---|---|
+| Agregar o quitar una **sede** | Panel → **Ajustes** → Sedes (nombre, sector y ciudad; botón para agregar), o `sedes` en `CONFIG_PANEL` de `panel-gh.html`. |
+| Días antes de prácticas para pedir manipulación de alimentos (hoy 30) | Panel → **Ajustes**, o `diasManipulacionAprendiz`. |
+| Secciones que necesitan manipulación | Panel → **Ajustes**, o `seccionesManipulacionAprendiz`. |
+| Nombre del contrato que sale en el checklist | `nombreContratoAprendiz` en `panel-gh.html`. |
+| Qué documentos se piden a aprendices | `paraAprendiz: true` (también a aprendices) o `soloAprendiz: true` (solo a ellos) en `documentos.js`. |
+
+Seguridad: cada link de aprendiz lleva un **código único**. Si alguien cambia el link o sube un ZIP que no
+corresponde, el panel lo rechaza. Y el número de documento debe coincidir con el que escribió Gestión Humana.
 
 ## 8. Cambiar cómo funciona la página (programadores)
 

@@ -17,9 +17,10 @@ Para cambios de configuración (links, cargos, textos) ver [GUIA.md](GUIA.md).
 |---|---|
 | `index.html` | La página publicada: estilos, **CONFIGURACIÓN**, logo, pantalla de carga, librerías y el código de la app **ya compilado**. |
 | `documentos.js` | **Lista de documentos** que se piden (con sus reglas de revisión). La usan la app y el panel. |
+| `cargos.js` | **Lista de cargos** (CARGO;SECCIÓN;MANIPULACIÓN), en `window.CARGOS_TEXTO`. La usan la app y el panel. |
 | `src/app.jsx` | **Fuente** del código de la app (React con JSX). Se edita aquí. |
 | `herramientas/compilar.js` | Compila `src/app.jsx` con Babel y lo pone dentro de `index.html` (`npm run compilar`). |
-| `manual/` | Manual del candidato (PDF). |
+| `manual/` | Manuales en PDF: general (`enlaceManual`) y de aprendices (`enlaceManualAprendiz`, si existe). |
 | `panel-gh.html` | Panel de Gestión Humana: procesa los ZIP, revisa documentos y pide correcciones. |
 | `GUIA.md`, `PRUEBAS.md` | Guía de cambios comunes y lista de pruebas en celulares. |
 
@@ -71,6 +72,35 @@ Lo que debes corregir ──► Verifica tu documento ──► Corrige tus docu
 | `datos_candidato.json` | `{ "version": 1, "tipo": "correccion", "correccion": n, "cedula", "generado", "archivos": [...] }` |
 
 El detalle está en `src/app.jsx` (sección 7) y en `panel-gh.html` (sección 6B).
+
+### Versión 2 del link (correcciones nuevas y aprendices)
+
+```json
+{ "v": 2, "t": "correccion" | "aprendiz", "n": 1, "h": "<16 hex>", "k": "<código único>",
+  "a": true, "p": "<primer nombre>", "d": [ { "id": "adres", "m": "..." } ] }
+```
+
+- `h` = 16 primeros hex de SHA-256 del número de documento en mayúscula y solo letras/números (para cédulas = solo números).
+- `k` = código único que el panel guarda en `expediente.json`. El ZIP lo devuelve en `codigo` y el panel **rechaza**
+  el ZIP si no coincide (link alterado o de otra persona). Correcciones viejas sin código se siguen aceptando.
+- `a` = pedir la autorización de datos (aprendices). `p` = nombre para saludar.
+- Los links `v: 1` siguen funcionando.
+
+## Modo aprendiz (`?c=...` con `t: "aprendiz"`)
+
+```
+Panel: Inscribir ──► link por WhatsApp ──► App: verifica documento + celular + correo + autorización
+     ──► sube documentos de aprendiz ──► <doc>_APRENDIZ_<n>.zip ──► OneDrive ──► Panel lo procesa
+```
+
+- `datos_candidato.json`: `{ version, tipo: "aprendiz", solicitud: n, codigo, cedula, celular, correo, autorizacionDatos, generado, archivos }`.
+- El panel compara celular y correo con lo inscrito y anota los cambios en la bitácora (doble verificación).
+- `expediente.json` del aprendiz: `tipoCandidato: "aprendiz"`, `aprendiz: { sede, fechaContrato, fechaPracticas }`,
+  `solicitudes: [ { n, tipo: "documentos" | "manipulacion", codigo, fecha, por, documentos, recibida } ]`.
+- **Manipulación de alimentos:** si la sección está en `seccionesManipulacionAprendiz` y faltan menos de
+  `diasManipulacionAprendiz` días para `fechaPracticas`, el panel avisa para pedir el certificado con otro link.
+  No hay servidor: el aviso sale cuando alguien abre el panel.
+- Avance guardado con clave `aprendiz_<huella>_<n>`. Manual: `manualDelCandidato()` usa `enlaceManualAprendiz` si existe.
 
 ## Dónde se guarda el avance
 
@@ -133,4 +163,5 @@ Si la app falla ya abierta, `PantallaDeError` muestra "Algo salió mal" con un b
 - `?prueba=1`: datos de prueba sin guardar nada (botones Normal / Caso extremo / Vacío).
 - `?prueba=1&app=1`: muestra el aviso de "Abre esta página en Chrome/Safari".
 - `?prueba=1` → botón **Corrección**: abre el modo corrección con un link de ejemplo (cédula `1144098765`, pide EPS y diplomas).
+- `?prueba=1` → botón **Aprendiz**: abre el modo aprendiz con un link de ejemplo.
 - Antes de enviar el link a candidatos, seguir [PRUEBAS.md](PRUEBAS.md) en un Android y un iPhone reales.

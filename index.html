@@ -589,6 +589,12 @@ window.CONFIG = {
   // Manual del candidato (PDF dentro de este mismo repositorio). Se muestra en celular y en PC.
   enlaceManual: 'manual/Manual_candidato_Documentos_de_ingreso.pdf',
 
+  // Manual para APRENDICES SENA (se muestra solo cuando abren su link de aprendiz).
+  // Mientras esté vacío (''), a los aprendices se les muestra el manual de arriba.
+  // Cuando exista el PDF, súbelo a la carpeta manual/ y pon aquí su nombre, ej.:
+  // 'manual/Manual_aprendiz_Documentos_de_ingreso.pdf'
+  enlaceManualAprendiz: '',
+
   // Página gratuita para comprimir PDF que se le recomienda al candidato si su archivo pesa mucho.
   enlaceComprimir: 'https://www.ilovepdf.com/es/comprimir_pdf',
 
@@ -1775,12 +1781,20 @@ function AvisoNavegadorApp() {
   }, copiado ? 'Enlace copiado ✓' : 'Copiar enlace')));
 }
 
+/**
+ * Manual que le toca a este candidato: el de aprendices si abrió un link de aprendiz
+ * (y CONFIG.enlaceManualAprendiz tiene un PDF); si no, el manual general.
+ */
+function manualDelCandidato() {
+  return CORRECCION && CORRECCION.tipo === 'aprendiz' && CONFIG.enlaceManualAprendiz || CONFIG.enlaceManual;
+}
+
 /** Enlace al manual para celular (en PC ya está en el panel de ayuda de la derecha). */
 function AyudaMovil() {
-  if (!CONFIG.enlaceManual) return null;
+  if (!manualDelCandidato()) return null;
   return /*#__PURE__*/React.createElement("a", {
     className: "ayuda-movil",
-    href: CONFIG.enlaceManual,
+    href: manualDelCandidato(),
     target: "_blank",
     rel: "noopener noreferrer"
   }, /*#__PURE__*/React.createElement("span", {
@@ -1841,7 +1855,7 @@ function PanelAyuda() {
     className: "tarjeta-ayuda"
   }, /*#__PURE__*/React.createElement("h3", null, "\xBFPrimera vez?"), /*#__PURE__*/React.createElement("p", null, "El manual te muestra cada paso con im\xE1genes de la p\xE1gina."), /*#__PURE__*/React.createElement("a", {
     className: "boton boton-tintado",
-    href: CONFIG.enlaceManual,
+    href: manualDelCandidato(),
     target: "_blank",
     rel: "noopener noreferrer"
   }, "Ver manual (PDF)")), /*#__PURE__*/React.createElement("div", {

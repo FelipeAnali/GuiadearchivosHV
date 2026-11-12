@@ -43,6 +43,16 @@ Marca cada punto con ✅ o ❌. Si algo sale ❌, toma pantallazo y anota en qu�
 | C4 | Escribe el número correcto, sube el documento y descarga el paquete | Se descarga `CEDULA_CORRECCION_1.zip` | | |
 | C5 | Súbelo con **Abrir página de subida** y procésalo en el panel | En la ficha el documento queda pendiente y "llegó en la corrección 1" | | |
 
+## 4B. Aprendiz SENA
+| # | Qué hacer | Qué debe pasar | Android | iPhone |
+|---|---|---|---|---|
+| A1 | En el panel: **Aprendices → Inscribir** con tu número de documento y tu celular | Queda en la lista y sale el link para WhatsApp | | |
+| A2 | Abre el link desde WhatsApp | Saluda por el nombre y pide verificar el documento, celular y correo | | |
+| A3 | Toca **¿Necesitas ayuda?** | Abre el manual de aprendices (o el general si aún no hay uno de aprendices) | | |
+| A4 | Sube los documentos (incluida la constancia del SENA) y descarga el paquete | Se descarga `DOCUMENTO_APRENDIZ_1.zip` | | |
+| A5 | Súbelo y procésalo en el panel | Los documentos llegan a la ficha del aprendiz. Si cambiaste el celular, sale en la bitácora | | |
+| A6 | Cambia una letra del link y ábrelo | "Este enlace está incompleto o ya no sirve…" | | |
+
 ## 5. Revisión en Gestión Humana
 | # | Qué hacer | Qué debe pasar |
 |---|---|---|
