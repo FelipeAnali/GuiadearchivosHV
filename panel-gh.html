@@ -538,6 +538,24 @@
   .bloque-aprendiz { display: flex; flex-direction: column; gap: 4px; font-size: 15px; color: var(--texto-2); }
   .bloque-aprendiz strong { color: var(--texto); font-weight: 600; }
   .manip { font-size: 14px; font-weight: 600; }
+  /* Aprendices: bloque "Entra a prácticas" y "días en proceso" a la derecha de cada fila */
+  .fila-aprendiz { grid-template-columns: 40px minmax(0, 1fr) 150px 84px 220px; align-items: center; }
+  .fila-aprendiz .fila-lado { justify-content: flex-end; }
+  .ap-dias { text-align: center; }
+  .ap-entra { width: 150px; flex: none; text-align: center; padding: 8px 10px; border-radius: 12px; background: var(--relleno, rgba(127,127,127,.12)); }
+  .ap-entra small { display: block; font-size: 12px; color: var(--texto-2); }
+  .ap-entra strong { display: block; font-family: 'Nunito', sans-serif; font-size: 20px; font-weight: 900; line-height: 1.15; }
+  .ap-entra .falta { display: block; font-size: 13px; font-weight: 700; }
+  .ap-entra .contrato { margin-top: 4px; }
+  .ap-entra.ap-urgente { background: var(--alerta-fondo); } .ap-entra.ap-urgente .falta, .ap-entra.ap-urgente strong { color: var(--rojo); }
+  .ap-entra.ap-pronto .falta { color: var(--alerta-texto); }
+  .ap-entra.ap-adentro .falta { color: var(--tinte); }
+  @media (max-width: 1100px) {
+    .fila-aprendiz { grid-template-columns: 34px minmax(0, 1fr) 140px; }
+    .fila-aprendiz .ap-dias { grid-column: 3; }
+    .fila-aprendiz .fila-lado { grid-column: 2; grid-row: 2; align-items: flex-start; flex-direction: row; }
+    .ap-entra { width: auto; }
+  }
   .manip.pedir { color: var(--rojo); }
   .manip.esperar, .manip.no_aplica { color: var(--texto-2); font-weight: 400; }
   .manip.pedida { color: var(--alerta-texto); }
@@ -1892,6 +1910,12 @@ function fechaLarga(fecha) {
 
 /** Días que le faltan al aprendiz para entrar a prácticas (null si no tiene fecha). */
 function diasParaPracticas(exp) { return diasHasta(exp && exp.aprendiz && exp.aprendiz.fechaPracticas); }
+
+/** Fecha corta para los bloques: "26 nov 2026". */
+function fechaBloque(fecha) {
+  if (!fecha) return '—';
+  return new Date(`${fecha}T00:00:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }).replace(/\./g, '').replace(/ de /g, ' ');
+}
 
 /** "En etapa lectiva — faltan 215 días" o "En prácticas desde el 15 de junio de 2026". */
 function faseAprendiz(exp) {
@@ -4143,17 +4167,30 @@ function Aprendices({ lista, cargando, onAbrir, onRecargar, onInscribir, onAccio
           const docs = Object.values(e.documentos || {});
           const recibidos = docs.length;
           const aprobados = docs.filter((d) => d.revision === 'aprobado').length;
+          const faltan = diasParaPracticas(e);
+          const cerrado = ['contratado', 'no_contratado'].includes(e.estado);
+          const enProceso = diasDesde(e.creado); // igual que en Candidatos: días desde que se inscribió
+          const urgencia = faltan === null ? '' : faltan <= 0 ? 'ap-adentro' : faltan <= 7 ? 'ap-urgente' : faltan <= CONFIG.diasManipulacionAprendiz ? 'ap-pronto' : '';
           return (
-            <div className="fila" key={c.nombreCarpeta}>
+            <div className="fila fila-aprendiz" key={c.nombreCarpeta}>
               <div className={`icono-caja ${x && x.accion !== 'reenviar' ? 'ojo' : ''}`}><Icono nombre="personas" /></div>
               <div className="fila-texto fila-tocable" role="button" tabIndex={0} onClick={() => onAbrir(c)}
                    onKeyDown={(ev) => (ev.key === 'Enter' || ev.key === ' ') && (ev.preventDefault(), onAbrir(c))}>
                 <span className="fila-titulo">{nombreBonito(e.nombre)}</span>
                 <span className="fila-sub">{siglaDocumento(e.tipoDocumento)} {e.cedula} — {e.cargo}, {e.seccion} — {e.aprendiz.sede}</span>
-                <span className="fila-pista">{faseAprendiz(e)}</span>
+                <span className="fila-pista">{faltan === null ? 'Sin fecha de prácticas' : faltan > 0 ? 'En etapa lectiva' : 'En etapa productiva (prácticas)'}</span>
                 <span className={`manip ${m.clave}`}>{m.texto}</span>
                 <span className="fila-pista">{nombreEstado(e.estado)}{(e.solicitudes || []).length ? ` — ${plural(e.solicitudes.length, 'link enviado', 'links enviados')}` : ' — falta enviar el link'}{recibidos ? ` — ${plural(recibidos, 'documento recibido', 'documentos recibidos')}, ${aprobados} aprobados` : ''}</span>
                 {pendientes > 0 && <span className="mensaje info">Llegaron documentos: {plural(pendientes, 'documento', 'documentos')} por revisar.</span>}
+              </div>
+              <div className={`ap-entra ${urgencia}`} title="Fecha en que entra a prácticas (etapa productiva)">
+                <small>{faltan !== null && faltan <= 0 ? 'En prácticas desde' : 'Entra a prácticas'}</small>
+                <strong>{fechaBloque(e.aprendiz.fechaPracticas)}</strong>
+                <span className="falta">{faltan === null ? 'Sin fecha' : faltan > 1 ? `en ${faltan} días` : faltan === 1 ? 'mañana' : faltan === 0 ? 'hoy' : `hace ${-faltan} días`}</span>
+                <small className="contrato">Contrato: {fechaBloque(e.aprendiz.fechaContrato)}</small>
+              </div>
+              <div className={`cand-dias ap-dias ${!cerrado && enProceso >= CONFIG.diasAlerta ? 'viejo' : ''}`} title="Días desde que se inscribió">
+                {!cerrado && <><strong>{enProceso === 0 ? 'Hoy' : enProceso.toLocaleString('es-CO')}</strong><span>{enProceso === 0 ? 'inscrito' : enProceso === 1 ? 'día en proceso' : 'días en proceso'}</span></>}
               </div>
               <div className="fila-lado" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 {pendientes > 0 && <button className="boton boton-principal" onClick={() => onAbrir(c)}>Revisar documentos</button>}
@@ -4282,7 +4319,7 @@ function DialogoNombre({ actual, onGuardar, onCancelar }) {
  * Versión del panel. CÁMBIALA cada vez que subas un cambio a este archivo (fecha y un número).
  * El panel abierto compara su versión con la publicada y, si hay una más nueva, avisa que hay que recargar.
  */
-const VERSION_PANEL = '2026-11-12.3';
+const VERSION_PANEL = '2026-11-12.4';
 
 /** Revisa cada 5 minutos (y al volver a la pestaña) si se publicó una versión más nueva del panel. */
 function useVersionNueva() {

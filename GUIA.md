@@ -146,6 +146,10 @@ aprendiz (los que tienen `paraAprendiz` o `soloAprendiz` en `documentos.js`, por
 3. En **Aprendices** sale arriba "1 aprendiz mandó documentos que falta revisar" y en su fila el botón
    **Revisar documentos**, que abre la ficha para aprobar o rechazar. El número verde del menú también los cuenta.
 
+Cada aprendiz muestra a la derecha **cuándo entra a prácticas** (fecha grande, cuántos días faltan y la fecha del
+contrato): en amarillo si faltan 30 días o menos y en rojo si faltan 7 o menos. Al lado, **cuántos días lleva en
+proceso** desde que se inscribió (en rojo si pasa de los días de alerta de Ajustes), igual que en Candidatos.
+
 En **Aprendices** puedes buscar (nombre, documento, sección o sede) y filtrar: en proceso, llegaron documentos,
 algo por enviar, esperando que suba, completos y contratados, no contratados, o por sede.
 En **Candidatos** y **Listos** salen candidatos y aprendices juntos (los aprendices con la etiqueta "Aprendiz");
