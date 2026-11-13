@@ -186,7 +186,7 @@ Cuando llega un paquete de una citación, la bandeja avisa si el link **no está
 | Texto del mensaje | Panel → **Ajustes** → Mensaje de la citación (lo que va entre llaves lo llena el panel). |
 | Hora límite que se propone | Panel → **Ajustes**. |
 | Recomendaciones del examen y cargos con coprológico | Archivo **`examen.js`** (se edita igual que `documentos.js`). En `cargosCoprologico` cada línea es un cargo, o `CARGO \| SECCIÓN` para pedirlo solo en esa sección (ej. `ASESOR DE EXPERIENCIA \| POLLO CAÑAVERAL`). |
-| Contacto de GH en la pantalla de link vencido | `contactoGestionHumana` en la CONFIGURACIÓN de `index.html`. |
+| Contacto de GH en la pantalla de link vencido | `contactoGestionHumana` (texto) y `whatsappGestionHumana` (10 números, para el botón "Escribir por WhatsApp") en la CONFIGURACIÓN de `index.html`. Hoy: 310 748 9664. |
 
 ## 7C. El panel no muestra un cambio nuevo
 

@@ -3085,6 +3085,12 @@ function PantallaCitaVencida() {
         Si todavía deseas enviar tus documentos, comunícate con <strong>Gestión Humana</strong>
         {CONFIG.contactoGestionHumana ? <> ({CONFIG.contactoGestionHumana})</> : ''} para que te envíen un link nuevo.
       </div>
+      {/^3\d{9}$/.test(String(CONFIG.whatsappGestionHumana || '')) && (
+        <a className="boton boton-principal" target="_blank" rel="noopener noreferrer"
+           href={`https://wa.me/57${CONFIG.whatsappGestionHumana}?text=${encodeURIComponent('Hola, Gestión Humana. Mi link para enviar los documentos de ingreso ya venció y todavía deseo enviarlos.')}`}>
+          Escribir por WhatsApp
+        </a>
+      )}
     </main>
   );
 }

@@ -622,9 +622,10 @@ window.CONFIG = {
   // 'manual/Manual_aprendiz_Documentos_de_ingreso.pdf'
   enlaceManualAprendiz: 'manual/Manual_aprendiz_Documentos_de_ingreso.pdf',
 
-  // Contacto de Gestión Humana que se muestra cuando un link de citación ya venció
-  // (ej. 'WhatsApp 300 123 4567 o contrataciones@stcanaveral.com'). Vacío = no se muestra.
-  contactoGestionHumana: '',
+  // Contacto de Gestión Humana que se muestra cuando un link de citación ya venció. Vacío = no se muestra.
+  contactoGestionHumana: 'WhatsApp 310 748 9664',
+  // Número de WhatsApp de Gestión Humana (10 números, sin espacios): sale el botón "Escribir por WhatsApp".
+  whatsappGestionHumana: '3107489664',
 
   // Página gratuita para comprimir PDF que se le recomienda al candidato si su archivo pesa mucho.
   enlaceComprimir: 'https://www.ilovepdf.com/es/comprimir_pdf',
@@ -4738,7 +4739,12 @@ function PantallaCitaVencida() {
     className: "bajada"
   }, "Este link ya no funciona porque pas\xF3 la fecha l\xEDmite para enviar tus documentos", CITA ? /*#__PURE__*/React.createElement(React.Fragment, null, " (", /*#__PURE__*/React.createElement("strong", null, fechaHoraLegible(CITA.limite, true)), ")") : '', "."), /*#__PURE__*/React.createElement("div", {
     className: "aviso aviso-alerta"
-  }, "Si todav\xEDa deseas enviar tus documentos, comun\xEDcate con ", /*#__PURE__*/React.createElement("strong", null, "Gesti\xF3n Humana"), CONFIG.contactoGestionHumana ? /*#__PURE__*/React.createElement(React.Fragment, null, " (", CONFIG.contactoGestionHumana, ")") : '', " para que te env\xEDen un link nuevo."));
+  }, "Si todav\xEDa deseas enviar tus documentos, comun\xEDcate con ", /*#__PURE__*/React.createElement("strong", null, "Gesti\xF3n Humana"), CONFIG.contactoGestionHumana ? /*#__PURE__*/React.createElement(React.Fragment, null, " (", CONFIG.contactoGestionHumana, ")") : '', " para que te env\xEDen un link nuevo."), /^3\d{9}$/.test(String(CONFIG.whatsappGestionHumana || '')) && /*#__PURE__*/React.createElement("a", {
+    className: "boton boton-principal",
+    target: "_blank",
+    rel: "noopener noreferrer",
+    href: `https://wa.me/57${CONFIG.whatsappGestionHumana}?text=${encodeURIComponent('Hola, Gestión Humana. Mi link para enviar los documentos de ingreso ya venció y todavía deseo enviarlos.')}`
+  }, "Escribir por WhatsApp"));
 }
 
 /** Aviso del plazo: "Tienes hasta el viernes 20 de noviembre, 9:00 a. m." */
