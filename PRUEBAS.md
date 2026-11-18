@@ -70,6 +70,10 @@ Marca cada punto con ✅ o ❌. Si algo sale ❌, toma pantallazo y anota en qu�
 | K4 | Toca **Ya lo envié** | Pasa a **Cerradas** y llega el correo "enviada" | | |
 | K5 | Manda otra solicitud con la misma cédula | La bandeja ofrece **Unir a la abierta** o **Crear nueva** | | |
 | K6 | **Descargar Excel** | Se descarga el registro con todas las solicitudes | | |
+| K7 | **Correo a supervisores** → Copiar correo → pégalo en Outlook (web y escritorio) | Se ve con el encabezado verde, una tabla por grupo y el logo | | |
+| K8 | Toca **Ya lo envié** y vuelve a abrir el correo a supervisores | Ya no salen las que se informaron | | |
+| K9 | En una solicitud con el correo "Esperando a Power Automate": **Copiar correo para enviarlo yo** → enviarlo → **Ya lo envié a mano** | Dice "Correo enviado a mano por …" y el flujo no lo vuelve a mandar | | |
+| K10 | Apaga **Usar Power Automate** en Ajustes y aprueba una solicitud | Sale "Correo por enviar a mano" y no aparece nada en Correos/Pendientes | | |
 
 ## 5. Revisión en Gestión Humana
 | # | Qué hacer | Qué debe pasar |

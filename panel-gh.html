@@ -470,6 +470,11 @@
     border-radius: 14px; background: var(--rojo-suave); color: var(--rojo); font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 30px; line-height: 1; }
   .rh-grande small { font-size: 11px; font-weight: 700; letter-spacing: 1px; margin-bottom: 2px; font-family: inherit; }
   .chip.activa { background: var(--tinte); color: var(--sobre-tinte); }
+  /* Vista previa del correo: siempre con fondo claro, aunque el panel esté en modo oscuro */
+  .vista-correo { background: #f4f6f1; color: #1f2a24; border-radius: var(--radio); overflow: auto; max-height: 640px; color-scheme: light; }
+  .detalle.hoja-supervisores { width: min(860px, calc(100vw - 32px)); }
+  .item-ficha.con-casilla { grid-template-columns: 26px minmax(0, 1fr); --sangria: 54px; cursor: pointer; }
+  .item-ficha.con-casilla input[type="checkbox"] { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--tinte); }
   .dialogo textarea { padding: 10px 12px; border-radius: 10px; border: 0; background: var(--relleno); font: inherit; font-size: 15px; resize: vertical; margin: 4px 0 6px; }
   /* Citación */
   .citacion { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 24px; align-items: start; }
@@ -797,6 +802,13 @@ window.CONFIG_PANEL = {
     { nombre: "SEDE ADMINISTRATIVA", sector: "Cali y Jamundi", ciudad: "Cali, Valle del Cauca" },
   ],
 
+  // CARNETS: ¿los correos al colaborador los envía Power Automate? Si se apaga (flujo caído o sin armar),
+  // el panel no deja el JSON en Pendientes: la ficha muestra "Correo por enviar a mano" para copiarlo y pegarlo.
+  usarPowerAutomate: true,
+  // CARNETS: a quién va el "Correo a supervisores" (Para y CC). Se editan en Ajustes.
+  correosSupervisores: { para: [], cc: [] },
+  // CARNETS: correo del supervisor de una sede (si se filtra el correo por esa sede, va a este en vez de la lista general)
+  correosPorSede: {},
   // CARNETS: motivos para rechazar una solicitud (salen como botones; se editan en Ajustes)
   motivosRechazoCarnet: ['La foto no se ve', 'La denuncia no es legible', 'El formato no está firmado', 'Otro'],
   // CARNETS: correos que envía Power Automate. Se editan en Ajustes. Marcas que se reemplazan:
@@ -1358,7 +1370,8 @@ const ARCHIVO_AJUSTES = 'ajustes.json';
 /** Lo que se puede cambiar desde la pantalla Ajustes. */
 const CAMPOS_AJUSTABLES = ['checklistGH', 'motivosRapidos', 'diasAlerta', 'diasPapelera', 'tamanoMaximoGHMB', 'enlaceAppCandidato',
   'diasManipulacionAprendiz', 'seccionesManipulacionAprendiz', 'nombreContratoAprendiz', 'sedes',
-  'centrosMedicos', 'horaLimiteCitacion', 'plantillaCitacion', 'motivosRechazoCarnet', 'correosCarnet'];
+  'centrosMedicos', 'horaLimiteCitacion', 'plantillaCitacion', 'motivosRechazoCarnet', 'correosCarnet',
+  'usarPowerAutomate', 'correosSupervisores', 'correosPorSede'];
 /** Copia de los valores de fábrica (para "Restaurar valores de fábrica"). */
 const CONFIG_FABRICA = JSON.parse(JSON.stringify(Object.fromEntries(CAMPOS_AJUSTABLES.map((k) => [k, CONFIG[k]]))));
 /** Tipos de ítem del checklist, con su explicación para la pantalla Ajustes. */
@@ -1442,12 +1455,28 @@ function validarAjustes(v) {
         .map((m) => String(m || '').trim().slice(0, 120)).filter(Boolean);
       return l.length ? l : CONFIG_FABRICA.motivosRechazoCarnet;
     })(),
+    usarPowerAutomate: v.usarPowerAutomate === undefined ? CONFIG_FABRICA.usarPowerAutomate : v.usarPowerAutomate !== false,
+    correosSupervisores: {
+      para: listaDeCorreos(v.correosSupervisores && v.correosSupervisores.para),
+      cc: listaDeCorreos(v.correosSupervisores && v.correosSupervisores.cc),
+    },
+    // En Ajustes se editan como filas [sede, correo]; se guardan como { SEDE: 'correo' }
+    correosPorSede: Object.fromEntries((Array.isArray(v.correosPorSede) ? v.correosPorSede
+      : Object.entries((v.correosPorSede && typeof v.correosPorSede === 'object') ? v.correosPorSede : {}))
+      .map(([sede, correo]) => [String(sede || '').trim().toUpperCase().slice(0, 80), listaDeCorreos(correo).join('; ')])
+      .filter(([sede, correo]) => sede && correo)),
     correosCarnet: Object.fromEntries(Object.keys(CONFIG_FABRICA.correosCarnet).map((tipo) => {
       const x = (v.correosCarnet && v.correosCarnet[tipo]) || {};
       const fab = CONFIG_FABRICA.correosCarnet[tipo];
       return [tipo, { asunto: String(x.asunto || '').trim().slice(0, 160) || fab.asunto, cuerpo: String(x.cuerpo || '').trim().slice(0, 3000) || fab.cuerpo }];
     })),
   };
+}
+
+/** "a@x.co; b@y.co\nc@z.co" (o una lista) → ['a@x.co', 'b@y.co', 'c@z.co'] sin repetidos ni inválidos. */
+function listaDeCorreos(v) {
+  const partes = Array.isArray(v) ? v : String(v || '').split(/[;,\s]+/);
+  return [...new Set(partes.map((x) => correoLimpio(x)).filter(Boolean))].slice(0, 60);
 }
 
 /** Pone en CONFIG los valores de fábrica más los del archivo (null = solo los de fábrica). */
@@ -2154,8 +2183,10 @@ function registrarCorreoCarnet(sol, tipo, usuario) {
   const id = `${sol.id}_${tipo}_${n}`;
   const { asunto, cuerpoHtml } = textoCorreoCarnet(sol, tipo);
   const creado = new Date().toISOString();
-  sol.correos = [...(sol.correos || []), { id, tipo, creado, para: sol.datos.correo }];
-  return { version: 1, id, solicitud: sol.id, tipo, para: sol.datos.correo, asunto, cuerpoHtml, creado, creadoPor: usuario };
+  // Con Power Automate apagado (Ajustes) el correo queda "por enviar a mano": no se deja el JSON en Pendientes
+  const manual = CONFIG.usarPowerAutomate === false;
+  sol.correos = [...(sol.correos || []), { id, tipo, creado, para: sol.datos.correo, ...(manual ? { manual: true } : {}) }];
+  return { version: 1, id, solicitud: sol.id, tipo, para: sol.datos.correo, asunto, cuerpoHtml, creado, creadoPor: usuario, ...(manual ? { manual: true } : {}) };
 }
 
 /** Deja el JSON en Carnets/Correos/Pendientes para que Power Automate lo envíe. */
@@ -2166,7 +2197,8 @@ async function escribirCorreoCarnet(raiz, sol, correo) {
 /** Estado de cada correo según la carpeta donde está: { [id]: { estado, enviado?, error? } }. */
 async function leerEstadosCorreosCarnet(raiz) {
   const estados = {};
-  for (const [carpeta, estado] of [['pendientes', 'pendiente'], ['enviados', 'enviado'], ['errores', 'error']]) {
+  // Orden: si el mismo correo está en dos carpetas (p. ej. se mandó a mano y el flujo falló después), gana "enviado"
+  for (const [carpeta, estado] of [['pendientes', 'pendiente'], ['errores', 'error'], ['enviados', 'enviado']]) {
     for (const x of await listar(await carpetaCarnet(raiz, 'correos', carpeta))) {
       if (x.tipo !== 'file' || !/\.json$/i.test(x.nombre)) continue;
       const id = x.nombre.replace(/\.json$/i, '');
@@ -2175,6 +2207,7 @@ async function leerEstadosCorreosCarnet(raiz) {
         try {
           const j = JSON.parse(await (await x.handle.getFile()).text());
           info.enviado = j.enviado || null;
+          info.manual = !!j.manual; info.enviadoPor = j.enviadoPor || '';
           info.error = j.error ? String(typeof j.error === 'object' ? (j.error.message || JSON.stringify(j.error)) : j.error).slice(0, 200) : '';
         } catch (e) { /* si el JSON viene raro, igual cuenta la carpeta */ }
       }
@@ -2199,6 +2232,127 @@ async function simularPowerAutomate(raiz) {
     await escribir(destino, x.nombre, JSON.stringify(nuevo, null, 2));
     await pendientes.removeEntry(x.nombre);
   }
+}
+
+
+/* ---------- Respaldo: enviar a mano el correo del colaborador ---------- */
+
+/** ¿En qué carpeta está el JSON de un correo? → { carpeta, handle, nombre } o null. */
+async function buscarArchivoCorreo(raiz, id) {
+  for (const donde of ['enviados', 'errores', 'pendientes']) {
+    const carpeta = await carpetaCarnet(raiz, 'correos', donde);
+    if (await existe(carpeta, `${id}.json`)) return { donde, carpeta, handle: await carpeta.getFileHandle(`${id}.json`) };
+  }
+  return null;
+}
+
+/** El correo tal como lo iba a mandar Power Automate (su JSON) o, si no hay archivo, se vuelve a armar. */
+async function contenidoCorreoCarnet(raiz, sol, registro) {
+  const archivo = await buscarArchivoCorreo(raiz, registro.id);
+  if (archivo) {
+    try { return JSON.parse(await (await archivo.handle.getFile()).text()); } catch (e) { /* se arma de nuevo */ }
+  }
+  const { asunto, cuerpoHtml } = textoCorreoCarnet(sol, registro.tipo);
+  return { version: 1, id: registro.id, solicitud: sol.id, tipo: registro.tipo, para: registro.para || sol.datos.correo, asunto, cuerpoHtml, creado: registro.creado };
+}
+
+/**
+ * "Ya lo envié a mano": deja el JSON en Correos/Enviados con manual: true (así Power Automate no lo
+ * manda otra vez). Revisa dónde está JUSTO antes de moverlo, por si el flujo lo tomó mientras tanto:
+ *   - ya en Enviados → no hace nada y devuelve 'ya_enviado' (Power Automate se adelantó);
+ *   - en Pendientes o Errores → lo copia a Enviados y lo borra de donde estaba;
+ *   - en ninguna (Power Automate apagado) → lo escribe en Enviados.
+ * Devuelve 'ya_enviado' | 'desde_pendientes' | 'desde_errores' | 'nuevo'.
+ */
+async function marcarCorreoEnviadoAMano(raiz, sol, registro, usuario) {
+  const archivo = await buscarArchivoCorreo(raiz, registro.id);
+  if (archivo && archivo.donde === 'enviados') return 'ya_enviado';
+  const base = await contenidoCorreoCarnet(raiz, sol, registro);
+  const enviados = await carpetaCarnet(raiz, 'correos', 'enviados');
+  const marca = { ...base, estado: 'enviado', enviado: new Date().toISOString(), manual: true, enviadoPor: usuario };
+  delete marca.error;
+  await escribir(enviados, `${registro.id}.json`, JSON.stringify(marca, null, 2));
+  if (archivo) {
+    try { await archivo.carpeta.removeEntry(`${registro.id}.json`); } catch (e) { /* ya no estaba: el flujo lo movió; Enviados gana */ }
+    return archivo.donde === 'errores' ? 'desde_errores' : 'desde_pendientes';
+  }
+  return 'nuevo';
+}
+
+/* ---------- Correo con el diseño de Cañaveral (para copiar y pegar en Outlook) ----------
+   Todo con tablas y estilos EN LÍNEA: Outlook (web y escritorio) ignora las hojas de estilo.
+   Fondo siempre claro (aunque el panel esté en modo oscuro). Los textos se escapan. */
+const LOGO_CORREO = 'https://felipeanali.github.io/logo-canaveral.png/logo-canaveral.png';
+const LINK_APP_CARNETS = 'https://felipeanali.github.io/GuiadearchivosHV/carnets.html';
+
+/** "Buenos días" / "Buenas tardes" / "Buenas noches" según la hora del computador. */
+function saludoSegunHora(fecha = new Date()) {
+  const h = fecha.getHours();
+  return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches';
+}
+
+/**
+ * Arma el correo completo. partes: { titulo, saludo, introHtml, cuerpoHtml, recuadroHtml }.
+ * cuerpoHtml y recuadroHtml ya deben venir escapados (los arman las funciones de abajo).
+ */
+function correoCanaveralHtml({ titulo, saludo, introHtml = '', cuerpoHtml = '', recuadroHtml = '' }) {
+  const f = "font-family:Segoe UI,Arial,Helvetica,sans-serif;";
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f6f1;${f}">
+<tr><td align="center" style="padding:16px 8px;">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:640px;background:#ffffff;border:1px solid #d5e3d1;${f}">
+<tr><td style="background:#05200b;border-bottom:5px solid #7dd105;padding:18px 22px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+    <td style="${f}vertical-align:middle;">
+      <div style="${f}color:#7dd105;font-size:13px;font-weight:600;">Supertiendas Cañaveral · Gestión Humana</div>
+      <div style="${f}color:#ffffff;font-size:22px;font-weight:700;margin-top:4px;">${escaparHtml(titulo)}</div>
+    </td>
+    <td align="right" style="vertical-align:middle;"><img src="${LOGO_CORREO}" width="130" alt="Supertiendas Cañaveral" style="display:block;width:130px;height:auto;border:0;"></td>
+  </tr></table>
+</td></tr>
+<tr><td style="padding:22px 22px 6px;${f}color:#1f2a24;font-size:15px;line-height:1.5;">
+  <p style="margin:0 0 10px;">${escaparHtml(saludo)}</p>${introHtml}
+</td></tr>
+<tr><td style="padding:4px 22px 6px;${f}">${cuerpoHtml}</td></tr>
+${recuadroHtml ? `<tr><td style="padding:8px 22px 4px;">${recuadroHtml}</td></tr>` : ''}
+<tr><td style="padding:16px 22px 20px;${f}color:#1f2a24;font-size:14px;line-height:1.5;">Cordialmente,<br><strong>Departamento de Gestión Humana</strong><br>Supertiendas Cañaveral</td></tr>
+<tr><td style="background:#1C5A2A;padding:10px 22px;${f}color:#ffffff;font-size:12px;">Supertiendas Cañaveral S.A.S. · Este correo se armó en el panel de Gestión Humana.</td></tr>
+</table></td></tr></table>`;
+}
+
+/** Recuadro final verde claro con borde izquierdo. */
+function recuadroCorreoHtml(html) {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:#f3f9ea;border-left:4px solid #1C5A2A;padding:12px 14px;font-family:Segoe UI,Arial,Helvetica,sans-serif;color:#1f2a24;font-size:14px;line-height:1.5;">${html}</td></tr></table>`;
+}
+
+/**
+ * Una tabla de un grupo (Aprobadas / Enviadas / Rechazadas).
+ * grupo: { titulo, franja, textoFranja, fondo, columnas: [..], filas: [[..]], nota }
+ */
+function tablaGrupoHtml(g) {
+  const f = 'font-family:Segoe UI,Arial,Helvetica,sans-serif;';
+  const celda = `${f}font-size:14px;color:#1f2a24;padding:8px 10px;border:1px solid #d5e3d1;text-align:left;vertical-align:top;`;
+  const cabeza = g.columnas.map((c) => `<th style="${celda}background:#eef4ea;font-weight:700;">${escaparHtml(c)}</th>`).join('');
+  const filas = g.filas.map((fila, i) => `<tr style="background:${i % 2 ? '#f7faf5' : '#ffffff'};">${fila.map((v) => `<td style="${celda}">${escaparHtml(v)}</td>`).join('')}</tr>`).join('');
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 4px;border-collapse:collapse;">
+<tr><td style="background:${g.franja};color:${g.textoFranja};${f}font-size:15px;font-weight:700;padding:8px 10px;">${escaparHtml(g.titulo)} (${g.filas.length})</td></tr>
+<tr><td style="background:${g.fondo || '#ffffff'};padding:0;"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr>${cabeza}</tr>${filas}</table></td></tr>
+${g.nota ? `<tr><td style="${f}font-size:13px;color:#4a5a50;padding:6px 2px 0;">${escaparHtml(g.nota)}</td></tr>` : ''}
+</table>`;
+}
+
+/** Versión en texto plano (por si el correo se pega donde no se acepta HTML). */
+function tablaGrupoTexto(g) {
+  return [`${g.titulo.toUpperCase()} (${g.filas.length})`, g.columnas.join(' | '), ...g.filas.map((f) => f.join(' | ')), g.nota || ''].filter(Boolean).join('\n');
+}
+
+/** Correo individual al colaborador (respaldo manual): el cuerpo de Power Automate envuelto en el diseño. */
+function correoIndividualHtml(sol, tipo, cuerpoHtml) {
+  const titulos = { aprobada: 'Tu solicitud de carnet fue aprobada', rechazada: 'Tu solicitud de carnet no fue aprobada', enviada: 'Tu carnet nuevo va en camino' };
+  const f = 'font-family:Segoe UI,Arial,Helvetica,sans-serif;color:#1f2a24;font-size:15px;line-height:1.5;';
+  // Los <p> del cuerpo heredan la letra del correo
+  const cuerpo = String(cuerpoHtml || '').replace(/<p>/g, `<p style="margin:0 0 10px;${f}">`);
+  return correoCanaveralHtml({ titulo: titulos[tipo] || 'Reposición de carnet', saludo: '', cuerpoHtml: cuerpo })
+    .replace(/<p style="margin:0 0 10px;"><\/p>/, '');
 }
 
 /* ==========================================================================
@@ -3052,7 +3206,7 @@ async function zipCarnetDeEjemplo(d, docs, { jsonRoto = false, sinArchivo = null
  */
 async function sembrarCarnetsDeEjemplo(raiz, recibidos, hace, peor = false) {
   const quien = 'Analista de ejemplo';
-  async function gestionada(d, docs, dias, estado, { correoFalla = false } = {}) {
+  async function gestionada(d, docs, dias, estado, { correoFalla = false, informada = false } = {}) {
     const nombreZip = `${d.cedula}_CARNET_${textoParaArchivo(d.motivo)}_EJEMPLO.zip`;
     recibidos.poner(nombreZip, await zipCarnetDeEjemplo(d, docs), hace(dias));
     const item = (await buscarEnRecibidos(raiz)).find((x) => x.nombre === nombreZip);
@@ -3081,6 +3235,11 @@ async function sembrarCarnetsDeEjemplo(raiz, recibidos, hace, peor = false) {
         }
       }
     }
+    if (informada) {
+      sol.informadoSupervisores = { fecha: fecha(Math.max(0, dias - 4)), usuario: quien, estado: sol.estado, para: 'supervisores@ejemplo.com' };
+      sol.informesSupervisores = [sol.informadoSupervisores];
+      anotarCarnet(sol, quien, 'Informada a supervisores');
+    }
     await guardarSolicitud(carpeta, sol, quien);
     for (const correo of correos) {
       const destino = await carpetaCarnet(raiz, 'correos', correoFalla ? 'errores' : 'enviados');
@@ -3092,6 +3251,18 @@ async function sembrarCarnetsDeEjemplo(raiz, recibidos, hace, peor = false) {
   await gestionada({ cedula: '1112987654', nombre: 'Andrea Rincón', rh: 'O-', correo: 'andrea.rincon@hotmail.com', sede: 'SC BUGA MERINO', motivo: 'robo' }, ['denuncia', 'descuento'], 3, 'aprobada');
   await gestionada({ cedula: '94321765', nombre: 'Jorge Iván Lozano', rh: 'A+', correo: 'jorge.lozano@gmail.com', sede: 'SC CAVASA', motivo: 'perdida' }, ['descuento'], 12, 'enviada');
   await gestionada({ cedula: '1006778899', nombre: 'Carolina Mejía', rh: 'AB+', correo: 'caro.mejia@yahoo.com', sede: 'SC LA 34', motivo: 'deterioro' }, ['foto_carnet'], 4, 'rechazada');
+  // Para el "Correo a supervisores": varias sin informar (sede con correo propio y sede sin correo) y una ya informada
+  await gestionada({ cedula: '1007345678', nombre: 'María de los Ángeles Villegas Restrepo', rh: 'A+', correo: 'mangeles.villegas@gmail.com', sede: 'SC TULUA', motivo: 'robo' }, ['denuncia', 'descuento'], 2, 'aprobada');
+  await gestionada({ cedula: '1116234567', nombre: 'Kevin Stiven Ocampo', rh: 'O+', correo: 'kevin.ocampo@gmail.com', sede: 'SC TULUA', motivo: 'perdida' }, ['descuento'], 7, 'enviada');
+  await gestionada({ cedula: '66845123', nombre: 'Gloria Patricia Arango', rh: 'B+', correo: 'gloria.arango@gmail.com', sede: 'SC PANCE', motivo: 'deterioro' }, ['foto_carnet'], 3, 'rechazada');
+  await gestionada({ cedula: '1112456789', nombre: 'Diego Fernando Muñoz', rh: 'O-', correo: 'diego.munoz@gmail.com', sede: 'SC PANCE', motivo: 'perdida' }, ['descuento'], 15, 'enviada', { informada: true });
+  // Destinatarios de ejemplo (en la carpeta real se escriben en Ajustes)
+  if (!(await existe(raiz, ARCHIVO_AJUSTES))) {
+    await escribir(raiz, ARCHIVO_AJUSTES, JSON.stringify({ version: 1, actualizado: new Date(hace(1)).toISOString(), por: quien, valores: {
+      correosSupervisores: { para: ['supervisores.tiendas@ejemplo.com'], cc: ['coordinacion.gh@ejemplo.com'] },
+      correosPorSede: { 'SC TULUA': 'supervisor.tulua@ejemplo.com' },
+    } }, null, 2));
+  }
   if (peor) await gestionada({ cedula: '1144000999', nombre: 'Wilmer Andrés Quintero', rh: 'O+', correo: 'wilmer.quintero@gmail.com', sede: 'SC ZARZAL', motivo: 'perdida' }, ['descuento'], 2, 'aprobada', { correoFalla: true });
 
   // Lo que llega hoy a Recibidos
@@ -3864,7 +4035,7 @@ const PESTANAS_CARNET = [
   ['cerradas', 'Cerradas', (s) => s.estado === 'enviada' || s.estado === 'rechazada'],
 ];
 
-function Carnets({ lista, cargando, onAbrir, onRecargar, onExcel, estadosCorreo }) {
+function Carnets({ lista, cargando, onAbrir, onRecargar, onExcel, onSupervisores, estadosCorreo }) {
   const [pestana, setPestana] = useState('revisar');
   const [busqueda, setBusqueda] = useState('');
   const validas = lista.filter((x) => x.solicitud);
@@ -3885,6 +4056,7 @@ function Carnets({ lista, cargando, onAbrir, onRecargar, onExcel, estadosCorreo 
         </div>
         <div className="acciones">
           <button className="boton boton-secundario" onClick={onRecargar} disabled={cargando}><Icono nombre="recargar" tamano={18} /> Actualizar</button>
+          <button className="boton boton-secundario" onClick={onSupervisores} disabled={!validas.length}><Icono nombre="personas" tamano={18} /> Correo a supervisores</button>
           <button className="boton boton-principal" onClick={onExcel} disabled={!validas.length}><Icono nombre="archivo" tamano={18} /> Descargar Excel</button>
         </div>
       </header>
@@ -3981,6 +4153,7 @@ function FichaCarnet({ c, raiz, usuario, avisar, onCambio, onCerrar, estadosCorr
       const guardada = await guardarSolicitud(c.carpeta, copia, usuario);
       setSol(guardada);
       for (const correo of cola) {
+        if (correo.manual) continue; // Power Automate apagado: se envía a mano desde la ficha
         try { await escribirCorreoCarnet(raiz, guardada, correo); }
         catch (e) { avisar(`Se guardó, pero no se pudo dejar el correo para Power Automate: ${e.message}`, 'error'); }
       }
@@ -4038,6 +4211,39 @@ function FichaCarnet({ c, raiz, usuario, avisar, onCambio, onCerrar, estadosCorr
     }, `Reintentó el correo "${TIPOS_CORREO_CARNET[correo.tipo] || correo.tipo}"`);
     if (r) avisar('El correo quedó otra vez en espera de Power Automate.');
   }
+  /* ----- Respaldo: enviar a mano el correo del colaborador ----- */
+  const [aMano, setAMano] = useState(null);   // id del correo con los botones de "enviarlo yo" abiertos
+  async function copiarCorreoIndividual(co) {
+    const c = await contenidoCorreoCarnet(raiz, sol, co);
+    const html = correoIndividualHtml(sol, co.tipo, c.cuerpoHtml);
+    const texto = textoCorreoCarnet(sol, co.tipo).cuerpoTexto;
+    const ok = await copiarHtml(html, texto, null);
+    avisar(ok ? 'Correo copiado. Pégalo en un correo nuevo de Outlook (Ctrl + V).' : 'No se pudo copiar el correo.', ok ? 'ok' : 'error');
+  }
+  async function copiarDato(co, que) {
+    const c = await contenidoCorreoCarnet(raiz, sol, co);
+    const ok = await copiarTextoPlano(que === 'asunto' ? c.asunto : (c.para || sol.datos.correo));
+    avisar(ok ? (que === 'asunto' ? 'Asunto copiado.' : 'Correo del colaborador copiado.') : 'No se pudo copiar.', ok ? 'ok' : 'error');
+  }
+  async function enviadoAMano(co) {
+    setGuardando(true);
+    try {
+      const r = await marcarCorreoEnviadoAMano(raiz, sol, co, usuario);
+      if (r === 'ya_enviado') { avisar('Power Automate ya lo había enviado: puede que al colaborador le lleguen dos correos.', 'error'); }
+      else {
+        const copia = JSON.parse(JSON.stringify(sol));
+        anotarCarnet(copia, usuario, `Envió a mano el correo "${TIPOS_CORREO_CARNET[co.tipo] || co.tipo}"${r === 'desde_errores' ? ' (Power Automate no lo pudo enviar)' : ''}`);
+        setSol(await guardarSolicitud(c.carpeta, copia, usuario));
+        avisar('Listo: el correo quedó como enviado a mano.');
+      }
+      setAMano(null);
+      onCambio();
+    } catch (e) {
+      console.error(e);
+      avisar(e instanceof ErrorChoque ? e.message : `No se pudo marcar: ${e.message}`, 'error');
+    } finally { setGuardando(false); }
+  }
+
   function abrirRechazo() {
     setMotivo(rechazados.length ? (rechazados[0][1].motivoRechazo || CONFIG.motivosRechazoCarnet[0]) : CONFIG.motivosRechazoCarnet[0]);
     setDetalle(rechazados.map(([id, d]) => `${nombreDocCarnet(id)}: ${d.motivoRechazo}`).join('. '));
@@ -4143,7 +4349,9 @@ function FichaCarnet({ c, raiz, usuario, avisar, onCambio, onCerrar, estadosCorr
             <div className="tarjeta">
               {!(sol.correos || []).length ? <p className="fila-sub" style={{ margin: 0, padding: '12px 16px' }}>Aún no se ha enviado ningún correo. Se envía uno al aprobar, al rechazar y al enviar el carnet.</p>
                 : [...sol.correos].reverse().map((co) => {
-                  const e = estadosCorreo[co.id] || { estado: 'pendiente' };
+                  // Sin archivo y con Power Automate apagado al crearlo = "por enviar a mano"
+                  const e = estadosCorreo[co.id] || { estado: co.manual ? 'manual' : 'pendiente' };
+                  const porEnviar = e.estado !== 'enviado' && !co.reintentado;
                   return (
                     <div key={co.id} className="item-ficha">
                       <span className={`punto ${e.estado === 'enviado' ? 'hecho' : e.estado === 'error' ? 'malo' : ''}`} aria-hidden="true">
@@ -4152,17 +4360,36 @@ function FichaCarnet({ c, raiz, usuario, avisar, onCambio, onCerrar, estadosCorr
                       <div className="fila-texto">
                         <span className="item-titulo">Correo “{TIPOS_CORREO_CARNET[co.tipo] || co.tipo}”</span>
                         <span className="fila-sub">
-                          {e.estado === 'enviado' ? `Correo enviado${e.enviado ? ` (${fechaCorta(e.enviado)})` : ''}`
+                          {e.estado === 'enviado' ? (e.manual ? `Correo enviado a mano${e.enviadoPor ? ` por ${e.enviadoPor}` : ''}${e.enviado ? ` (${fechaCorta(e.enviado)})` : ''}`
+                            : `Correo enviado${e.enviado ? ` (${fechaCorta(e.enviado)})` : ''}`)
                             : e.estado === 'error' ? `No se pudo enviar${e.error ? `: ${e.error}` : ''}`
+                            : e.estado === 'manual' ? 'Correo por enviar a mano (Power Automate está apagado)'
+                            : co.reintentado ? 'Se reintentó (ver el correo de arriba)'
                             : 'Esperando a Power Automate'}
                         </span>
+                        {aMano === co.id && (
+                          <div className="caja-motivo">
+                            <p className="fila-sub" style={{ margin: 0 }}>1. Copia el correo y pégalo en un correo nuevo de Outlook. 2. Copia el asunto y el correo del colaborador. 3. Envíalo y toca “Ya lo envié a mano”.</p>
+                            <div className="acciones" style={{ flexWrap: 'wrap', justifyContent: 'flex-start' }}>
+                              <button className="boton boton-principal" onClick={() => copiarCorreoIndividual(co)}>Copiar correo</button>
+                              <button className="boton boton-secundario" onClick={() => copiarDato(co, 'asunto')}>Copiar asunto</button>
+                              <button className="boton boton-secundario" onClick={() => copiarDato(co, 'para')}>Copiar correo del colaborador</button>
+                              <button className="boton boton-principal" disabled={guardando} onClick={() => enviadoAMano(co)}>Ya lo envié a mano</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      {e.estado === 'error' && !co.reintentado && <button className="boton boton-suave" disabled={guardando} onClick={() => reintentar(co)}>Reintentar</button>}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+                        {porEnviar && aMano !== co.id && <button className="boton boton-suave" disabled={guardando} onClick={() => setAMano(co.id)}>Copiar correo para enviarlo yo</button>}
+                        {e.estado === 'error' && !co.reintentado && CONFIG.usarPowerAutomate !== false && <button className="boton boton-secundario" disabled={guardando} onClick={() => reintentar(co)}>Reintentar</button>}
+                      </div>
                     </div>
                   );
                 })}
             </div>
-            <p className="nota-seccion">Los correos los envía un flujo de Power Automate desde la carpeta Carnets/Correos. Nunca llevan el RH ni los documentos.</p>
+            <p className="nota-seccion">{CONFIG.usarPowerAutomate === false
+              ? 'Power Automate está apagado en Ajustes: cada correo se copia y se envía a mano desde Outlook.'
+              : 'Los correos los envía un flujo de Power Automate desde la carpeta Carnets/Correos. Si falla, usa “Copiar correo para enviarlo yo”.'} Nunca llevan el RH ni los documentos.</p>
           </section>
 
           <section>
@@ -4208,6 +4435,228 @@ function FichaCarnet({ c, raiz, usuario, avisar, onCambio, onCerrar, estadosCorr
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+/* ---------- Correo a supervisores (copiar y pegar en Outlook; el panel no envía correos) ---------- */
+
+/** Los 3 grupos del correo: qué estado, qué fecha cuenta, columnas y colores. */
+const GRUPOS_SUPERVISORES = {
+  aprobada: {
+    titulo: 'Aprobadas', plural: 'aprobadas', fecha: (s) => s.fechas.aprobada, franja: '#1C5A2A', textoFranja: '#ffffff',
+    columnas: ['Nombre', 'Cédula', 'Sede', 'Motivo'],
+    fila: (s) => [nombreBonito(s.datos.nombre), s.datos.cedula, s.datos.sede, nombreMotivoCarnet(s.datos.motivo)],
+    nota: 'El carnet se enviará a la sede.',
+  },
+  enviada: {
+    titulo: 'Enviadas', plural: 'enviadas', fecha: (s) => s.fechas.enviada, franja: '#1C5A2A', textoFranja: '#ffffff',
+    columnas: ['Nombre', 'Cédula', 'Sede', 'Fecha de envío', 'Guía / observación'],
+    fila: (s) => [nombreBonito(s.datos.nombre), s.datos.cedula, s.datos.sede, new Date(s.fechas.enviada).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }), (s.envio && (s.envio.guia || s.envio.observacion)) || '—'],
+    nota: '',
+  },
+  rechazada: {
+    titulo: 'Rechazadas', plural: 'rechazadas', fecha: (s) => s.fechas.rechazada, franja: '#e8a317', textoFranja: '#2b1d00', fondo: '#fff6e5',
+    columnas: ['Nombre', 'Cédula', 'Sede', 'Motivo del rechazo'],
+    fila: (s) => [nombreBonito(s.datos.nombre), s.datos.cedula, s.datos.sede, [s.rechazo && s.rechazo.motivo, s.rechazo && s.rechazo.detalle].filter(Boolean).join(' — ')],
+    nota: 'La persona debe enviar una nueva solicitud desde el link de carnets.',
+  },
+};
+
+/** ¿Ya se le informó a supervisores esta solicitud EN SU ESTADO ACTUAL? (una aprobada que luego se envía se informa otra vez) */
+const yaInformada = (s) => !!(s.informadoSupervisores && s.informadoSupervisores.estado === s.estado);
+
+/** "aprobadas, enviadas y rechazadas" */
+function unirConY(l) { return l.length <= 1 ? (l[0] || '') : `${l.slice(0, -1).join(', ')} y ${l[l.length - 1]}`; }
+
+/** Copia HTML + texto al portapapeles (para pegar en Outlook con el diseño). Respaldo: selección + execCommand. */
+async function copiarHtml(html, texto, elementoVista) {
+  try {
+    if (!window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) throw new Error('sin ClipboardItem');
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob([html], { type: 'text/html' }),
+      'text/plain': new Blob([texto], { type: 'text/plain' }),
+    })]);
+    return true;
+  } catch (e) {
+    if (!elementoVista) return false;
+    const rango = document.createRange(); rango.selectNodeContents(elementoVista);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(rango);
+    const ok = document.execCommand('copy');
+    sel.removeAllRanges();
+    return ok;
+  }
+}
+async function copiarTextoPlano(texto) {
+  try { await navigator.clipboard.writeText(texto); return true; } catch (e) { return false; }
+}
+
+function HojaCorreoSupervisores({ lista, usuario, avisar, onCerrar, onCambio }) {
+  const solicitudes = lista.filter((x) => x.solicitud);
+  const [grupos, setGrupos] = useState(() => Object.keys(GRUPOS_SUPERVISORES)
+    .filter((g) => solicitudes.some((x) => x.solicitud.estado === g && !yaInformada(x.solicitud))));
+  const [alcance, setAlcance] = useState('pendientes');           // 'pendientes' | 'rango'
+  const [desde, setDesde] = useState(diaMas(-7));
+  const [hasta, setHasta] = useState(diaMas(0));
+  const [sede, setSede] = useState('');
+  const [quitados, setQuitados] = useState(() => new Set());      // nombreCarpeta de los que NO van
+  const [guardando, setGuardando] = useState(false);
+  const vista = useRef(null);
+  useCerrarConEscape(onCerrar, !guardando);
+
+  const enRango = (iso) => { if (!iso) return false; const d = new Date(iso); return d >= new Date(`${desde}T00:00:00`) && d <= new Date(`${hasta}T23:59:59`); };
+  const candidatos = solicitudes.filter(({ solicitud: s }) => GRUPOS_SUPERVISORES[s.estado] && grupos.includes(s.estado)
+    && (!sede || s.datos.sede === sede)
+    && (alcance === 'pendientes' ? !yaInformada(s) : enRango(GRUPOS_SUPERVISORES[s.estado].fecha(s))));
+  const incluidos = candidatos.filter((x) => !quitados.has(x.nombreCarpeta));
+  const sedes = [...new Set(solicitudes.map((x) => x.solicitud.datos.sede).filter(Boolean))].sort();
+
+  const bloques = Object.entries(GRUPOS_SUPERVISORES)
+    .map(([id, g]) => ({ id, ...g, filas: incluidos.filter((x) => x.solicitud.estado === id).map((x) => g.fila(x.solicitud)) }))
+    .filter((g) => g.filas.length);
+  const hoy = new Date().toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
+  const asunto = `Reposición de carnets – ${unirConY(bloques.map((g) => g.plural))} – ${hoy}${sede ? ` – ${sede}` : ''}`;
+  const saludo = `${saludoSegunHora()}, supervisores:`;
+  const intro = 'Les compartimos el estado de las solicitudes de reposición de carnet de su personal.';
+  const cierre = `Por favor, informen a sus colaboradores. Si tienen dudas, escríbannos.<br>Link para pedir el carnet: <a href="${LINK_APP_CARNETS}" style="color:#1C5A2A;font-weight:600;">${LINK_APP_CARNETS}</a>`;
+  const html = bloques.length ? correoCanaveralHtml({
+    titulo: 'Reposición de carnets', saludo,
+    introHtml: `<p style="margin:0;">${escaparHtml(intro)}</p>`,
+    cuerpoHtml: bloques.map(tablaGrupoHtml).join(''),
+    recuadroHtml: recuadroCorreoHtml(cierre),
+  }) : '';
+  const texto = [saludo, '', intro, '', ...bloques.map((g) => `${tablaGrupoTexto(g)}\n`),
+    'Por favor, informen a sus colaboradores. Si tienen dudas, escríbannos.', `Link para pedir el carnet: ${LINK_APP_CARNETS}`, '',
+    'Cordialmente,', 'Departamento de Gestión Humana', 'Supertiendas Cañaveral'].join('\n');
+
+  const correoSede = sede && CONFIG.correosPorSede[sede];
+  const para = correoSede ? listaDeCorreos(correoSede) : CONFIG.correosSupervisores.para;
+  const cc = CONFIG.correosSupervisores.cc.filter((c) => !para.includes(c));
+
+  async function copiarCorreo() {
+    const ok = await copiarHtml(html, texto, vista.current);
+    avisar(ok ? 'Copiado. Pégalo en un correo nuevo de Outlook (Ctrl + V).' : 'No se pudo copiar: selecciona la vista previa y cópiala a mano.', ok ? 'ok' : 'error');
+  }
+  async function copiar(textoACopiar, que) {
+    avisar((await copiarTextoPlano(textoACopiar)) ? `${que} copiado.` : `No se pudo copiar ${que.toLowerCase()}.`);
+  }
+  /** "Ya lo envié": marca cada solicitud como informada en su estado actual (con control de choques). */
+  async function yaLoEnvie() {
+    setGuardando(true);
+    let bien = 0; const fallas = [];
+    for (const x of incluidos) {
+      try {
+        const sol = JSON.parse(JSON.stringify(x.solicitud));
+        const marca = { fecha: new Date().toISOString(), usuario, estado: sol.estado, para: para.join('; ') };
+        sol.informadoSupervisores = marca;
+        sol.informesSupervisores = [...(sol.informesSupervisores || []), marca];
+        anotarCarnet(sol, usuario, `Informada a supervisores (${GRUPOS_SUPERVISORES[sol.estado].titulo.slice(0, -1).toLowerCase()})`);
+        await guardarSolicitud(x.carpeta, sol, usuario);
+        bien++;
+      } catch (e) { fallas.push(nombreBonito(x.solicitud.datos.nombre)); }
+    }
+    setGuardando(false);
+    onCambio();
+    if (fallas.length) avisar(`Se marcaron ${bien}; no se pudo con: ${fallas.join(', ')} (alguien la cambió: actualiza y vuelve a intentar).`, 'error');
+    else { avisar(`Listo: ${plural(bien, 'solicitud quedó', 'solicitudes quedaron')} como informadas a supervisores.`); onCerrar(); }
+  }
+
+  return (
+    <>
+      <div className="velo" onClick={() => !guardando && onCerrar()} />
+      <aside className="detalle ficha hoja-supervisores" role="dialog" aria-modal="true" aria-label="Correo a supervisores">
+        <div className="agarre" aria-hidden="true" />
+        <div className="detalle-cabeza">
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+            <div className="fila-texto"><h2>Correo a supervisores</h2>
+              <span className="fila-sub">El panel arma el correo; tú lo copias, lo pegas en Outlook y lo envías.</span></div>
+            <button className="boton boton-texto" style={{ fontWeight: 600, fontSize: 17 }} disabled={guardando} onClick={onCerrar}>Cerrar</button>
+          </div>
+        </div>
+        <div className="detalle-cuerpo">
+          <section>
+            <h3>Qué informar</h3>
+            <div className="tarjeta formulario">
+              <div className="fila-campo ancho">
+                <span className="nota-campo" style={{ marginTop: 0 }}>Grupos (cada uno va en su propia tabla)</span>
+                <div className="chips" style={{ marginTop: 6 }}>
+                  {Object.entries(GRUPOS_SUPERVISORES).map(([id, g]) => (
+                    <button key={id} className={`chip ${grupos.includes(id) ? 'activa' : ''}`} aria-pressed={grupos.includes(id)}
+                            onClick={() => setGrupos(grupos.includes(id) ? grupos.filter((x) => x !== id) : [...grupos, id])}>
+                      {g.titulo} ({solicitudes.filter((x) => x.solicitud.estado === id && !yaInformada(x.solicitud)).length} sin informar)
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="fila-campo">
+                <label htmlFor="sup-alcance">Cuáles</label>
+                <select id="sup-alcance" value={alcance} onChange={(e) => setAlcance(e.target.value)}>
+                  <option value="pendientes">Las que aún no se han informado</option>
+                  <option value="rango">Por rango de fechas</option>
+                </select>
+              </div>
+              <div className="fila-campo">
+                <label htmlFor="sup-sede">Sede</label>
+                <select id="sup-sede" value={sede} onChange={(e) => setSede(e.target.value)}>
+                  <option value="">Todas las sedes</option>
+                  {sedes.map((x) => <option key={x} value={x}>{x}{CONFIG.correosPorSede[x] ? ' (tiene correo propio)' : ''}</option>)}
+                </select>
+              </div>
+              {alcance === 'rango' && <>
+                <div className="fila-campo"><label htmlFor="sup-desde">Desde</label><input id="sup-desde" type="date" value={desde} onChange={(e) => setDesde(e.target.value)} /></div>
+                <div className="fila-campo"><label htmlFor="sup-hasta">Hasta</label><input id="sup-hasta" type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} /></div>
+              </>}
+            </div>
+          </section>
+
+          <section>
+            <h3>Personas incluidas ({incluidos.length} de {candidatos.length})</h3>
+            <div className="tarjeta">
+              {!candidatos.length ? <p className="fila-sub" style={{ margin: 0, padding: '12px 16px' }}>No hay solicitudes para informar con lo que elegiste.</p>
+                : candidatos.map((x) => {
+                  const s = x.solicitud;
+                  return (
+                    <label key={x.nombreCarpeta} className="item-ficha con-casilla">
+                      <input type="checkbox" checked={!quitados.has(x.nombreCarpeta)}
+                             onChange={() => { const n = new Set(quitados); if (n.has(x.nombreCarpeta)) n.delete(x.nombreCarpeta); else n.add(x.nombreCarpeta); setQuitados(n); }} />
+                      <span className="fila-texto">
+                        <span className="item-titulo">{nombreBonito(s.datos.nombre)}</span>
+                        <span className="fila-sub">{GRUPOS_SUPERVISORES[s.estado].titulo.slice(0, -1)} — {s.datos.sede}{yaInformada(s) ? ` — ya informada el ${fechaCorta(s.informadoSupervisores.fecha)}` : ''}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+            </div>
+          </section>
+
+          <section>
+            <h3>Para y asunto</h3>
+            <div className="tarjeta" style={{ padding: '12px 16px' }}>
+              <div className="fila-sub"><strong>Para:</strong> {para.length ? para.join('; ') : <span className="correo-error">no hay correos: agrégalos en Ajustes → Carnets</span>}{correoSede ? ' (correo de la sede)' : ''}</div>
+              {cc.length > 0 && <div className="fila-sub"><strong>CC:</strong> {cc.join('; ')}</div>}
+              <div className="fila-sub"><strong>Asunto:</strong> {bloques.length ? asunto : '—'}</div>
+            </div>
+            <div className="acciones-hoja" style={{ marginTop: 10 }}>
+              <button className="boton boton-principal" disabled={!html} onClick={copiarCorreo}>Copiar correo</button>
+              <button className="boton boton-secundario" disabled={!html} onClick={() => copiar(asunto, 'Asunto')}>Copiar asunto</button>
+              <button className="boton boton-secundario" disabled={!para.length} onClick={() => copiar([...para, ...cc].join('; '), 'Destinatarios')}>Copiar destinatarios</button>
+              <a className="boton boton-secundario" aria-disabled={!html || !para.length} onClick={(e) => { if (!html || !para.length) e.preventDefault(); }}
+                 href={html && para.length ? `mailto:${para.join(';')}?${cc.length ? `cc=${encodeURIComponent(cc.join(';'))}&` : ''}subject=${encodeURIComponent(asunto)}` : undefined}>Abrir Outlook</a>
+              <button className="boton boton-principal" disabled={!incluidos.length || guardando} onClick={yaLoEnvie}>{guardando ? 'Guardando…' : 'Ya lo envié'}</button>
+            </div>
+            <p className="nota-seccion">“Abrir Outlook” abre un correo nuevo con los destinatarios y el asunto: pega ahí el correo (Ctrl + V).
+              “Ya lo envié” marca estas solicitudes como informadas para que no salgan la próxima vez.</p>
+          </section>
+
+          <section>
+            <h3>Vista previa</h3>
+            <div className="vista-correo">
+              {html ? <div ref={vista} dangerouslySetInnerHTML={{ __html: html }} />
+                : <p style={{ margin: 0, padding: 16, color: '#4a5a50' }}>Elige al menos un grupo con solicitudes para ver el correo.</p>}
+            </div>
+          </section>
+        </div>
+      </aside>
     </>
   );
 }
@@ -5097,6 +5546,51 @@ function Ajustes({ info, onGuardar, onRecargar, cargando }) {
       </section>
 
       <section className="grupo">
+        <h3 className="grupo-titulo">Carnets: Power Automate</h3>
+        <div className="tarjeta">
+          <label className="item-ficha sin-punto">
+            <span className="fila-texto">
+              <span className="item-titulo">Usar Power Automate para los correos al colaborador</span>
+              <span className="fila-sub">{borrador.usarPowerAutomate
+                ? 'Al aprobar, rechazar o enviar, el panel deja el correo en Carnets/Correos/Pendientes y el flujo lo envía.'
+                : 'Apagado: el panel no deja nada para el flujo. En la ficha sale "Correo por enviar a mano" para copiarlo y pegarlo en Outlook.'}</span>
+            </span>
+            <input className="interruptor" type="checkbox" role="switch" checked={borrador.usarPowerAutomate}
+                   onChange={(e) => poner('usarPowerAutomate', e.target.checked)} />
+          </label>
+        </div>
+      </section>
+
+      <section className="grupo">
+        <h3 className="grupo-titulo">Carnets: a quién va el “Correo a supervisores”</h3>
+        <div className="tarjeta fila-campo">
+          <label htmlFor="sup-para">Para (separados por ; o en líneas)</label>
+          <textarea id="sup-para" rows={2} style={{ width: '100%', fontFamily: 'inherit', fontSize: 14 }}
+                    value={Array.isArray(borrador.correosSupervisores.para) ? borrador.correosSupervisores.para.join('; ') : borrador.correosSupervisores.para}
+                    onChange={(e) => poner('correosSupervisores', { ...borrador.correosSupervisores, para: e.target.value })} />
+          <label htmlFor="sup-cc" style={{ marginTop: 8 }}>Con copia (CC)</label>
+          <textarea id="sup-cc" rows={2} style={{ width: '100%', fontFamily: 'inherit', fontSize: 14 }}
+                    value={Array.isArray(borrador.correosSupervisores.cc) ? borrador.correosSupervisores.cc.join('; ') : borrador.correosSupervisores.cc}
+                    onChange={(e) => poner('correosSupervisores', { ...borrador.correosSupervisores, cc: e.target.value })} />
+        </div>
+        <div className="tarjeta" style={{ marginTop: 10 }}>
+          {(Array.isArray(borrador.correosPorSede) ? borrador.correosPorSede : Object.entries(borrador.correosPorSede)).map(([sede, correo], i, filas) => (
+            <div className="ajuste-item sede" key={i}>
+              <input className="campo-ajuste" value={sede} maxLength={80} placeholder="Sede, ej. SC TULUA" aria-label={`Sede ${i + 1} con correo propio`}
+                     onChange={(e) => poner('correosPorSede', filas.map((f, j) => (j === i ? [e.target.value.toUpperCase(), f[1]] : f)))} />
+              <input className="campo-ajuste" value={correo} maxLength={200} placeholder="Correo del supervisor de esa sede" aria-label={`Correo de la sede ${i + 1}`}
+                     onChange={(e) => poner('correosPorSede', filas.map((f, j) => (j === i ? [f[0], e.target.value] : f)))} />
+              <button className="boton boton-texto peligro" onClick={() => poner('correosPorSede', filas.filter((_, j) => j !== i))}>Quitar</button>
+            </div>
+          ))}
+          <div className="ajuste-item sin-tipo">
+            <button className="boton boton-suave" onClick={() => poner('correosPorSede', [...(Array.isArray(borrador.correosPorSede) ? borrador.correosPorSede : Object.entries(borrador.correosPorSede)), ['', '']])}>Agregar correo de una sede</button>
+          </div>
+        </div>
+        <p className="grupo-pie">Si filtras el correo por una sede que tiene correo propio, va a ese correo; si no, a la lista de “Para”. La sede se escribe como sale en las solicitudes (ej. SC TULUA).</p>
+      </section>
+
+      <section className="grupo">
         <h3 className="grupo-titulo">Carnets: correos al colaborador (los envía Power Automate)</h3>
         {Object.entries(TIPOS_CORREO_CARNET).map(([tipo, titulo]) => (
           <div className="tarjeta fila-campo" key={tipo} style={{ marginBottom: 10 }}>
@@ -5621,7 +6115,7 @@ function DialogoNombre({ actual, onGuardar, onCancelar }) {
  * Versión del panel. CÁMBIALA cada vez que subas un cambio a este archivo (fecha y un número).
  * El panel abierto compara su versión con la publicada y, si hay una más nueva, avisa que hay que recargar.
  */
-const VERSION_PANEL = '2026-11-18.2';
+const VERSION_PANEL = '2026-11-19.1';
 
 /** Revisa cada 5 minutos (y al volver a la pestaña) si se publicó una versión más nueva del panel. */
 function useVersionNueva() {
@@ -5672,6 +6166,7 @@ function App() {
   const [carnets, setCarnets] = useState([]);                  // solicitudes de carnet (Carnets/Solicitudes)
   const [estadosCorreo, setEstadosCorreo] = useState({});      // estado de cada correo de carnet (6F)
   const [abiertoCarnet, setAbiertoCarnet] = useState(null);    // solicitud de carnet abierta en su ficha
+  const [correoSupervisores, setCorreoSupervisores] = useState(false); // hoja "Correo a supervisores" abierta
   const [solicitud, setSolicitud] = useState(null);           // hoja del link de aprendiz abierta: { c, exp, solicitud, registrada }
   const temporizador = useRef(null);
 
@@ -5780,6 +6275,7 @@ function App() {
     setFase('cargando');
     aplicarAjustes(null); // el ejemplo empieza con los valores de fábrica
     const carpeta = await crearCarpetaDeEjemplo(modo);
+    window.__carpetaEjemplo = carpeta; // solo la carpeta de EJEMPLO (en memoria): la usan las pruebas automáticas
     await entrar(carpeta, nombreUsuario, modo);
   }
 
@@ -6040,7 +6536,8 @@ function App() {
         {vista === 'citacion' && <Citacion raiz={raiz} usuario={usuario} avisar={avisar} />}
         {vista === 'carnets' && (
           <Carnets lista={carnets} cargando={cargando} onAbrir={setAbiertoCarnet} onRecargar={recargarCarnets}
-                   estadosCorreo={estadosCorreo} onExcel={() => descargarExcelCarnets(carnets, avisar)} />
+                   estadosCorreo={estadosCorreo} onExcel={() => descargarExcelCarnets(carnets, avisar)}
+                   onSupervisores={() => setCorreoSupervisores(true)} />
         )}
         {vista === 'papelera' && (
           <Papelera lista={papelera} cargando={cargando} ocupado={ocupado} onRecargar={() => recargar()}
@@ -6065,6 +6562,10 @@ function App() {
         <FichaCarnet key={abiertoCarnet.nombreCarpeta} c={abiertoCarnet} raiz={raiz} usuario={usuario} avisar={avisar}
                      estadosCorreo={estadosCorreo} onCambio={alCambiarCarnet}
                      onCerrar={() => { setAbiertoCarnet(null); recargarCarnets(); }} />
+      )}
+      {correoSupervisores && (
+        <HojaCorreoSupervisores lista={carnets} usuario={usuario} avisar={avisar}
+                                onCambio={recargarCarnets} onCerrar={() => setCorreoSupervisores(false)} />
       )}
       {confirmar && <DialogoConfirmar {...confirmar} onCancelar={() => setConfirmar(null)} />}
       {inscribiendo && <HojaInscribir onInscribir={inscribir} onCerrar={() => setInscribiendo(false)} />}

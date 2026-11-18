@@ -181,6 +181,31 @@ El panel **no envía correos**: al aprobar, rechazar o enviar deja `Carnets/Corr
 - En la carpeta de ejemplo, el panel simula a Power Automate (a los 2,5 s pasa el correo a Enviados; si el correo
   del destinatario contiene "error", a Errores).
 
+### Plan B: correos para copiar y pegar (si Power Automate falla o no está listo)
+
+El panel nunca envía correos: los arma con el diseño de Cañaveral (tablas y estilos en línea, fondo claro, logo
+`https://felipeanali.github.io/logo-canaveral.png/logo-canaveral.png`) y la gestora los pega en Outlook.
+Se copian con `navigator.clipboard.write` + `ClipboardItem` (`text/html` y `text/plain`); si el navegador no lo deja,
+se selecciona la vista previa y se usa `execCommand('copy')`. Funciones: `correoCanaveralHtml`, `tablaGrupoHtml`,
+`recuadroCorreoHtml`, `correoIndividualHtml`, `copiarHtml` (sección 6F) y `HojaCorreoSupervisores`.
+
+- **Correo a supervisores** (botón en Carnets): grupos Aprobadas / Enviadas / Rechazadas (una tabla por grupo), las
+  que aún no se han informado o un rango de fechas, una sede o todas, casillas para quitar personas y vista previa.
+  Copiar correo / asunto / destinatarios, **Abrir Outlook** (`mailto:` con Para, CC y asunto; el cuerpo se pega) y
+  **Ya lo envié**: guarda `informadoSupervisores: { fecha, usuario, estado, para }` (y el historial en
+  `informesSupervisores`) con control `rev`, y anota "Informada a supervisores". Cuenta por **estado**: una aprobada
+  ya informada vuelve a salir cuando pasa a enviada. Nunca lleva el RH, el correo, el celular ni adjuntos.
+- **Destinatarios** en Ajustes (`ajustes.json`): `correosSupervisores { para, cc }` y `correosPorSede { "SC TULUA": "…" }`
+  (si se filtra por una sede con correo propio, va a ese; si no, a la lista general; el CC siempre).
+- **Correo al colaborador a mano** (en la ficha): "Copiar correo para enviarlo yo" copia el `cuerpoHtml` del JSON (o lo
+  vuelve a armar) envuelto en el diseño, más el asunto y el correo del colaborador. **"Ya lo envié a mano"**
+  (`marcarCorreoEnviadoAMano`) revisa dónde está el JSON justo antes: si ya está en `Enviados` no hace nada y avisa
+  que Power Automate ya lo envió; si está en `Pendientes` o `Errores` lo escribe en `Enviados` con `estado`,
+  `enviado`, `manual: true`, `enviadoPor` y lo borra de donde estaba; si no hay archivo (Power Automate apagado) lo
+  escribe en `Enviados`. Si un correo queda en dos carpetas, gana `Enviados`.
+- **`usarPowerAutomate`** (Ajustes, encendido por defecto): apagado, el panel no escribe en `Pendientes` y el correo
+  queda en la solicitud con `manual: true` → la ficha dice "Correo por enviar a mano".
+
 **Cómo armar el flujo** (lo puede hacer cualquier persona con Power Automate en su cuenta de Microsoft 365; no hace
 falta ser administrador). En https://make.powerautomate.com:
 

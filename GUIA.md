@@ -208,9 +208,23 @@ Cada correo muestra su estado en la ficha: "Esperando a Power Automate", "Correo
 (con **Reintentar**). Para que salgan los correos hay que crear **una vez** el flujo de Power Automate
 (paso a paso en [COMO_FUNCIONA.md](COMO_FUNCIONA.md), "Correos con Power Automate").
 
+**Si Power Automate falla o todavía no está armado (plan B):**
+- En la ficha, junto al correo que dice "Esperando a Power Automate" o "No se pudo enviar", toca **Copiar correo para
+  enviarlo yo**. Abre un correo nuevo en Outlook, pega (Ctrl + V), copia el asunto y el correo del colaborador,
+  envíalo y toca **Ya lo envié a mano**. Así el flujo no lo manda dos veces.
+- Si el flujo está caído varios días: **Ajustes → Carnets → Usar Power Automate** apagado. Cada correo sale como
+  "Correo por enviar a mano".
+
+**Correo a supervisores** (botón en Carnets): elige qué informar (aprobadas, enviadas, rechazadas), cuáles (las que
+no se han informado o un rango de fechas) y la sede. Revisa la vista previa, quita a quien no deba ir y toca
+**Copiar correo** → **Abrir Outlook** (ya trae destinatarios y asunto) → pega y envía → **Ya lo envié** (así no se
+repiten la próxima vez). Nunca lleva el RH ni el correo o celular del colaborador.
+
 | Qué quieres cambiar | Dónde |
 |---|---|
 | Motivos para rechazar y textos de los 3 correos | Panel → **Ajustes** → Carnets. |
+| A quién va el correo a supervisores (Para, CC y correo por sede) | Panel → **Ajustes** → Carnets. |
+| Usar o no Power Automate | Panel → **Ajustes** → Carnets → interruptor. |
 | Sedes, motivos, documentos, textos y formato de descuento de la app del colaborador | Bloque **CONFIGURACIÓN** de `carnets.html`. |
 
 ## 7C. El panel no muestra un cambio nuevo

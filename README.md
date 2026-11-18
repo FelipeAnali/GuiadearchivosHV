@@ -58,7 +58,9 @@ Sedes, días y secciones se cambian en **Ajustes** del panel. Ver [GUIA.md](GUIA
 
 Con [`carnets.html`](carnets.html) el colaborador pide un carnet nuevo. El paquete llega a la misma bandeja del panel,
 que lo convierte en una solicitud (menú **Carnets**): se aprueba o rechaza, se marca como enviada y se descarga el
-registro en Excel. Los correos al colaborador los envía un flujo de Power Automate. Ver [GUIA.md](GUIA.md) punto 7E.
+registro en Excel. Los correos al colaborador los envía un flujo de Power Automate; si falla, el panel los arma para copiarlos y
+pegarlos en Outlook (plan B), igual que el **correo a supervisores** con el resumen de aprobadas, enviadas y
+rechazadas. Ver [GUIA.md](GUIA.md) punto 7E.
 
 ## Revisión automática de documentos
 
