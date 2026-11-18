@@ -1,0 +1,2767 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<!--
+  ============================================================================
+  REPOSICIÓN DE CARNET — Supertiendas Cañaveral S.A.S.
+  ----------------------------------------------------------------------------
+  Página donde el COLABORADOR pide un carnet nuevo cuando el suyo se dañó, se
+  lo robaron o lo perdió. Es "hermana" de las apps de Documentos de ingreso y
+  de Incapacidades: mismo estilo, misma forma de guardar y de enviar.
+  La página:
+    1. Pregunta si el dispositivo es propio y pide la autorización de datos.
+    2. Pide nombre, cédula, RH (va impreso en el carnet), celular, correo
+       (para los avisos) y sede (a donde se envía el carnet).
+    3. Pregunta qué le pasó al carnet y pide SOLO lo que hace falta:
+         Deterioro → foto del carnet dañado
+         Robo      → denuncia + formato de descuento por responsabilidad
+         Pérdida   → formato de descuento por responsabilidad
+       El formato de descuento se descarga ya lleno con los datos, para firmar.
+    4. Cada documento se sube en PDF o con fotos. La app revisa que las fotos
+       no estén borrosas ni oscuras, las comprime y las une en un PDF.
+    5. Arma un ZIP (un PDF por documento + datos_carnet.json) y lleva al
+       colaborador a subirlo con el MISMO link de "Solicitar archivos" de
+       Hojas de vida. El panel de Gestión Humana lo reconoce como carnet por
+       el archivo datos_carnet.json (y por la palabra CARNET en el nombre).
+
+  PRIVACIDAD:
+    - Esta página NO tiene servidor. Los archivos viven en el navegador del
+      colaborador hasta que él mismo sube el ZIP.
+    - En dispositivo propio el avance se guarda en SU navegador (IndexedDB)
+      unos días; en uno prestado no se guarda nada y se limpia sola.
+
+  ¿QUÉ SE PUEDE EDITAR SIN SABER PROGRAMAR?
+    Solo el bloque "CONFIGURACIÓN" (link de subida, WhatsApp, sedes, motivos,
+    documentos, textos y el formato de descuento). El resto es el código.
+
+  MODO PRUEBA:
+    Abre la página con ?prueba=1 al final de la dirección: abajo sale un
+    selector con casos de prueba (robo, deterioro, pérdida). No guarda nada.
+
+  MAPA DEL CÓDIGO (en este orden dentro del archivo):
+    ESTILO            Colores de la marca, estilo iPhone y modo oscuro.
+    CONFIGURACIÓN     Lo que se edita.
+    LOGO              Logo de Cañaveral incrustado (imagen en texto base64).
+    1. GUARDADO LOCAL Guardar/leer/borrar el avance en el navegador (IndexedDB).
+    2. FUNCIONES      Motivos y documentos, revisión y compresión de fotos y PDF,
+                      formato de descuento y armado del ZIP.
+    3. PRUEBA         Datos de prueba del modo ?prueba=1.
+    4. INACTIVIDAD    Limpieza automática en dispositivos prestados.
+    5. PANTALLAS      Inicio → Datos → Motivo → Documentos → Envío → Final,
+                      vista previa "¿Se lee bien?" y tutoriales.
+    6. APP PRINCIPAL  Decide qué pantalla mostrar y guarda cada cambio.
+  ============================================================================
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+<!-- Color de la barra del navegador en el celular (uno para modo claro y otro para oscuro) -->
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F3F6EF" />
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#08200F" />
+<meta name="color-scheme" content="light dark" />
+<!-- Si la guardan en la pantalla de inicio del iPhone, se abre como app -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<title>Reposición de carnet · Cañaveral</title>
+
+<!-- Nunito (tipografía corporativa del Manual de Marca) para los títulos; el resto usa la letra del iPhone -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@800;900&display=swap" rel="stylesheet" />
+
+
+<style>
+  /* ==========================================================================
+     ESTILO IPHONE (iOS)
+     Colores de sistema de Apple + el verde de Cañaveral como color de acento.
+     Todo se define aquí una vez; el modo oscuro solo cambia estos valores.
+     ========================================================================== */
+  :root {
+    --tinte: #1D5A2B;                       /* acento: verde del logo Cañaveral */
+    --texto-sobre-tinte: #FFFFFF;
+    --tinte-suave: rgba(29, 90, 43, 0.12);  /* fondo de botones "tintados" */
+    --lima: #7DD105;                        /* verde lima Cañaveral (avance, interruptor) */
+    --tinta: #08200F;                       /* verde casi negro de la marca (portada) */
+    --fondo: #F3F6EF;                       /* verde muy claro de la marca */
+    --celda: #FFFFFF;                       /* fondo de las listas */
+    --celda-presionada: #E6ECE1;
+    --texto: #08200F;
+    --texto-2: rgba(8, 32, 15, 0.6);        /* texto secundario */
+    --separador: rgba(8, 32, 15, 0.16);
+    --relleno: rgba(29, 90, 43, 0.09);      /* fondos verdes muy suaves */
+    --rojo: #D93025;
+    --alerta-fondo: #FFF4E5;
+    --alerta-texto: #8A5300;
+    --barra: rgba(243, 246, 239, 0.86);     /* barras translúcidas */
+    --portada: #08200F;                     /* fondo de la portada de bienvenida */
+    --sombra-flotante: 0 10px 30px rgba(8, 32, 15, 0.2);
+    --radio: 12px;
+    --ancho-contenido: 600px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --tinte: #7DD105;
+      --texto-sobre-tinte: #08200F;
+      --tinte-suave: rgba(125, 209, 5, 0.16);
+      --fondo: #08200F;                     /* el verde oscuro de la marca */
+      --celda: #10301A;
+      --celda-presionada: #18402A;
+      --texto: #FFFFFF;
+      --texto-2: rgba(235, 245, 230, 0.62);
+      --separador: rgba(125, 209, 5, 0.18);
+      --relleno: rgba(255, 255, 255, 0.10);
+      --rojo: #FF6B5E;
+      --alerta-fondo: #2E2A10;
+      --alerta-texto: #FFC24D;
+      --barra: rgba(8, 32, 15, 0.86);
+      --portada: #10301A;
+    }
+  }
+
+  /* ==========================================================================
+     AJUSTES PARA QUE SE SIENTA COMO APP EN EL CELULAR
+     ========================================================================== */
+  html {
+    -webkit-tap-highlight-color: transparent; /* sin destello gris al tocar */
+    -webkit-text-size-adjust: 100%;           /* sin texto agrandado al girar */
+    overscroll-behavior: none;                /* sin "jalar para recargar" */
+  }
+  * { box-sizing: border-box; }
+  /* Le avisa al navegador que la página maneja modo claro y oscuro, para que
+     los controles nativos (desplegables, barras de scroll) usen el color correcto. */
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0;
+    /* -apple-system = San Francisco, la letra del iPhone */
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+    font-size: 17px;            /* tamaño de texto normal en iOS */
+    line-height: 1.35;
+    letter-spacing: -0.2px;
+    background: var(--fondo);
+    color: var(--texto);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 16px o más en campos: evita que el iPhone haga zoom al escribir */
+  input, select, textarea, button { font: inherit; font-size: 17px; color: inherit; letter-spacing: inherit; }
+  /* Controles: respuesta inmediata al toque y sin seleccionar su texto */
+  button, a, .fila-tocable {
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  a { color: var(--tinte); text-decoration: none; }
+  :focus-visible { outline: 3px solid var(--lima); outline-offset: 2px; }
+  .oculto { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+  /* ==========================================================================
+     ESTRUCTURA
+     ========================================================================== */
+  .app { min-height: 100dvh; display: flex; flex-direction: column; }
+  .contenido {
+    width: 100%;
+    max-width: var(--ancho-contenido);
+    margin: 0 auto;
+    padding: 12px 16px 28px;
+    flex: 1;
+  }
+
+  /* --- Barra de navegación translúcida (como las apps de Apple) --- */
+  .barra-nav {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--barra);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 0.5px solid var(--separador);
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;
+  }
+  .barra-nav-interna { max-width: var(--ancho-contenido); margin: 0 auto; }
+  .nav-fila { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  /* Logo de Cañaveral (verde). En modo oscuro se vuelve blanco con un filtro. */
+  .logo { display: block; width: auto; }
+  .logo-nav { height: 30px; }
+  .logo-blanco { filter: brightness(0) invert(1); }
+  @media (prefers-color-scheme: dark) { .logo-nav { filter: brightness(0) invert(1); } }
+
+  /* Portada de bienvenida: verde oscuro de la marca con la curva lima de las piezas de Cañaveral */
+  .portada {
+    position: relative; overflow: hidden;
+    background: var(--portada); color: #FFFFFF;
+    border-radius: 20px; padding: 24px 20px 22px; margin: 4px 0 28px;
+  }
+  .portada::after {               /* curva lima decorativa (como en los banners de la marca) */
+    content: ''; position: absolute; right: -160px; top: -70px;
+    width: 220px; height: 300px; border-radius: 50%;
+    border: 22px solid var(--lima);
+  }
+  .portada > * { position: relative; z-index: 1; max-width: 76%; }
+  .portada .logo { height: 44px; margin-bottom: 18px; max-width: 100%; }
+  .portada h1 { color: #FFFFFF; margin: 0 0 6px; }
+  .portada p { color: rgba(255, 255, 255, 0.78); font-size: 16px; }
+  .nav-paso { font-size: 15px; color: var(--texto-2); margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* --- La "caña": barra de avance hecha de nudos, uno por documento --- */
+  .cana { display: flex; gap: 4px; margin-top: 10px; }
+  .nudo {
+    flex: 1; height: 6px; border-radius: 3px;
+    background: var(--relleno);
+    transition: background 250ms ease-out;
+  }
+  .nudo.lleno { background: var(--lima); }
+  .cana-texto {
+    display: flex; justify-content: space-between; gap: 12px;
+    font-size: 13px; color: var(--texto-2); margin-top: 5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* --- Títulos (título grande de iOS) --- */
+  h1 { font-family: 'Nunito', -apple-system, sans-serif; font-size: 33px; line-height: 1.12; font-weight: 900; letter-spacing: 0; margin: 8px 0 6px; }
+  .bajada { color: var(--texto-2); font-size: 17px; margin: 0 0 24px; }
+  p { margin: 0; }
+
+  /* ==========================================================================
+     LISTAS AGRUPADAS (el estilo de la app Ajustes del iPhone)
+     ========================================================================== */
+  .grupo { margin-bottom: 28px; }
+  .grupo-titulo { font-size: 13px; color: var(--texto-2); margin: 0 16px 7px; }
+  .grupo-pie { font-size: 13px; color: var(--texto-2); margin: 7px 16px 0; }
+  .grupo-pie.error { color: var(--rojo); }
+  .lista { background: var(--celda); border-radius: var(--radio); overflow: hidden; }
+
+  .fila {
+    position: relative;
+    display: flex; align-items: center; gap: 12px;
+    min-height: 44px; padding: 11px 16px;
+  }
+  /* Línea separadora fina entre filas, con sangría como en iOS */
+  .fila + .fila::before {
+    content: ''; position: absolute; top: 0; right: 0;
+    left: var(--sangria, 16px);
+    height: 0.5px; background: var(--separador);
+  }
+  .fila-con-icono { --sangria: 58px; align-items: flex-start; }
+  .fila-tocable { cursor: pointer; }
+  .fila-tocable:active { background: var(--celda-presionada); }
+  .fila-cuerpo { flex: 1; min-width: 0; }
+  .fila-titulo { font-size: 17px; font-weight: 400; }
+  .fila-titulo.fuerte { font-weight: 600; }
+  .fila-sub { font-size: 15px; color: var(--texto-2); margin-top: 2px; }
+  .fila-nombre { overflow-wrap: anywhere; }
+  .marca-check { color: var(--tinte); flex-shrink: 0; display: flex; }
+
+  /* --- Campos de texto dentro de la lista --- */
+  .fila-campo { display: block; padding: 9px 16px 10px; }
+  .sugerencia { --sangria: 16px; }
+  /* Las sugerencias van dentro de su propio contenedor: se les pone la línea separadora a mano */
+  #lista-cargos > .fila::before, #lista-cargos + .fila::before {
+    content: ''; position: absolute; top: 0; right: 0; left: 16px;
+    height: 0.5px; background: var(--separador);
+  }
+  .sugerencia .fila-titulo { font-size: 16px; }
+  input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
+  .fila-campo .etiqueta { display: block; font-size: 13px; color: var(--texto-2); margin-bottom: 2px; }
+  .fila-campo input, .fila-campo select {
+    width: 100%; border: 0; outline: 0; padding: 2px 0;
+    background: transparent; min-height: 28px;
+    -webkit-appearance: none; appearance: none;
+  }
+  .fila-campo input::placeholder { color: var(--texto-2); opacity: 0.7; }
+  /* ---- Propio de carnets ---- */
+  /* Comentario opcional del motivo */
+  .fila-campo textarea {
+    width: 100%; border: 0; outline: 0; padding: 2px 0; background: transparent;
+    resize: vertical; min-height: 64px; line-height: 1.35;
+  }
+  .fila-campo textarea::placeholder { color: var(--texto-2); opacity: 0.7; }
+  /* Botones del grupo sanguíneo (RH): 4 por fila en celular, 8 en computador */
+  .rh-opciones { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
+  @media (min-width: 700px) { .rh-opciones { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+  .rh-opcion {
+    min-height: 40px; border-radius: 10px; border: 1px solid var(--separador);
+    background: var(--relleno); font-weight: 700; font-size: 16px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; transition: transform 120ms ease-out;
+  }
+  .rh-opcion:active { transform: scale(0.96); }
+  .rh-opcion.activo { background: var(--tinte); border-color: var(--tinte); color: var(--texto-sobre-tinte); }
+  .rh-opcion:focus-visible { outline: 2px solid var(--tinte); outline-offset: 2px; }
+  /* El correo puede ser muy largo y no tiene espacios: se deja partir donde haga falta */
+  .fila-correo { overflow-wrap: anywhere; }
+  /* Opciones del desplegable de cargos: colores explícitos para que en modo oscuro
+     no queden en letra blanca sobre fondo blanco (pasaba en Chrome de Windows). */
+  .fila-campo select option { background: var(--celda); color: var(--texto); }
+  .fila-campo.con-error .etiqueta { color: var(--rojo); }
+  .selector-con-flecha { position: relative; }
+  .selector-con-flecha::after {
+    content: ''; position: absolute; right: 2px; top: 50%;
+    width: 8px; height: 8px; margin-top: -6px;
+    border-right: 2px solid var(--texto-2); border-bottom: 2px solid var(--texto-2);
+    transform: rotate(45deg); pointer-events: none;
+  }
+  .selector-con-flecha select { padding-right: 24px; }
+
+  /* --- Interruptor tipo iOS (para la autorización) --- */
+  .interruptor {
+    -webkit-appearance: none; appearance: none;
+    width: 51px; height: 31px; border-radius: 31px; margin: 0;
+    background: var(--relleno); position: relative; flex-shrink: 0; cursor: pointer;
+    transition: background 200ms ease-out;
+  }
+  .interruptor::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 27px; height: 27px; border-radius: 50%; background: #fff;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.16);
+    transition: transform 200ms ease-out;
+  }
+  .interruptor:checked { background: var(--lima); }
+  .interruptor:checked::after { transform: translateX(20px); }
+
+  /* --- Círculo de estado (número o palomita) --- */
+  .circulo {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    display: grid; place-items: center;
+    font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums;
+    background: var(--relleno); color: var(--texto-2);
+    margin-top: 1px;
+  }
+  .circulo.hecho { background: var(--lima); color: #05200b; }
+  .circulo.activo { background: var(--tinte); color: var(--texto-sobre-tinte); }
+
+  /* --- Archivos subidos dentro de un documento --- */
+  .archivo {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--relleno); border-radius: 10px;
+    padding: 7px 12px; margin-top: 8px; font-size: 15px;
+  }
+  .archivo-nombre { flex: 1 1 150px; min-width: 0; overflow-wrap: anywhere; }
+  .archivo-peso { color: var(--texto-2); }
+  .archivo-acciones { display: flex; gap: 16px; flex-shrink: 0; }
+  .archivo-acciones .boton-texto { font-size: 15px; min-height: 32px; }
+  .doc-error { color: var(--rojo); font-size: 15px; margin-top: 8px; }
+  .doc-acciones { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 10px; }
+
+  /* ==========================================================================
+     BOTONES (estilo iOS: relleno, tintado y de texto)
+     ========================================================================== */
+  .boton {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 50px; padding: 0 20px; border: 0; border-radius: 14px;
+    font-size: 17px; font-weight: 600; cursor: pointer; text-decoration: none;
+    transition: opacity 120ms ease-out;
+  }
+  .boton:active:not(:disabled) { opacity: 0.6; }      /* iOS atenúa al tocar */
+  .boton:disabled, .boton[aria-disabled="true"] { opacity: 0.35; cursor: not-allowed; }
+  .boton-principal { width: 100%; background: var(--tinte); color: var(--texto-sobre-tinte); }
+  .boton-tintado { background: var(--tinte-suave); color: var(--tinte); }
+  .boton-chico { min-height: 34px; padding: 0 14px; border-radius: 999px; font-size: 15px; }
+  .boton-texto {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    color: var(--tinte); font-size: 17px; min-height: 44px;
+  }
+  .boton-texto:active { opacity: 0.5; }
+  .boton-texto.peligro { color: var(--rojo); }
+  .boton-texto:disabled { opacity: 0.35; }
+  @media (hover: hover) and (pointer: fine) {
+    .boton:hover:not(:disabled) { opacity: 0.85; }
+    .fila-tocable:hover { background: var(--celda-presionada); }
+  }
+  .boton-centrado { display: flex; justify-content: center; margin-top: 4px; }
+
+  /* --- Barra de acción inferior translúcida (respeta la barra de inicio del iPhone) --- */
+  .barra-accion {
+    position: sticky; bottom: 0; z-index: 10;
+    background: var(--barra);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    border-top: 0.5px solid var(--separador);
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+  .barra-accion-interna { max-width: var(--ancho-contenido); margin: 0 auto; }
+  .barra-accion .nota { text-align: center; font-size: 13px; margin: 7px 0 0; color: var(--texto-2); }
+
+  /* --- Avisos --- */
+  .aviso { border-radius: var(--radio); padding: 12px 16px; font-size: 15px; margin-bottom: 20px; }
+  .aviso-info { background: var(--tinte-suave); color: var(--texto); }
+  .aviso-alerta { background: var(--alerta-fondo); color: var(--alerta-texto); }
+  .aviso-error { background: var(--alerta-fondo); color: var(--rojo); }
+
+  /* --- Pantalla final --- */
+  .final { text-align: center; padding-top: 48px; }
+  .final-icono {
+    width: 84px; height: 84px; border-radius: 50%; margin: 0 auto 20px;
+    background: var(--lima); color: #05200b; display: grid; place-items: center;
+  }
+  .final .bajada { margin-bottom: 28px; }
+  .final .aviso { text-align: left; }
+
+  /* --- Aviso de inactividad (dispositivo prestado) --- */
+  .aviso-flotante {
+    position: fixed; left: 16px; right: 16px; z-index: 30;
+    bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+    max-width: calc(var(--ancho-contenido) - 32px); margin: 0 auto;
+    background: var(--celda); color: var(--texto);
+    border-radius: 16px; padding: 14px 16px; box-shadow: var(--sombra-flotante);
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  .aviso-flotante p { flex: 1 1 200px; font-size: 15px; font-variant-numeric: tabular-nums; }
+
+  /* --- Selector del MODO PRUEBA (solo con ?prueba=1), como control segmentado de iOS --- */
+  .selector-prueba {
+    position: fixed; left: 50%; transform: translateX(-50%); z-index: 50;
+    bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+    display: flex; gap: 2px; padding: 2px; border-radius: 9px;
+    background: var(--relleno); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+  }
+  .selector-prueba button {
+    border: 0; background: transparent; border-radius: 7px;
+    padding: 5px 12px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap;
+  }
+  .selector-prueba button.activo { background: var(--celda); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12); }
+
+  /* --- Hoja de confirmación (como las "action sheets" de iOS) --- */
+  .hoja-fondo {
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex; align-items: flex-end; justify-content: center;
+    padding: 0 8px calc(8px + env(safe-area-inset-bottom, 0px));
+    animation: aparecer 180ms ease-out;
+  }
+  .hoja { width: 100%; max-width: 500px; animation: subir 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .hoja-grupo { background: var(--celda); border-radius: 14px; overflow: hidden; margin-bottom: 8px; }
+  .hoja-mensaje { font-size: 13px; color: var(--texto-2); text-align: center; padding: 14px 16px; border-bottom: 0.5px solid var(--separador); }
+  .hoja-boton {
+    display: block; width: 100%; min-height: 57px; border: 0; cursor: pointer;
+    background: var(--celda); color: var(--tinte); font-size: 20px;
+  }
+  .hoja-boton:active { background: var(--celda-presionada); }
+  .hoja-boton.peligro { color: var(--rojo); }
+  .hoja-cancelar { border-radius: 14px; font-weight: 600; }
+  /* --- Tutorial "¿Cómo lo saco?" (hoja alta con scroll propio) --- */
+  .boton-como {
+    display: inline-flex; align-items: center; gap: 4px; margin-left: 6px;
+    background: var(--tinte-suave); color: var(--tinte); border: 0; cursor: pointer;
+    font-size: 14px; font-weight: 600; padding: 3px 10px; border-radius: 999px; min-height: 28px;
+  }
+  .boton-como:active { opacity: 0.6; }
+  .hoja.tutorial {
+    background: var(--celda); border-radius: 16px 16px 14px 14px;
+    max-height: calc(100dvh - 40px); display: flex; flex-direction: column; overflow: hidden;
+    --tinta-ilus: #08200F;
+  }
+  .hoja.tutorial:focus { outline: none; }
+  .tutorial-agarre { width: 36px; height: 5px; border-radius: 3px; background: var(--separador); margin: 8px auto 0; flex-shrink: 0; }
+  .tutorial-cabecera { display: flex; align-items: center; gap: 12px; padding: 10px 16px 8px; flex-shrink: 0; }
+  .tutorial-titulo { flex: 1; margin: 0; font-family: 'Nunito', -apple-system, sans-serif; font-size: 21px; font-weight: 900; line-height: 1.2; }
+  .tutorial-cerrar {
+    width: 32px; height: 32px; border-radius: 50%; border: 0; cursor: pointer; flex-shrink: 0;
+    background: var(--relleno); color: var(--texto-2); font-size: 14px;
+  }
+  .tutorial-cuerpo { overflow-y: auto; overscroll-behavior: contain; padding: 0 16px 8px; }
+  .tutorial-intro { font-size: 15px; color: var(--texto-2); margin: 0 0 12px; }
+  .tutorial-pasos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .tutorial-paso { display: flex; gap: 14px; align-items: flex-start; background: var(--relleno); border-radius: 14px; padding: 12px; }
+  .ilustracion { width: 96px; height: auto; flex-shrink: 0; }
+  .ilustracion text { font-family: -apple-system, 'Segoe UI', sans-serif; }
+  .tutorial-paso-texto { flex: 1; min-width: 0; }
+  .tutorial-paso-texto p { font-size: 15px; line-height: 1.45; margin: 2px 0 8px; }
+  .tutorial-numero { font-size: 12px; font-weight: 700; color: var(--tinte); }
+  .tutorial-subtitulo { font-size: 13px; color: var(--texto-2); margin: 18px 0 8px; font-weight: 600; }
+  .tutorial-enlaces { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tutorial-nota { font-size: 13px; color: var(--texto-2); margin: 14px 0 4px; }
+  .tutorial-pie { padding: 10px 16px 12px; border-top: 0.5px solid var(--separador); flex-shrink: 0; }
+  @media (prefers-color-scheme: dark) { .hoja.tutorial { --tinta-ilus: #000000; } }
+
+  @keyframes aparecer { from { opacity: 0; } }
+  @keyframes subir { from { transform: translateY(100%); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hoja-fondo, .hoja { animation: none; }
+    * { transition: none !important; }
+  }
+
+  /* ==========================================================================
+     PIEZAS PROPIAS DE ESTA APP (fotos por página, vista previa, flechita)
+     ========================================================================== */
+  /* Flechita ">" de las filas que abren algo, como en iOS */
+  .chevron {
+    width: 8px; height: 8px; flex-shrink: 0; margin-right: 4px;
+    border-right: 2px solid var(--texto-2); border-top: 2px solid var(--texto-2);
+    transform: rotate(45deg); opacity: 0.6;
+  }
+  /* Campos de fecha: misma altura que los demás campos */
+  .fila-campo input[type="date"] { min-height: 30px; display: block; }
+  .fila-campo input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+  .lista.con-error { box-shadow: 0 0 0 1.5px var(--rojo); }
+
+  /* Miniaturas de las fotos (una por página) */
+  .miniaturas { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 8px; margin-top: 10px; }
+  .miniatura { position: relative; aspect-ratio: 3 / 4; border-radius: 8px; overflow: hidden; background: var(--relleno); }
+  .miniatura img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .miniatura.con-advertencia { box-shadow: 0 0 0 2px var(--rojo); }
+  .miniatura-numero {
+    position: absolute; left: 4px; bottom: 4px; min-width: 18px; height: 18px; padding: 0 5px;
+    border-radius: 9px; background: rgba(0, 0, 0, 0.6); color: #FFFFFF; font-size: 11px; font-weight: 600;
+    display: grid; place-items: center; font-variant-numeric: tabular-nums;
+  }
+  .miniatura-quitar {
+    position: absolute; right: 3px; top: 3px; width: 26px; height: 26px; border-radius: 50%; border: 0;
+    background: rgba(0, 0, 0, 0.55); color: #FFFFFF; font-size: 12px; cursor: pointer; display: grid; place-items: center;
+  }
+  .revisando { display: inline-flex; align-items: center; gap: 8px; }
+  .revisando::before {
+    content: ''; width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid var(--relleno); border-top-color: var(--tinte); animation: girar 800ms linear infinite;
+  }
+  @keyframes girar { to { transform: rotate(360deg); } }
+
+  /* Vista previa "¿Se lee bien?" */
+  .vista-previa { display: flex; flex-direction: column; gap: 14px; }
+  .vista-previa figure { margin: 0; border-radius: 10px; overflow: hidden; background: var(--relleno); }
+  .vista-previa img { width: 100%; display: block; background: #FFFFFF; }
+  .vista-previa figcaption { font-size: 13px; color: var(--texto-2); padding: 6px 10px; }
+  .vista-previa .con-advertencia { box-shadow: 0 0 0 2px var(--rojo); }
+  .vista-previa .con-advertencia figcaption { color: var(--rojo); font-weight: 600; }
+  .pie-doble { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  /* Caja para escribir la contraseña de un PDF y quitársela */
+  .caja-clave { margin-top: 10px; padding: 12px; border-radius: 10px; background: var(--relleno); display: flex; flex-direction: column; gap: 8px; }
+  .caja-clave input {
+    width: 100%; height: 40px; padding: 0 12px; border: 0; border-radius: 10px; outline: 0;
+    background: var(--celda); color: var(--texto); font-size: 17px;
+  }
+  .fila-campo input[type="date"]:disabled { opacity: 0.45; }
+  @media (prefers-reduced-motion: reduce) { .revisando::before { animation: none; } }
+
+  /* ==========================================================================
+     COMPUTADOR (pantallas de 960 px o más): igual que la app de hojas de vida
+     --------------------------------------------------------------------------
+     En celular nada de esto aplica. En computador:
+       - arriba, la barra con logo, paso y caña (más ancha),
+       - tres columnas: "Tu avance" (pasos) · la pantalla · "Ayuda" (manual,
+         privacidad, formatos),
+       - ventanas (tutorial, vista previa, confirmación) centradas.
+     ========================================================================== */
+  .cuerpo { flex: 1; display: flex; flex-direction: column; }
+  .principal { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .columna { display: none; }
+  .fila-tocable { color: inherit; text-decoration: none; }
+
+  @media (min-width: 960px) {
+    :root { --ancho-pc: 1040px; }
+    .solo-celular { display: none; }
+    .barra-nav-interna { max-width: var(--ancho-pc); }
+    .cuerpo {
+      display: grid; grid-template-columns: 228px minmax(0, 1fr) 228px; gap: 28px;
+      width: 100%; max-width: calc(var(--ancho-pc) + 32px); margin: 0 auto; padding: 0 16px;
+    }
+    .contenido { max-width: none; padding: 20px 0 28px; }
+    .barra-accion { padding: 10px 0 14px; background: var(--fondo); -webkit-backdrop-filter: none; backdrop-filter: none; }
+    .barra-accion-interna { max-width: none; }
+
+    /* Columnas laterales: quietas mientras se baja por la pantalla */
+    .columna { display: block; position: sticky; top: 96px; align-self: start; padding-top: 20px; }
+    .columna-titulo { font-size: 13px; font-weight: 400; color: var(--texto-2); margin: 0 4px 10px; }
+    .avance-pasos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+    .avance-pasos li {
+      display: flex; align-items: center; gap: 12px; min-height: 45px; padding: 0 10px;
+      border-radius: 10px; font-size: 15px; color: var(--texto-2);
+    }
+    .avance-pasos li.hecho { color: var(--texto); }
+    .avance-pasos li.actual { background: var(--celda); color: var(--texto); font-weight: 700; }
+    .avance-circulo {
+      width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center;
+      font-size: 13px; font-weight: 700; border: 1.5px solid var(--separador); font-variant-numeric: tabular-nums;
+    }
+    .avance-pasos li.hecho .avance-circulo { background: var(--lima); border-color: var(--lima); color: #05200b; }
+    .avance-pasos li.actual .avance-circulo { border-color: var(--lima); color: var(--tinte); }
+    .ayuda-tarjeta { background: var(--celda); border-radius: var(--radio); padding: 14px; margin-bottom: 14px; font-size: 14px; line-height: 1.45; color: var(--texto-2); }
+    .ayuda-titulo { color: var(--texto); font-weight: 700; margin-bottom: 4px; }
+    .ayuda-boton { display: flex; width: 100%; margin-top: 12px; }
+
+    /* Ventanas centradas (no suben desde abajo) */
+    .hoja-fondo { align-items: center; padding: 24px; }
+    .hoja { max-width: 440px; animation: aparecerCentro 200ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+    .hoja.tutorial { max-width: 640px; max-height: min(86dvh, 900px); border-radius: 16px; }
+    .tutorial-agarre { visibility: hidden; height: 0; margin: 0; }
+    .tutorial-cabecera { padding: 18px 22px 10px; }
+    .tutorial-cuerpo { padding: 0 22px 12px; }
+    .tutorial-pie { padding: 12px 22px 16px; display: flex; justify-content: flex-end; }
+    .tutorial-pie .boton-principal, .pie-doble .boton-principal { width: auto; min-width: 240px; }
+    .pie-doble { flex-direction: row-reverse; justify-content: flex-start; gap: 16px; }
+    .vista-previa { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .vista-previa figure:only-child { grid-column: 1 / -1; }
+  }
+  @keyframes aparecerCentro { from { opacity: 0; transform: scale(0.96); } }
+
+</style>
+</head>
+<body>
+<div id="raiz"></div>
+
+<!-- ============================================================================
+     ███ CONFIGURACIÓN ███  —  ESTA ES LA ÚNICA PARTE QUE SE EDITA NORMALMENTE
+     ----------------------------------------------------------------------------
+     Reglas para editar sin dañar nada:
+       • Los textos van entre comillas simples: 'así'.
+       • Cada elemento de una lista termina en coma.
+       • Si un texto lleva comilla simple (ej. O'Neill), escríbela así: \'
+     ============================================================================ -->
+<script>
+window.CONFIG = {
+
+  // Link de "Solicitar archivos" de OneDrive donde el colaborador sube el ZIP.
+  // Es el MISMO de la app de Documentos de ingreso: el ZIP llega a la carpeta "Recibidos"
+  // de "Hojas de vida" y el panel de Gestión Humana lo reconoce como solicitud de carnet
+  // (porque trae "datos_carnet.json").
+  // ⚠️ OBLIGATORIO: mientras esté vacío ('') el colaborador no podrá terminar el envío.
+  linkSubida: 'https://stcanaveral-my.sharepoint.com/:f:/p/felipe_vanegas/IgAAWRo5j4w8QLLAscSMl-7DASmTEVbue_JeNYNY68Hln6g',
+
+  // Link a la política de tratamiento de datos de Cañaveral (opcional).
+  enlacePoliticaDatos: '',
+
+  // Manual del colaborador en PDF (botón "Ver manual (PDF)"). Si se deja vacío (''), el botón no aparece.
+  enlaceManual: '',
+
+  // WhatsApp de Gestión Humana para dudas (solo números, sin espacios). Si se deja vacío, no aparece.
+  whatsappGestionHumana: '3107489664',
+
+  // Días que se guarda el avance en el celular del colaborador (máximo recomendado: 7).
+  diasConservacion: 7,
+
+  // Minutos sin uso para limpiar la página en dispositivos prestados o públicos.
+  minutosInactividad: 10,
+
+  // PESO DE LOS ARCHIVOS
+  //   tamanoMaximoMB        → peso máximo de cada documento DESPUÉS de comprimir (lo que llega a GH).
+  //   tamanoMaximoEntradaMB → peso máximo del archivo que elige el colaborador (antes de comprimir).
+  //   paginasMaximas        → máximo de páginas (o fotos) por documento.
+  tamanoMaximoMB: 2,
+  tamanoMaximoEntradaMB: 30,
+  paginasMaximas: 6,
+
+  // REVISIÓN DE LAS FOTOS (para que no lleguen fotos que no se pueden ver)
+  //   ladoMinimo     → el lado más corto de la foto debe medir al menos esto (píxeles).
+  //   ladoGuardado   → la foto se achica a este tamaño (lado más largo) antes de guardarla.
+  //   nitidezMinima  → por debajo de esto la foto se marca como "borrosa".
+  //   brilloMinimo   → por debajo de esto la foto se marca como "oscura" (0 = negro, 255 = blanco).
+  foto: { ladoMinimo: 700, ladoGuardado: 1800, nitidezMinima: 40, brilloMinimo: 90 },
+
+  // Texto de la autorización de tratamiento de datos (Ley 1581 de 2012).
+  // El grupo sanguíneo (RH) es un dato de salud, es decir, un DATO SENSIBLE.
+  // ⚠️ Pedir a Jurídica que valide este texto antes de publicar.
+  textoAutorizacion:
+    'Autorizo de manera previa, expresa e informada a Supertiendas Cañaveral S.A.S. para tratar mis datos ' +
+    'personales, incluido mi grupo sanguíneo (RH), que es un dato sensible, y los documentos que adjunto, con ' +
+    'el fin de tramitar la reposición de mi carnet, de acuerdo con la Ley 1581 de 2012 y la política de ' +
+    'tratamiento de datos de la empresa. Entiendo que no estoy obligado(a) a autorizar el tratamiento de mis ' +
+    'datos sensibles, pero el RH va impreso en el carnet.',
+
+  // Grupos sanguíneos que se pueden elegir.
+  tiposSangre: ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'],
+
+  // ---------------------------------------------------------------------------
+  // SEDES O LUGARES (se pegan directo desde Excel, una por línea)
+  //   Para actualizar: en el Excel "lugar", copia la columna "Descripcion C.O."
+  //   (sin el encabezado) y pégala entre las dos comillas invertidas ` `.
+  // ---------------------------------------------------------------------------
+  sedesTexto: `
+CC SANTIAGO PLAZA CARTAGO
+CC SANTIAGO PLAZA GUADALUPE
+CC SANTIAGO PLAZA VILLACOLOMBIA
+CINEMAS SANTIAGO PLAZA ZARZAL
+PROCESOS GANADO
+PRODUCCION PANADERIA CEDI YUMBO
+SC ARTE PANETERO VILLACOLOMBIA
+SC ARTE PANETERO YUMBO
+SC BODEGA CAVASA
+SC BODEGA JUANCHITO PICARDIAS
+SC BRISAS DE LOS ALAMOS
+SC BUENOS AIRES
+SC BUGA ALBERGUE
+SC BUGA MERINO
+SC CAVASA
+SC CEDI YUMBO
+SC CENTENARIO
+SC CIUDAD COUNTRY
+SC COOTRAEMCALI
+SC EL INGENIO
+SC EL LIMONAR
+SC LA 34
+SC LA PRIMERA
+SC LOS PINOS
+SC PALMIRA CENTRO
+SC PALMITEX
+SC PANCE
+SC PASOANCHO
+SC POLLO CAÑAVERAL GUADALUPE
+SC PUNTO 14
+SC ROLDANILLO
+SC SANTA ELENA
+SC TULUA
+SC VILLAGORGONA
+SC VILLAGORGONA 20 DE JULIO
+SC VILLANUEVA
+SC ZARZAL
+SEDE ADMINISTRATIVA
+`,
+
+  // ---------------------------------------------------------------------------
+  // MOTIVOS DE LA REPOSICIÓN
+  //   id         → nombre interno (va en el nombre del ZIP). NO cambiarlo después de publicar.
+  //   nombre     → lo que ve el colaborador.
+  //   detalle    → explicación corta.
+  //   documentos → ids de los documentos que se piden (ver la lista DOCUMENTOS más abajo).
+  // ---------------------------------------------------------------------------
+  motivos: [
+    { id: 'deterioro', nombre: 'Deterioro', detalle: 'Está roto, doblado, borroso o despegado.',
+      documentos: ['foto_carnet'] },
+    { id: 'robo', nombre: 'Robo', detalle: 'Te lo robaron.',
+      documentos: ['denuncia', 'descuento'] },
+    { id: 'perdida', nombre: 'Pérdida', detalle: 'Se te perdió.',
+      documentos: ['descuento'] },
+  ],
+
+  // ---------------------------------------------------------------------------
+  // DOCUMENTOS (todos los que se pueden pedir; cada motivo dice cuáles usa)
+  //   id       → nombre interno, sin espacios ni tildes. NO cambiarlo después de publicar.
+  //   codigo   → número que va en el nombre del archivo dentro del ZIP.
+  //   nombre   → lo que ve el colaborador.
+  //   ayuda    → explicación corta debajo del nombre.
+  //   plantilla→ true: muestra el botón para descargar el formato listo para firmar.
+  //   tutorial → (opcional) paso a paso del botón "¿Cómo lo saco?".
+  //              ilustracion: 'carnet' | 'denuncia' | 'firma' | 'foto' | 'encuadre'.
+  // Todos se pueden subir en PDF o con fotos (una por página).
+  // ---------------------------------------------------------------------------
+  documentos: [
+    { id: 'foto_carnet', codigo: '01', nombre: 'Foto del carnet dañado',
+      ayuda: 'Una foto por el frente. Si también está dañado por detrás, toma otra con "Tomar otra página".',
+      tutorial: {
+        boton: '¿Cómo la tomo?',
+        titulo: 'Foto del carnet dañado',
+        intro: 'Con la foto, Gestión Humana confirma el daño y que el carnet es tuyo.',
+        pasos: [
+          { ilustracion: 'carnet', texto: 'Pon el carnet sobre una mesa de color oscuro o liso, con buena luz y sin flash (el plástico brilla).' },
+          { ilustracion: 'encuadre', texto: 'Tómalo de frente, que se vea completo: tu foto, tu nombre y el daño.' },
+        ],
+        nota: 'Guarda el carnet dañado: te lo pueden pedir cuando recibas el nuevo.',
+      } },
+
+    { id: 'denuncia', codigo: '02', nombre: 'Denuncia del robo',
+      ayuda: 'La denuncia que pusiste ante la Policía o la Fiscalía. Sube todas las páginas.',
+      tutorial: {
+        boton: '¿Cómo la saco?',
+        titulo: 'Denuncia del robo',
+        intro: 'Puedes poner la denuncia por internet, sin ir a una estación.',
+        pasos: [
+          { ilustracion: 'denuncia', texto: 'Entra a "A Denunciar" de la Policía Nacional y llena el formulario. Al final te dan el documento de la denuncia.',
+            enlace: { texto: 'Abrir A Denunciar', url: 'https://adenunciar.policia.gov.co' } },
+          { ilustracion: 'foto', texto: 'Si te la enviaron al correo en PDF, súbela con "Subir PDF". Si la tienes en papel, tómale una foto a cada página.' },
+        ],
+        nota: 'También puedes hacerla en una estación de Policía o en la Fiscalía.',
+      } },
+
+    { id: 'descuento', codigo: '03', nombre: 'Formato de descuento por responsabilidad',
+      ayuda: 'Firmado por ti. Descarga el formato con tus datos, imprímelo, fírmalo y tómale una foto.',
+      plantilla: true,
+      tutorial: {
+        boton: '¿Cómo lo hago?',
+        titulo: 'Formato de descuento por responsabilidad',
+        intro: 'Con este formato autorizas que el valor del carnet nuevo se descuente de tu pago.',
+        pasos: [
+          { ilustracion: 'firma', texto: 'Toca "Descargar formato", imprímelo y fírmalo con esfero.' },
+          { ilustracion: 'foto', texto: 'Tómale una foto al formato firmado y súbela en este documento.' },
+        ],
+        nota: 'Si no puedes imprimir, pide el formato en tu sede o escríbele a Gestión Humana.',
+      } },
+  ],
+
+  // Formato de descuento por responsabilidad. Se llena solo con los datos del colaborador.
+  // ⚠️ Reemplazar por el texto OFICIAL del formato de Cañaveral (validarlo con Nómina y Jurídica).
+  // Marcas que se reemplazan: {nombre} {cedula} {sede} {motivo} {valor}
+  valorReposicion: '',   // ej. '$15.000'. Si se deja vacío, el formato deja la línea en blanco.
+  textoDescuento: [
+    'Señores',
+    'SUPERTIENDAS CAÑAVERAL S.A.S.',
+    'Gestión Humana',
+    '',
+    'Asunto: Autorización de descuento por responsabilidad — reposición de carnet',
+    '',
+    'Yo, {nombre}, identificado(a) con cédula de ciudadanía No. {cedula}, colaborador(a) de la sede {sede}, ' +
+    'informo que mi carnet de identificación de la empresa fue objeto de {motivo}.',
+    '',
+    'Por lo anterior, solicito la reposición del carnet y autorizo a Supertiendas Cañaveral S.A.S. a descontar ' +
+    'de mi salario o de mis prestaciones sociales el valor de la reposición, por {valor}.',
+    '',
+    'Atentamente,',
+  ],
+};
+</script>
+<!-- ======================= FIN DE LA CONFIGURACIÓN ========================== -->
+
+<!-- Logo oficial de Supertiendas Cañaveral (PNG con fondo transparente, incrustado) -->
+<script>window.LOGO_CANAVERAL = 'data:image/png;base64,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';</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- pdf.js: leer y comprimir PDF. jsPDF: unir las fotos en un PDF y armar la formato de descuento -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo } = React;
+const CONFIG = window.CONFIG;
+const LOGO = window.LOGO_CANAVERAL;
+
+/* ============================================================================
+   1. GUARDADO LOCAL (IndexedDB)
+   ----------------------------------------------------------------------------
+   IndexedDB es una "base de datos" que trae el navegador. Todo lo que se guarda
+   aquí queda SOLO en el celular del colaborador: no viaja a internet.
+   Guardamos un único registro llamado "actual" con toda la sesión.
+   (Base distinta a la de hojas de vida e incapacidades: no se mezclan.)
+   ============================================================================ */
+const BD = {
+  nombre: 'canaveral_carnets',
+  almacen: 'sesion',
+  clave: 'actual',
+
+  /** Abre (o crea) la base de datos local. */
+  abrir() {
+    return new Promise((resolver, rechazar) => {
+      if (!window.indexedDB) return rechazar(new Error('Este navegador no permite guardar datos.'));
+      const solicitud = indexedDB.open(this.nombre, 1);
+      solicitud.onupgradeneeded = () => solicitud.result.createObjectStore(this.almacen);
+      solicitud.onsuccess = () => resolver(solicitud.result);
+      solicitud.onerror = () => rechazar(solicitud.error);
+    });
+  },
+
+  /** Ejecuta una operación ('readonly' o 'readwrite') sobre el almacén. */
+  async operar(modo, accion) {
+    const bd = await this.abrir();
+    return new Promise((resolver, rechazar) => {
+      const transaccion = bd.transaction(this.almacen, modo);
+      const solicitud = accion(transaccion.objectStore(this.almacen));
+      transaccion.oncomplete = () => { bd.close(); resolver(solicitud && solicitud.result); };
+      transaccion.onerror = () => { bd.close(); rechazar(transaccion.error); };
+    });
+  },
+
+  leer()         { return this.operar('readonly',  (a) => a.get(this.clave)); },
+  guardar(valor) { return this.operar('readwrite', (a) => a.put(valor, this.clave)); },
+  borrar()       { return this.operar('readwrite', (a) => a.delete(this.clave)); },
+};
+
+/* ============================================================================
+   2. FUNCIONES DE APOYO (no dibujan nada en pantalla)
+   ============================================================================ */
+
+const MS_POR_DIA = 24 * 60 * 60 * 1000;
+const LIMITE_BYTES = CONFIG.tamanoMaximoMB * 1024 * 1024;
+// Se deja un margen del 5 % para lo que agrega el PDF al unir las fotos.
+const LIMITE_FOTOS_BYTES = LIMITE_BYTES * 0.95;
+
+
+/** "1 documento" / "3 documentos". */
+function plural(cantidad, singular, pluralTexto) {
+  return `${cantidad} ${cantidad === 1 ? singular : pluralTexto}`;
+}
+
+/** Peso legible: 845 KB, 1,4 MB. */
+function pesoLegible(bytes) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toLocaleString('es-CO', { maximumFractionDigits: 1 })} MB`;
+}
+
+/** Fecha legible: "12 de noviembre". */
+function fechaLegible(ms) {
+  return new Date(ms).toLocaleDateString('es-CO', { day: 'numeric', month: 'long' });
+}
+
+/* ---------- Fechas del formulario (se guardan como texto "2026-11-10") ---------- */
+
+/** "2026-11-10" → fecha local a medianoche (evita el corrimiento por zona horaria). */
+function leerFecha(texto) {
+  const [a, m, d] = (texto || '').split('-').map(Number);
+  return a && m && d ? new Date(a, m - 1, d) : null;
+}
+/** Fecha → "2026-11-10". */
+function fechaATexto(fecha) {
+  const d = (n) => String(n).padStart(2, '0');
+  return `${fecha.getFullYear()}-${d(fecha.getMonth() + 1)}-${d(fecha.getDate())}`;
+}
+/** "2026-11-10" → "10 de noviembre de 2026". */
+function fechaLarga(texto) {
+  const f = leerFecha(texto);
+  return f ? f.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+}
+
+/** Hoy como "2026-11-10". */
+function hoyTexto() { return fechaATexto(new Date()); }
+
+/**
+ * Convierte un texto en algo seguro para nombre de archivo:
+ * "María José Peña" → "MARIA_JOSE_PENA". Quita tildes, ñ y símbolos.
+ */
+function textoParaArchivo(texto, maximo = 40) {
+  const limpio = (texto || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase();
+  if (limpio.length <= maximo) return limpio;
+  const cortado = limpio.slice(0, maximo);
+  const ultimoGuion = cortado.lastIndexOf('_');
+  return (ultimoGuion > 0 ? cortado.slice(0, ultimoGuion) : cortado).replace(/_+$/g, '');
+}
+
+/** Lista de sedes a partir del texto pegado desde Excel (una por línea, sin repetidas). */
+function leerSedes(texto) {
+  const lista = (texto || '').split(/\r?\n/).map((l) => l.split(/\t|;/)[0].trim()).filter(Boolean)
+    .filter((l) => !/^descripci/i.test(l)); // por si pegan el encabezado
+  return [...new Set(lista)].sort((a, b) => a.localeCompare(b, 'es'));
+}
+const SEDES = leerSedes(CONFIG.sedesTexto);
+
+
+/** Busca un motivo de reposición por su id ('deterioro', 'robo', 'perdida'). */
+const motivoPorId = (id) => CONFIG.motivos.find((m) => m.id === id) || null;
+/** Busca un documento por su id. */
+const documentoPorId = (id) => CONFIG.documentos.find((d) => d.id === id) || null;
+
+/**
+ * Documentos que se piden según el motivo:
+ *   deterioro → foto del carnet dañado
+ *   robo      → denuncia + formato de descuento por responsabilidad
+ *   pérdida   → formato de descuento por responsabilidad
+ * (Se cambian en la CONFIGURACIÓN, campo "motivos".)
+ */
+function documentosQueAplican(solicitud) {
+  const motivo = solicitud && motivoPorId(solicitud.motivo);
+  return motivo ? motivo.documentos.map(documentoPorId).filter(Boolean) : [];
+}
+
+/** Correo con forma válida (algo@algo.algo). */
+const correoValido = (texto) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(texto);
+
+
+/** ¿El documento ya tiene algo subido (un PDF o al menos una foto)? */
+function documentoListo(entrada) {
+  return !!(entrada && ((entrada.origen === 'pdf' && entrada.pdf) || (entrada.origen === 'fotos' && entrada.fotos.length)));
+}
+
+/** Peso de lo que hay en un documento (el PDF, o la suma de las fotos). */
+function pesoDelDocumento(entrada) {
+  if (!entrada) return 0;
+  return entrada.origen === 'pdf' ? entrada.pdf.tamano : entrada.fotos.reduce((s, f) => s + f.tamano, 0);
+}
+
+// pdf.js trabaja con un "ayudante" en segundo plano (worker) que se carga del mismo sitio.
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+/**
+ * Huella digital del archivo (SHA-256): dos archivos idénticos tienen la misma huella.
+ * Sirve para detectar que suban el mismo archivo en dos documentos distintos.
+ */
+async function huellaDelArchivo(archivo) {
+  try {
+    const resumen = await crypto.subtle.digest('SHA-256', await archivo.arrayBuffer());
+    return Array.from(new Uint8Array(resumen)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return `${archivo.size}-${archivo.name}`;
+  }
+}
+
+/** Busca si la huella ya está en algún documento. Devuelve el documento o null. */
+function documentoConHuella(huella, archivosActuales) {
+  for (const doc of CONFIG.documentos) {
+    const e = archivosActuales[doc.id];
+    if (!e) continue;
+    const huellas = e.origen === 'pdf' ? [e.pdf.huella] : e.fotos.map((f) => f.huella);
+    if (huellas.includes(huella)) return doc;
+  }
+  return null;
+}
+
+/* ---------------------------------------------------------------------------
+   IMÁGENES: abrir, revisar que se pueda leer y comprimir
+   --------------------------------------------------------------------------- */
+
+/** Abre una imagen para poder medirla y dibujarla. Respeta la rotación de las fotos del celular. */
+async function abrirImagen(blob) {
+  if (window.createImageBitmap) {
+    try { return await createImageBitmap(blob, { imageOrientation: 'from-image' }); } catch { /* sigue abajo */ }
+  }
+  return new Promise((resolver, rechazar) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolver(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); rechazar(new Error('imagen ilegible')); };
+    img.src = url;
+  });
+}
+
+/**
+ * Dibuja la imagen achicada (lado más largo = maximo px) y la guarda como JPG.
+ * Una foto de celular de 4 MB queda en unos 250–450 KB.
+ */
+function comprimirImagen(imagen, maximo, calidad) {
+  const escala = Math.min(1, maximo / Math.max(imagen.width, imagen.height));
+  const lienzo = document.createElement('canvas');
+  lienzo.width = Math.round(imagen.width * escala);
+  lienzo.height = Math.round(imagen.height * escala);
+  const ctx = lienzo.getContext('2d');
+  ctx.fillStyle = '#FFFFFF'; // por si la imagen PNG trae partes transparentes
+  ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+  ctx.drawImage(imagen, 0, 0, lienzo.width, lienzo.height);
+  return new Promise((resolver) => lienzo.toBlob(
+    (blob) => resolver({ blob, ancho: lienzo.width, alto: lienzo.height }), 'image/jpeg', calidad));
+}
+
+/**
+ * Mide si la foto se puede leer:
+ *   - nitidez: qué tanto cambian los píxeles vecinos (bordes de las letras).
+ *     Una foto movida o desenfocada tiene bordes suaves → número bajo.
+ *     (Es la "varianza del laplaciano", una medida clásica de enfoque.)
+ *   - brillo: promedio de claridad (0 = negro, 255 = blanco).
+ * Se mide sobre una copia de máximo 1000 px para que sea rápido.
+ */
+function medirLegibilidad(imagen) {
+  const escala = Math.min(1, 1000 / Math.max(imagen.width, imagen.height));
+  const w = Math.max(3, Math.round(imagen.width * escala));
+  const h = Math.max(3, Math.round(imagen.height * escala));
+  const lienzo = document.createElement('canvas');
+  lienzo.width = w; lienzo.height = h;
+  const ctx = lienzo.getContext('2d');
+  ctx.drawImage(imagen, 0, 0, w, h);
+  const datos = ctx.getImageData(0, 0, w, h).data;
+  const gris = new Float32Array(w * h);
+  let suma = 0;
+  for (let i = 0; i < w * h; i++) {
+    gris[i] = 0.299 * datos[i * 4] + 0.587 * datos[i * 4 + 1] + 0.114 * datos[i * 4 + 2];
+    suma += gris[i];
+  }
+  let n = 0, media = 0, media2 = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      const l = gris[i - w] + gris[i + w] + gris[i - 1] + gris[i + 1] - 4 * gris[i];
+      media += l; media2 += l * l; n++;
+    }
+  }
+  media /= n;
+  return { nitidez: media2 / n - media * media, brillo: suma / (w * h) };
+}
+
+/**
+ * Revisa y comprime UNA foto de una página:
+ *   - que sea una imagen que el navegador pueda abrir,
+ *   - que no sea muy pequeña (tomada muy de lejos),
+ *   - avisa si está borrosa u oscura (el colaborador decide si la usa igual),
+ *   - la achica y la guarda en JPG.
+ * Devuelve { error } o { foto }.
+ */
+async function prepararFoto(archivo, archivosActuales) {
+  if (!archivo || archivo.size === 0) return { error: 'El archivo está vacío. Vuelve a tomar la foto.' };
+  if (archivo.size > CONFIG.tamanoMaximoEntradaMB * 1024 * 1024) {
+    return { error: `La foto pesa ${pesoLegible(archivo.size)}. Elige una más liviana.` };
+  }
+  const huella = await huellaDelArchivo(archivo);
+  const repetida = documentoConHuella(huella, archivosActuales);
+  if (repetida) return { error: `Esta misma foto ya la subiste en "${repetida.nombre}".` };
+
+  let imagen;
+  try { imagen = await abrirImagen(archivo); } catch {
+    return { error: 'No pudimos abrir la imagen. Si es del iPhone, tómala desde aquí con "Tomar foto" o elige otra.' };
+  }
+  const ladoCorto = Math.min(imagen.width, imagen.height);
+  if (ladoCorto < CONFIG.foto.ladoMinimo) {
+    return { error: `La foto es muy pequeña (${imagen.width}×${imagen.height}). Tómala más cerca para que se lea la letra.` };
+  }
+
+  const { nitidez, brillo } = medirLegibilidad(imagen);
+  const advertencias = [];
+  if (nitidez < CONFIG.foto.nitidezMinima) advertencias.push('Se ve borrosa');
+  if (brillo < CONFIG.foto.brilloMinimo) advertencias.push('Se ve oscura');
+
+  const { blob, ancho, alto } = await comprimirImagen(imagen, CONFIG.foto.ladoGuardado, 0.75);
+  if (imagen.close) imagen.close();
+  return { foto: { blob, ancho, alto, tamano: blob.size, huella, nombre: archivo.name, advertencias } };
+}
+
+/** Vuelve a comprimir una foto ya guardada (más pequeña y con menos calidad). */
+async function recomprimirFoto(foto, escala, calidad) {
+  const imagen = await abrirImagen(foto.blob);
+  const lado = Math.round(Math.max(imagen.width, imagen.height) * escala);
+  const r = await comprimirImagen(imagen, lado, calidad);
+  if (imagen.close) imagen.close();
+  return { ...foto, blob: r.blob, ancho: r.ancho, alto: r.alto, tamano: r.blob.size };
+}
+
+/**
+ * Hace que todas las fotos de un documento quepan en el peso máximo.
+ * Si se pasan, las va achicando poco a poco. Si aun así no caben (demasiadas
+ * páginas), devuelve un error.
+ */
+async function ajustarFotosAlLimite(fotos) {
+  let actuales = fotos;
+  for (let intento = 0; intento < 6; intento++) {
+    const total = actuales.reduce((s, f) => s + f.tamano, 0);
+    if (total <= LIMITE_FOTOS_BYTES) return { fotos: actuales };
+    const ladoMasCorto = Math.min(...actuales.map((f) => Math.min(f.ancho, f.alto)));
+    if (ladoMasCorto < 650) break; // más pequeño ya no se leería
+    actuales = await Promise.all(actuales.map((f) => recomprimirFoto(f, 0.85, 0.62)));
+  }
+  return { error: `Son muchas páginas para el máximo de ${CONFIG.tamanoMaximoMB} MB. Quita las que no sean necesarias o súbelo en PDF.` };
+}
+
+/**
+ * Une varias fotos (JPG) en un solo PDF, una foto por página.
+ * Cada página toma la forma de la foto (ancho de hoja carta, alto proporcional).
+ */
+async function pdfDesdeFotos(fotos) {
+  const { jsPDF } = window.jspdf;
+  const ANCHO = 612; // puntos: ancho de una hoja carta
+  let pdf = null;
+  for (const foto of fotos) {
+    const alto = Math.round(ANCHO * foto.alto / foto.ancho);
+    const bytes = new Uint8Array(await foto.blob.arrayBuffer());
+    if (!pdf) pdf = new jsPDF({ unit: 'pt', format: [ANCHO, alto], orientation: alto >= ANCHO ? 'portrait' : 'landscape', compress: true });
+    else pdf.addPage([ANCHO, alto], alto >= ANCHO ? 'portrait' : 'landscape');
+    pdf.addImage(bytes, 'JPEG', 0, 0, ANCHO, alto, undefined, 'NONE');
+  }
+  return pdf.output('blob');
+}
+
+/* ---------------------------------------------------------------------------
+   PDF: revisar y, si pesa más de lo permitido, comprimir
+   --------------------------------------------------------------------------- */
+
+/**
+ * Abre un PDF con pdf.js. Si tiene contraseña, prueba primero con la cédula
+ * (las EPS casi siempre usan la cédula) y luego con la clave que escribió el
+ * colaborador, si escribió una.
+ * Devuelve:
+ *   { pdf, conClave: false }          → no tenía contraseña
+ *   { pdf, conClave: true }           → tenía contraseña y se pudo abrir
+ *   { protegido: true, claveMala }    → tiene contraseña y no se pudo abrir
+ *                                        (claveMala = la clave escrita no sirvió)
+ *   { error }                         → el PDF está dañado
+ */
+async function abrirPdf(archivo, cedula, claveEscrita) {
+  const abrir = async (clave) => pdfjsLib.getDocument({ data: await archivo.arrayBuffer(), password: clave }).promise;
+  const esClave = (e) => e && e.name === 'PasswordException';
+  try {
+    return { pdf: await abrir(undefined), conClave: false };
+  } catch (e) {
+    if (!esClave(e)) return { error: 'El PDF está dañado y no se puede abrir. Vuelve a descargarlo o tómale fotos.' };
+  }
+  // Tiene contraseña: se prueban la cédula y la clave escrita
+  for (const clave of [cedula, claveEscrita].filter(Boolean)) {
+    try { return { pdf: await abrir(clave), conClave: true }; }
+    catch (e) { if (!esClave(e)) return { error: 'El PDF está dañado y no se puede abrir. Vuelve a descargarlo o tómale fotos.' }; }
+  }
+  return { protegido: true, claveMala: !!claveEscrita };
+}
+
+
+/**
+ * ¿La página tiene algo? (texto o imagen). Un PDF en blanco no sirve.
+ */
+async function paginaTieneContenido(pagina) {
+  const texto = await pagina.getTextContent();
+  if (texto.items.some((i) => (i.str || '').trim())) return true;
+  const OPS = pdfjsLib.OPS;
+  const dibujosDeImagen = [OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject, OPS.paintJpegXObject].filter(Boolean);
+  const operaciones = await pagina.getOperatorList();
+  return operaciones.fnArray.some((op) => dibujosDeImagen.includes(op));
+}
+
+/** Dibuja una página del PDF en un lienzo con el ancho pedido y lo guarda como JPG. */
+async function paginaAJpg(pagina, ancho, calidad) {
+  const base = pagina.getViewport({ scale: 1 });
+  const vista = pagina.getViewport({ scale: ancho / base.width });
+  const lienzo = document.createElement('canvas');
+  lienzo.width = Math.round(vista.width);
+  lienzo.height = Math.round(vista.height);
+  const ctx = lienzo.getContext('2d');
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+  await pagina.render({ canvasContext: ctx, viewport: vista }).promise;
+  const blob = await new Promise((r) => lienzo.toBlob(r, 'image/jpeg', calidad));
+  return { blob, ancho: lienzo.width, alto: lienzo.height, tamano: blob.size };
+}
+
+/**
+ * Comprime un PDF pesado: vuelve cada página una imagen JPG más liviana y las
+ * une de nuevo en un PDF. Prueba de mejor a menor calidad hasta que quepa.
+ * (Es la forma más segura de comprimir desde el celular; el texto queda como
+ * imagen, pero se sigue leyendo igual.)
+ * Devuelve { blob, paginas: [fotos para la vista previa] } o { error }.
+ */
+async function comprimirPdf(pdf) {
+  const niveles = [{ ancho: 1400, calidad: 0.72 }, { ancho: 1200, calidad: 0.62 }, { ancho: 1000, calidad: 0.55 }];
+  for (const nivel of niveles) {
+    const paginas = [];
+    for (let n = 1; n <= pdf.numPages; n++) {
+      paginas.push(await paginaAJpg(await pdf.getPage(n), nivel.ancho, nivel.calidad));
+    }
+    const blob = await pdfDesdeFotos(paginas);
+    if (blob.size <= LIMITE_BYTES) return { blob, paginas };
+  }
+  return { error: `No logramos dejarlo en ${CONFIG.tamanoMaximoMB} MB sin que se deje de leer. Tómale fotos a las páginas o pide el documento en menor calidad.` };
+}
+
+/**
+ * Revisa un PDF antes de aceptarlo:
+ *   1. Que sea un PDF real, no vacío.
+ *   2. Que no sea el mismo archivo ya subido en otro documento.
+ *   3. Si tiene contraseña, se la QUITA (con la cédula o con la clave que
+ *      escriba el colaborador). Si no se sabe la clave, la pide.
+ *   4. Que no pase del máximo de páginas ni esté en blanco.
+ *   5. Si pesa más del máximo, lo comprime.
+ * Cuando se quita la clave o se comprime, se muestra la vista previa para confirmar.
+ * Devuelve { error }, { necesitaClave, claveMala } o { pdf, vistaPrevia }.
+ */
+async function prepararPdf(archivo, cedula, archivosActuales, claveEscrita) {
+  if (!archivo || archivo.size === 0) return { error: 'El archivo está vacío. Vuelve a descargarlo.' };
+  if (archivo.size > CONFIG.tamanoMaximoEntradaMB * 1024 * 1024) {
+    return { error: `Pesa ${pesoLegible(archivo.size)}: es demasiado grande. Tómale fotos a las páginas.` };
+  }
+  const inicio = await archivo.slice(0, 1024).text();
+  if (!inicio.includes('%PDF-')) return { error: 'Ese archivo no es un PDF. Si es una foto, usa el botón "Agregar fotos".' };
+
+  const huella = await huellaDelArchivo(archivo);
+  const repetido = documentoConHuella(huella, archivosActuales);
+  if (repetido) return { error: `Este mismo archivo ya lo subiste en "${repetido.nombre}". Cada documento va en su lugar.` };
+
+  const base = { nombre: archivo.name, huella, comprimido: false, claveQuitada: false };
+  if (!window.pdfjsLib) { // sin pdf.js (sin internet) no se puede revisar: se acepta si cumple el peso
+    if (archivo.size > LIMITE_BYTES) return { error: `Pesa ${pesoLegible(archivo.size)} y el máximo es ${CONFIG.tamanoMaximoMB} MB.` };
+    return { pdf: { ...base, blob: archivo, tamano: archivo.size, paginas: null } };
+  }
+
+  const abierto = await abrirPdf(archivo, cedula, claveEscrita);
+  if (abierto.error) return { error: abierto.error };
+  // Tiene contraseña y no es la cédula: se le pide al colaborador
+  if (abierto.protegido) return { necesitaClave: true, claveMala: abierto.claveMala };
+
+  const { pdf, conClave } = abierto;
+  if (pdf.numPages > CONFIG.paginasMaximas) {
+    return { error: `Tiene ${pdf.numPages} páginas y el máximo es ${CONFIG.paginasMaximas}. Revisa que sea el documento correcto.` };
+  }
+  if (!(await paginaTieneContenido(await pdf.getPage(1)))) {
+    return { error: 'El PDF está en blanco. Revisa que sea el archivo correcto.' };
+  }
+
+  // Sin contraseña y con buen peso: se acepta tal cual
+  if (!conClave && archivo.size <= LIMITE_BYTES) {
+    return { pdf: { ...base, blob: archivo, tamano: archivo.size, paginas: pdf.numPages } };
+  }
+  // Con contraseña o pesado: se vuelve a armar el PDF (sin clave y dentro del peso).
+  // Al rearmarlo desde las páginas dibujadas, el PDF nuevo ya no tiene contraseña.
+  const rearmado = await comprimirPdf(pdf);
+  if (rearmado.error) return { error: rearmado.error };
+  return {
+    pdf: { ...base, blob: rearmado.blob, tamano: rearmado.blob.size, paginas: pdf.numPages,
+           comprimido: archivo.size > LIMITE_BYTES, claveQuitada: conClave, pesoOriginal: archivo.size },
+    vistaPrevia: rearmado.paginas,
+  };
+}
+
+
+/* ---------------------------------------------------------------------------
+   FORMATO DE DESCUENTO POR RESPONSABILIDAD (listo para firmar)
+   --------------------------------------------------------------------------- */
+
+/** Arma el formato de descuento en PDF con los datos del colaborador. */
+function formatoDescuentoPdf(datos, solicitud) {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
+  const motivo = motivoPorId(solicitud.motivo);
+  const reemplazos = {
+    nombre: datos.nombre.toUpperCase(), cedula: datos.cedula, sede: datos.sede,
+    motivo: motivo ? motivo.nombre.toLowerCase() : '____________',
+    valor: CONFIG.valorReposicion || '$______________',
+  };
+  const llenar = (t) => t.replace(/\{(\w+)\}/g, (m, k) => (k in reemplazos ? reemplazos[k] : m));
+  const margen = 72;
+  const ancho = pdf.internal.pageSize.getWidth() - margen * 2;
+  let y = 90;
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(11.5);
+  pdf.text(`Ciudad y fecha: _______________________________`, margen, y);
+  y += 40;
+  CONFIG.textoDescuento.forEach((parrafo) => {
+    if (!parrafo) { y += 12; return; }
+    const lineas = pdf.splitTextToSize(llenar(parrafo), ancho);
+    pdf.text(lineas, margen, y);
+    y += lineas.length * 16;
+  });
+  y += 60;
+  pdf.line(margen, y, margen + 230, y);
+  y += 16;
+  pdf.text('Firma', margen, y);
+  pdf.text(reemplazos.nombre, margen, y + 16);
+  pdf.text(`C.C. ${reemplazos.cedula}`, margen, y + 32);
+  // Espacio para la huella (lo usual en autorizaciones de descuento)
+  pdf.rect(margen + 300, y - 76, 70, 85);
+  pdf.setFontSize(9);
+  pdf.text('Huella', margen + 320, y + 22);
+  return pdf.output('blob');
+}
+
+/* ---------------------------------------------------------------------------
+   ZIP final
+   --------------------------------------------------------------------------- */
+
+/** Nombre de cada archivo dentro del ZIP: 1144123456_CARNET_02_DENUNCIA.pdf */
+function nombreArchivoEnZip(cedula, doc) {
+  return `${cedula}_CARNET_${doc.codigo}_${textoParaArchivo(doc.id)}.pdf`;
+}
+
+/**
+ * Nombre del ZIP: 1144123456_CARNET_ROBO_2026-11-18.zip
+ * La palabra CARNET le dice al panel de Gestión Humana que no es una hoja de vida.
+ * (El panel igual se fija en el archivo "datos_carnet.json" de adentro.)
+ */
+function nombreDelZip(sesion) {
+  return `${sesion.datos.cedula}_CARNET_${textoParaArchivo(sesion.solicitud.motivo)}_${hoyTexto()}.zip`;
+}
+
+/** Devuelve el PDF final de un documento (si son fotos, las une en un PDF). */
+async function pdfDelDocumento(entrada) {
+  return entrada.origen === 'pdf' ? entrada.pdf.blob : pdfDesdeFotos(entrada.fotos);
+}
+
+/**
+ * Arma el ZIP con un PDF por documento y el archivo "datos_carnet.json",
+ * que el panel de Gestión Humana usa para crear la solicitud (el "tiquete").
+ * El formato del JSON es el CONTRATO con el panel: si se cambia aquí, hay que
+ * cambiarlo allá (ver la sección "Carnets" del panel).
+ */
+async function armarZip(sesion) {
+  const zip = new JSZip();
+  const { datos, solicitud, archivos } = sesion;
+  const motivo = motivoPorId(solicitud.motivo);
+  const listado = [];
+
+  for (const doc of documentosQueAplican(solicitud)) {
+    const entrada = archivos[doc.id];
+    if (!documentoListo(entrada)) continue;
+    const nombre = nombreArchivoEnZip(datos.cedula, doc);
+    zip.file(nombre, await pdfDelDocumento(entrada));
+    listado.push({
+      documento: doc.id, archivo: nombre,
+      origen: entrada.origen,                         // 'pdf' o 'fotos'
+      paginas: entrada.origen === 'pdf' ? entrada.pdf.paginas : entrada.fotos.length,
+      comprimido: entrada.origen === 'pdf' ? !!entrada.pdf.comprimido : true,
+      claveQuitada: entrada.origen === 'pdf' && !!entrada.pdf.claveQuitada,
+      fotosConAdvertencia: entrada.origen === 'fotos' ? entrada.fotos.filter((f) => f.advertencias.length).length : 0,
+    });
+  }
+
+  zip.file('datos_carnet.json', JSON.stringify({
+    version: 1,
+    tipo: 'carnet',                    // así el panel sabe que es una solicitud de carnet
+    cedula: datos.cedula,
+    nombre: datos.nombre,
+    rh: datos.rh,                      // va impreso en el carnet nuevo
+    celular: datos.celular,
+    correo: datos.correo,              // a este correo llegan los avisos (aprobada, rechazada, enviada)
+    sede: datos.sede,                  // a esta sede se envía el carnet nuevo
+    motivo: solicitud.motivo,          // 'deterioro' | 'robo' | 'perdida'
+    nombreMotivo: motivo ? motivo.nombre : '',
+    descripcion: solicitud.descripcion || '',
+    autorizacionDatos: sesion.autorizacion,
+    generado: new Date().toISOString(),
+    archivos: listado,
+  }, null, 2));
+
+  return zip.generateAsync({ type: 'blob', compression: 'STORE' });
+}
+
+
+/** Descarga un archivo al dispositivo del colaborador. */
+function descargarArchivo(blob, nombre) {
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = nombre;
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+}
+
+/** Abre un archivo en otra pestaña para revisarlo. */
+function verArchivo(blob) {
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+}
+
+
+/** Crea una sesión nueva y vacía. */
+function sesionNueva(dispositivoPersonal) {
+  const ahora = Date.now();
+  return {
+    version: 1,
+    creado: ahora,
+    expira: ahora + CONFIG.diasConservacion * MS_POR_DIA,
+    dispositivoPersonal,
+    autorizacion: { aceptada: true, fecha: new Date(ahora).toISOString() },
+    datos: null,        // { nombre, cedula, rh, celular, correo, sede }
+    solicitud: null,    // { motivo, descripcion }
+    archivos: {},       // { idDocumento: { origen: 'pdf', pdf } | { origen: 'fotos', fotos: [...] } }
+  };
+}
+
+/* ============================================================================
+   3. DATOS DE PRUEBA (solo con ?prueba=1 en la dirección)
+   ----------------------------------------------------------------------------
+   Sirven para ver cómo se comporta la página con casos difíciles sin tener
+   documentos reales. No se guardan en ningún lado.
+   ============================================================================ */
+const MODO_PRUEBA = new URLSearchParams(location.search).has('prueba');
+
+/** Dibuja una "página" de prueba (hoja con renglones) y la devuelve como foto JPG. */
+async function fotoDePrueba(titulo, advertencias = []) {
+  const c = document.createElement('canvas');
+  c.width = 1200; c.height = 1600;
+  const g = c.getContext('2d');
+  g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = '#222'; g.font = 'bold 54px sans-serif'; g.fillText(titulo, 80, 140);
+  g.font = '30px sans-serif';
+  for (let i = 0; i < 28; i++) g.fillText('Texto de ejemplo del documento — línea ' + (i + 1), 80, 240 + i * 46);
+  const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.7));
+  return { blob, ancho: c.width, alto: c.height, tamano: blob.size, huella: Math.random().toString(16), nombre: 'IMG_20261118_081522.jpg', advertencias };
+}
+
+/**
+ * Arma una sesión de prueba lista en la pantalla de documentos.
+ * 'robo'      = nombre, correo y sede largos; denuncia de 4 páginas (una borrosa) y
+ *               el formato de descuento pendiente.
+ * 'deterioro' = nombre de 2 letras, foto del carnet ya subida.
+ * 'perdida'   = nada subido todavía.
+ */
+async function sesionDePrueba(tipo) {
+  const s = sesionNueva(false);
+  s.esPrueba = true;
+  if (tipo === 'deterioro') {
+    s.datos = { nombre: 'Jo', cedula: '12345', rh: 'AB-', celular: '3001234567', correo: 'jo@gmail.com', sede: SEDES[0] };
+    s.solicitud = { motivo: 'deterioro', descripcion: '' };
+    s.archivos.foto_carnet = { origen: 'fotos', fotos: [await fotoDePrueba('Carnet dañado (frente)')] };
+    return s;
+  }
+  if (tipo === 'perdida') {
+    s.datos = { nombre: 'Luz Dary Gómez', cedula: '31987654', rh: 'O+', celular: '3109876543', correo: 'luzdary.gomez@hotmail.com', sede: 'SC TULUA' };
+    s.solicitud = { motivo: 'perdida', descripcion: 'Se me cayó en el bus.' };
+    return s;
+  }
+  s.datos = { nombre: 'Jhon Alexander Villegas Restrepo de la Ossa', cedula: '1144123456', rh: 'O+', celular: '3157654321',
+              correo: 'jhon.alexander.villegas.restrepo@northwind-industries-holdings.example.com', sede: 'SC VILLAGORGONA 20 DE JULIO' };
+  s.solicitud = { motivo: 'robo', descripcion: 'Me robaron la billetera en el MIO saliendo del turno, con la cédula y el carnet adentro.' };
+  s.archivos.denuncia = { origen: 'fotos', fotos: await Promise.all(Array.from({ length: 4 }, (_, i) =>
+    fotoDePrueba(`Denuncia — página ${i + 1}`, i === 2 ? ['Se ve borrosa'] : []))) };
+  return s; // el formato de descuento queda pendiente a propósito
+}
+
+
+/* ============================================================================
+   4. LIMPIEZA POR INACTIVIDAD (solo dispositivos prestados o públicos)
+   ----------------------------------------------------------------------------
+   Si nadie toca la página en X minutos, se borra todo. Un minuto antes avisa.
+   ============================================================================ */
+function useInactividad(activo, minutos, alVencer) {
+  const [segundosRestantes, setSegundosRestantes] = useState(null);
+  const ultimaActividad = useRef(Date.now());
+  const alVencerRef = useRef(alVencer);
+  alVencerRef.current = alVencer;
+
+  useEffect(() => {
+    if (!activo) { setSegundosRestantes(null); return; }
+    ultimaActividad.current = Date.now();
+    const marcarActividad = () => { ultimaActividad.current = Date.now(); setSegundosRestantes(null); };
+    const eventos = ['pointerdown', 'keydown', 'scroll'];
+    eventos.forEach((e) => window.addEventListener(e, marcarActividad, { passive: true }));
+    const reloj = setInterval(() => {
+      const restanteMs = minutos * 60 * 1000 - (Date.now() - ultimaActividad.current);
+      if (restanteMs <= 0) { ultimaActividad.current = Date.now(); alVencerRef.current(); }
+      else if (restanteMs <= 60 * 1000) setSegundosRestantes(Math.ceil(restanteMs / 1000));
+    }, 1000);
+    return () => { eventos.forEach((e) => window.removeEventListener(e, marcarActividad)); clearInterval(reloj); };
+  }, [activo, minutos]);
+
+  return segundosRestantes;
+}
+
+/* ============================================================================
+   5. COMPONENTES DE PANTALLA (estilo iPhone)
+   ============================================================================ */
+
+/** Palomita (✓) dibujada, igual a la de iOS. */
+function Palomita({ tamano = 17 }) {
+  return (
+    <svg width={tamano} height={tamano} viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="2.6"
+            strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Barra de navegación translúcida con el paso actual y la barra de avance en forma de caña. */
+function Encabezado({ paso, completos, total }) {
+  return (
+    <header className="barra-nav">
+      <div className="barra-nav-interna">
+        <div className="nav-fila">
+          <img className="logo logo-nav" src={LOGO} alt="Supertiendas Cañaveral" />
+          {paso && <p className="nav-paso">Paso {paso} de 5</p>}
+        </div>
+        {total > 0 && (
+          <>
+            <div className="cana" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={completos}
+                 aria-label="Avance de documentos">
+              {Array.from({ length: total }, (_, i) => <div key={i} className={`nudo ${i < completos ? 'lleno' : ''}`} />)}
+            </div>
+            <div className="cana-texto">
+              <span>{completos} de {plural(total, 'documento', 'documentos')}</span>
+              <span>{completos === total ? 'Completo' : `Faltan ${total - completos}`}</span>
+            </div>
+          </>
+        )}
+      </div>
+    </header>
+  );
+}
+
+/** Pasos de la app, en orden (para la columna "Tu avance" del computador). */
+const PASOS = [
+  { id: 'inicio', nombre: 'Preguntas iniciales' },
+  { id: 'datos', nombre: 'Tus datos' },
+  { id: 'motivo', nombre: '¿Qué le pasó al carnet?' },
+  { id: 'documentos', nombre: 'Sube los documentos' },
+  { id: 'envio', nombre: 'Descarga y envía' },
+];
+
+
+/**
+ * Columna izquierda "Tu avance" (SOLO en computador, igual que en la app de
+ * hojas de vida): los pasos, con ✓ los terminados y resaltado el actual.
+ * En celular se oculta con CSS (allá se usa la barra de arriba).
+ */
+function ColumnaAvance({ pantalla }) {
+  const actual = pantalla === 'final' ? PASOS.length : PASOS.findIndex((p) => p.id === pantalla);
+  return (
+    <aside className="columna columna-avance" aria-label="Tu avance">
+      <h2 className="columna-titulo">Tu avance</h2>
+      <ol className="avance-pasos">
+        {PASOS.map((p, i) => (
+          <li key={p.id} className={i === actual ? 'actual' : i < actual ? 'hecho' : ''} aria-current={i === actual ? 'step' : undefined}>
+            <span className="avance-circulo" aria-hidden="true">{i < actual ? <Palomita tamano={14} /> : i + 1}</span>
+            {p.nombre}
+          </li>
+        ))}
+      </ol>
+    </aside>
+  );
+}
+
+/** Enlace de WhatsApp de Gestión Humana (si está configurado). */
+const ENLACE_WHATSAPP = CONFIG.whatsappGestionHumana
+  ? `https://wa.me/57${CONFIG.whatsappGestionHumana}?text=${encodeURIComponent('Hola, tengo una duda con la solicitud de mi carnet.')}`
+  : '';
+
+/**
+ * Columna derecha "Ayuda" (SOLO en computador): manual, WhatsApp de GH,
+ * aviso de privacidad y formatos aceptados.
+ */
+function ColumnaAyuda() {
+  return (
+    <aside className="columna columna-ayuda" aria-label="Ayuda">
+      <h2 className="columna-titulo">Ayuda</h2>
+      {CONFIG.enlaceManual && (
+        <div className="ayuda-tarjeta">
+          <p className="ayuda-titulo">¿Primera vez?</p>
+          <p>El manual te muestra cada paso con imágenes de la página.</p>
+          <a className="boton boton-tintado boton-chico ayuda-boton" href={CONFIG.enlaceManual} target="_blank" rel="noopener noreferrer">Ver manual (PDF)</a>
+        </div>
+      )}
+      <div className="ayuda-tarjeta">
+        <p className="ayuda-titulo">Qué se pide</p>
+        <p><strong>Deterioro:</strong> foto del carnet dañado.<br />
+           <strong>Robo:</strong> denuncia y formato de descuento.<br />
+           <strong>Pérdida:</strong> formato de descuento.</p>
+      </div>
+      {ENLACE_WHATSAPP && (
+        <div className="ayuda-tarjeta">
+          <p className="ayuda-titulo">¿Dudas?</p>
+          <p>Escríbele a Gestión Humana por WhatsApp.</p>
+          <a className="boton boton-tintado boton-chico ayuda-boton" href={ENLACE_WHATSAPP} target="_blank" rel="noopener noreferrer">Abrir WhatsApp</a>
+        </div>
+      )}
+      <div className="ayuda-tarjeta">
+        <p className="ayuda-titulo">Tus archivos son privados</p>
+        <p>No se suben a internet desde esta página. Solo tú envías el paquete final a Gestión Humana.</p>
+      </div>
+    </aside>
+  );
+}
+
+/** Pantalla 1: bienvenida, ¿dispositivo propio? y autorización de datos. */
+function PantallaInicio({ alComenzar, guardadoDisponible, avisoInicial }) {
+  const [dispositivo, setDispositivo] = useState(null); // 'propio' | 'prestado'
+  const [autoriza, setAutoriza] = useState(false);
+  const puedeGuardar = guardadoDisponible && dispositivo === 'propio';
+
+  const opciones = [
+    { valor: 'propio', titulo: 'Sí, es mío',
+      detalle: guardadoDisponible
+        ? `Guardamos tu avance aquí por ${CONFIG.diasConservacion} días para que termines después.`
+        : 'Este navegador no permite guardar tu avance.' },
+    { valor: 'prestado', titulo: 'No, es prestado o público',
+      detalle: `No guardamos nada. Si la dejas ${CONFIG.minutosInactividad} minutos sin usar, se borra sola.` },
+  ];
+
+  return (
+    <>
+      <main className="contenido pantalla-inicio">
+        {avisoInicial && <div className="aviso aviso-alerta" role="status">{avisoInicial}</div>}
+
+        <div className="portada">
+          <img className="logo logo-blanco" src={LOGO} alt="Supertiendas Cañaveral" />
+          <h1>Reposición de carnet</h1>
+          <p>Pide un carnet nuevo si el tuyo se dañó, te lo robaron o se te perdió. Toma 5 minutos desde el celular.</p>
+        </div>
+
+        {CONFIG.enlaceManual && (
+          <section className="grupo solo-celular">
+            <div className="lista">
+              <a className="fila fila-tocable" href={CONFIG.enlaceManual} target="_blank" rel="noopener noreferrer">
+                <div className="fila-cuerpo">
+                  <div className="fila-titulo" style={{ color: 'var(--tinte)' }}>¿Primera vez? Ver manual (PDF)</div>
+                  <div className="fila-sub">Cada paso explicado con imágenes de la página</div>
+                </div>
+                <span className="chevron" aria-hidden="true" />
+              </a>
+            </div>
+          </section>
+        )}
+
+        <section className="grupo">
+          <h2 className="grupo-titulo">Ten a mano, según lo que pasó</h2>
+          <div className="lista">
+            <div className="fila"><div className="fila-cuerpo"><div className="fila-titulo">Deterioro</div>
+              <div className="fila-sub">El carnet dañado, para tomarle una foto.</div></div></div>
+            <div className="fila"><div className="fila-cuerpo"><div className="fila-titulo">Robo</div>
+              <div className="fila-sub">La denuncia y el formato de descuento por responsabilidad firmado (te lo damos listo).</div></div></div>
+            <div className="fila"><div className="fila-cuerpo"><div className="fila-titulo">Pérdida</div>
+              <div className="fila-sub">El formato de descuento por responsabilidad firmado (te lo damos listo).</div></div></div>
+          </div>
+        </section>
+
+        <section className="grupo">
+          <h2 className="grupo-titulo">¿Este celular o computador es tuyo?</h2>
+          <div className="lista" role="radiogroup">
+            {opciones.map((op) => (
+              <label key={op.valor} className="fila fila-tocable">
+                <input className="oculto" type="radio" name="dispositivo" checked={dispositivo === op.valor}
+                       onChange={() => setDispositivo(op.valor)} />
+                <div className="fila-cuerpo">
+                  <div className="fila-titulo">{op.titulo}</div>
+                  <div className="fila-sub">{op.detalle}</div>
+                </div>
+                {dispositivo === op.valor && <span className="marca-check"><Palomita /></span>}
+              </label>
+            ))}
+          </div>
+          {!guardadoDisponible && (
+            <p className="grupo-pie">En modo incógnito no se puede guardar el avance: tendrás que subir todo de una vez.</p>
+          )}
+        </section>
+
+        <section className="grupo">
+          <h2 className="grupo-titulo">Tratamiento de datos</h2>
+          <div className="lista">
+            <label className="fila fila-tocable">
+              <div className="fila-cuerpo fila-titulo">Acepto la autorización</div>
+              <input className="interruptor" type="checkbox" role="switch" checked={autoriza}
+                     onChange={(e) => setAutoriza(e.target.checked)} />
+            </label>
+          </div>
+          <p className="grupo-pie">
+            {CONFIG.textoAutorizacion}{' '}
+            {CONFIG.enlacePoliticaDatos && (
+              <a href={CONFIG.enlacePoliticaDatos} target="_blank" rel="noopener noreferrer">Leer la política</a>
+            )}
+          </p>
+        </section>
+      </main>
+
+      <div className="barra-accion">
+        <div className="barra-accion-interna">
+          <button className="boton boton-principal" disabled={!dispositivo || !autoriza}
+                  onClick={() => alComenzar(puedeGuardar)}>
+            Comenzar
+          </button>
+          {(!dispositivo || !autoriza) && <p className="nota">Responde la pregunta y acepta la autorización para continuar.</p>}
+        </div>
+      </div>
+    </>
+  );
+}
+
+
+/** Lleva la vista al primer error para que el colaborador sepa qué falta. */
+function irAlPrimerError() {
+  setTimeout(() => {
+    const primerError = document.querySelector('.grupo-pie.error, .con-error');
+    if (primerError) primerError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 50);
+}
+
+/**
+ * Nombre con mayúscula inicial en cada palabra, como va en el carnet:
+ * "  maría   JOSÉ peña de la cruz" → "María José Peña de la Cruz".
+ * Las palabras cortas de enlace (de, del, la, las, los, y) quedan en minúscula.
+ */
+function nombreConMayusculas(texto) {
+  const enlaces = ['de', 'del', 'la', 'las', 'los', 'y'];
+  return texto.trim().replace(/\s+/g, ' ').toLocaleLowerCase('es-CO').split(' ')
+    .map((p, i) => (i > 0 && enlaces.includes(p) ? p : p.charAt(0).toLocaleUpperCase('es-CO') + p.slice(1)))
+    .join(' ');
+}
+
+/** Pantalla 2: nombre, cédula, RH, celular, correo y sede. */
+function PantallaDatos({ datosIniciales, alGuardar }) {
+  const [nombre, setNombre] = useState(datosIniciales?.nombre || '');
+  const [cedula, setCedula] = useState(datosIniciales?.cedula || '');
+  const [rh, setRh] = useState(CONFIG.tiposSangre.includes(datosIniciales?.rh) ? datosIniciales.rh : '');
+  const [celular, setCelular] = useState(datosIniciales?.celular || '');
+  const [correo, setCorreo] = useState(datosIniciales?.correo || '');
+  // La sede guardada solo se reutiliza si SIGUE en la lista (la lista puede cambiar)
+  const [sede, setSede] = useState(SEDES.includes(datosIniciales?.sede) ? datosIniciales.sede : '');
+  const [errores, setErrores] = useState({});
+
+  /** Revisa los datos y, si están bien, los entrega limpios. */
+  function guardar() {
+    const nombreLimpio = nombreConMayusculas(nombre);
+    const cedulaLimpia = cedula.replace(/\D/g, '');
+    const celularLimpio = celular.replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, ''); // quita el +57 si lo escriben
+    const correoLimpio = correo.trim().toLowerCase();
+    const e = {};
+    if (nombreLimpio.length < 3) e.nombre = 'Escribe tu nombre completo, como aparece en tu cédula.';
+    if (cedulaLimpia.length < 5 || cedulaLimpia.length > 12) e.cedula = 'Escribe tu número de documento, solo números.';
+    if (!rh) e.rh = 'Elige tu grupo sanguíneo (RH). Va impreso en el carnet.';
+    if (!/^3\d{9}$/.test(celularLimpio)) e.celular = 'Escribe tu celular de 10 números, empieza por 3.';
+    if (!correoValido(correoLimpio)) e.correo = 'Escribe un correo válido, por ejemplo nombre@gmail.com.';
+    if (!sede) e.sede = 'Elige la sede o tienda donde trabajas.';
+    setErrores(e);
+    if (Object.keys(e).length) { irAlPrimerError(); return; }
+    alGuardar({ nombre: nombreLimpio, cedula: cedulaLimpia, rh, celular: celularLimpio, correo: correoLimpio, sede });
+  }
+
+  return (
+    // Sin <form> a propósito: algunas vistas previas bloquean el envío de formularios.
+    <div style={{ display: 'contents' }}>
+      <main className="contenido pantalla-angosta">
+        <h1>Tus datos</h1>
+        <p className="bajada">Así saldrán en tu carnet nuevo. Revísalos bien.</p>
+
+        <section className="grupo">
+          <div className="lista">
+            <label className={`fila fila-campo ${errores.nombre ? 'con-error' : ''}`}>
+              <span className="etiqueta">Nombre completo</span>
+              <input type="text" autoComplete="name" autoCapitalize="words" enterKeyHint="next"
+                     placeholder="Como aparece en tu cédula" value={nombre} maxLength={120}
+                     onChange={(e) => setNombre(e.target.value)} />
+            </label>
+            <label className={`fila fila-campo ${errores.cedula ? 'con-error' : ''}`}>
+              <span className="etiqueta">Número de documento</span>
+              <input type="text" inputMode="numeric" autoComplete="off" enterKeyHint="next"
+                     placeholder="Solo números" value={cedula} maxLength={20}
+                     onChange={(e) => setCedula(e.target.value)} />
+            </label>
+            {/* RH: botones en vez de lista desplegable (son solo 8 y se eligen de un toque) */}
+            <div className={`fila fila-campo ${errores.rh ? 'con-error' : ''}`}>
+              <span className="etiqueta" id="etiqueta-rh">Grupo sanguíneo (RH)</span>
+              <div className="rh-opciones" role="radiogroup" aria-labelledby="etiqueta-rh">
+                {CONFIG.tiposSangre.map((t) => (
+                  <button key={t} type="button" role="radio" aria-checked={rh === t}
+                          className={`rh-opcion ${rh === t ? 'activo' : ''}`} onClick={() => setRh(t)}>{t}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+          {['nombre', 'cedula', 'rh'].filter((k) => errores[k]).map((k) => <p key={k} className="grupo-pie error" role="alert">{errores[k]}</p>)}
+          <p className="grupo-pie">Si no sabes tu RH, búscalo en tu cédula (atrás) o en un examen de sangre.</p>
+        </section>
+
+        <section className="grupo">
+          <h2 className="grupo-titulo">Para avisarte y enviarte el carnet</h2>
+          <div className="lista">
+            <label className={`fila fila-campo ${errores.celular ? 'con-error' : ''}`}>
+              <span className="etiqueta">Celular</span>
+              <input type="tel" inputMode="tel" autoComplete="tel-national" enterKeyHint="next"
+                     placeholder="3001234567" value={celular} maxLength={16}
+                     onChange={(e) => setCelular(e.target.value)} />
+            </label>
+            <label className={`fila fila-campo ${errores.correo ? 'con-error' : ''}`}>
+              <span className="etiqueta">Correo</span>
+              <input type="email" inputMode="email" autoComplete="email" autoCapitalize="none" autoCorrect="off"
+                     spellCheck={false} enterKeyHint="next" placeholder="nombre@gmail.com" value={correo} maxLength={120}
+                     onChange={(e) => setCorreo(e.target.value)} />
+            </label>
+            <label className={`fila fila-campo ${errores.sede ? 'con-error' : ''}`}>
+              <span className="etiqueta">Sede o tienda</span>
+              <span className="selector-con-flecha" style={{ display: 'block' }}>
+                <select value={sede} onChange={(e) => setSede(e.target.value)}>
+                  <option value="">Elige dónde trabajas</option>
+                  {SEDES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </span>
+            </label>
+          </div>
+          {['celular', 'correo', 'sede'].filter((k) => errores[k]).map((k) => <p key={k} className="grupo-pie error" role="alert">{errores[k]}</p>)}
+          <p className="grupo-pie">Te escribimos al correo cuando aprueben tu solicitud y cuando envíen el carnet a tu sede.</p>
+        </section>
+      </main>
+
+      <div className="barra-accion">
+        <div className="barra-accion-interna">
+          <button type="button" className="boton boton-principal" onClick={guardar}>Guardar y seguir</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Pantalla 3: ¿qué le pasó al carnet? (deterioro, robo o pérdida) y un comentario opcional. */
+function PantallaMotivo({ solicitudInicial, alGuardar, alVolver }) {
+  const ini = solicitudInicial || {};
+  const [motivo, setMotivo] = useState(motivoPorId(ini.motivo) ? ini.motivo : '');
+  const [descripcion, setDescripcion] = useState(ini.descripcion || '');
+  const [error, setError] = useState(null);
+  const elegido = motivoPorId(motivo);
+
+  function guardar() {
+    if (!elegido) { setError('Elige qué le pasó a tu carnet.'); irAlPrimerError(); return; }
+    alGuardar({ motivo, descripcion: descripcion.trim().replace(/\s+/g, ' ') });
+  }
+
+  return (
+    <div style={{ display: 'contents' }}>
+      <main className="contenido pantalla-angosta">
+        <h1>¿Qué le pasó al carnet?</h1>
+        <p className="bajada">Según lo que elijas, te pedimos solo los documentos que hacen falta.</p>
+
+        <section className="grupo">
+          <div className={`lista ${error ? 'con-error' : ''}`} role="radiogroup">
+            {CONFIG.motivos.map((m) => (
+              <label key={m.id} className="fila fila-tocable">
+                <input className="oculto" type="radio" name="motivo" checked={motivo === m.id}
+                       onChange={() => { setMotivo(m.id); setError(null); }} />
+                <div className="fila-cuerpo">
+                  <div className="fila-titulo">{m.nombre}</div>
+                  <div className="fila-sub">{m.detalle}</div>
+                </div>
+                {motivo === m.id && <span className="marca-check"><Palomita /></span>}
+              </label>
+            ))}
+          </div>
+          {error && <p className="grupo-pie error" role="alert">{error}</p>}
+          {elegido && (
+            <p className="grupo-pie">
+              Te vamos a pedir: {elegido.documentos.map((id) => documentoPorId(id).nombre.toLowerCase()).join(' y ')}.
+            </p>
+          )}
+        </section>
+
+        {elegido && (
+          <section className="grupo">
+            <h2 className="grupo-titulo">Cuéntanos qué pasó (opcional)</h2>
+            <div className="lista">
+              <label className="fila fila-campo">
+                <span className="etiqueta">Comentario</span>
+                <textarea rows={3} maxLength={300} value={descripcion}
+                          placeholder={elegido.id === 'deterioro' ? 'Ej. Se partió por la esquina' : 'Ej. Cuándo y dónde fue'}
+                          onChange={(e) => setDescripcion(e.target.value)} />
+              </label>
+            </div>
+            <p className="grupo-pie">{descripcion.length} de 300 letras.</p>
+          </section>
+        )}
+
+        <div className="boton-centrado">
+          <button type="button" className="boton-texto" onClick={alVolver}>Volver a mis datos</button>
+        </div>
+      </main>
+
+      <div className="barra-accion">
+        <div className="barra-accion-interna">
+          <button type="button" className="boton boton-principal" onClick={guardar}>Guardar y seguir</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/**
+ * Hoja de vista previa: muestra cómo quedaron las páginas (fotos o PDF comprimido)
+ * y pregunta "¿Se lee bien?". Si alguna foto se ve borrosa u oscura, lo marca en rojo.
+ */
+function HojaVistaPrevia({ titulo, paginas, aviso, alAceptar, alCancelar }) {
+  const urls = useMemo(() => paginas.map((p) => URL.createObjectURL(p.blob)), [paginas]);
+  useEffect(() => () => urls.forEach((u) => URL.revokeObjectURL(u)), [urls]);
+  const conAdvertencia = paginas.some((p) => (p.advertencias || []).length);
+
+  return (
+    <div className="hoja-fondo" onClick={alCancelar}>
+      <div className="hoja tutorial" role="dialog" aria-modal="true" aria-label={titulo} onClick={(e) => e.stopPropagation()}>
+        <div className="tutorial-agarre" aria-hidden="true" />
+        <div className="tutorial-cabecera">
+          <h2 className="tutorial-titulo">¿Se lee bien?</h2>
+          <button type="button" className="tutorial-cerrar" aria-label="Cerrar" onClick={alCancelar}>✕</button>
+        </div>
+        <div className="tutorial-cuerpo">
+          <p className="tutorial-intro">{titulo}. Acerca la vista y revisa que se lean las fechas, los días y el diagnóstico.</p>
+          {aviso && <div className="aviso aviso-info">{aviso}</div>}
+          {conAdvertencia && (
+            <div className="aviso aviso-error">
+              Algunas fotos se ven mal. Si no se leen, tómalas de nuevo: sobre una mesa, con buena luz y el celular quieto.
+            </div>
+          )}
+          <div className="vista-previa">
+            {paginas.map((p, i) => (
+              <figure key={i} className={(p.advertencias || []).length ? 'con-advertencia' : ''}>
+                <img src={urls[i]} alt={`Página ${i + 1}`} />
+                <figcaption>
+                  Página {i + 1}{(p.advertencias || []).length ? ` · ${p.advertencias.join(' y ').toLowerCase()}` : ''}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </div>
+        <div className="tutorial-pie pie-doble">
+          <button type="button" className="boton boton-principal" onClick={alAceptar}>
+            {conAdvertencia ? 'Sí se lee, usarlas igual' : 'Sí, se lee bien'}
+          </button>
+          <button type="button" className="boton-texto" onClick={alCancelar}>No, la tomo de nuevo</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Miniaturas de las fotos de un documento, con número de página y botón para quitar. */
+function Miniaturas({ fotos, alQuitar }) {
+  const urls = useMemo(() => fotos.map((f) => URL.createObjectURL(f.blob)), [fotos]);
+  useEffect(() => () => urls.forEach((u) => URL.revokeObjectURL(u)), [urls]);
+  return (
+    <div className="miniaturas">
+      {fotos.map((f, i) => (
+        <div key={i} className={`miniatura ${f.advertencias.length ? 'con-advertencia' : ''}`}>
+          <img src={urls[i]} alt={`Página ${i + 1}`} />
+          <span className="miniatura-numero">{i + 1}</span>
+          <button type="button" className="miniatura-quitar" aria-label={`Quitar página ${i + 1}`} onClick={() => alQuitar(i)}>✕</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Fila de un documento: subir un PDF o agregar fotos (una por página), ver,
+ * quitar páginas o cambiarlo todo.
+ */
+function TarjetaDocumento({ doc, posicion, entrada, sesion, alGuardar, alQuitarTodo, alAbrirTutorial }) {
+  const selectorFotos = useRef(null);
+  const selectorCamara = useRef(null);
+  const selectorPdf = useRef(null);
+  const [error, setError] = useState(null);
+  const [revisando, setRevisando] = useState(null);   // texto de lo que está haciendo, o null
+  const [pendiente, setPendiente] = useState(null);   // lo que espera confirmación en la vista previa
+  const [pidiendoClave, setPidiendoClave] = useState(null); // { archivo, clave, claveMala } si el PDF tiene contraseña
+  const listo = documentoListo(entrada);
+  const esFotos = listo && entrada.origen === 'fotos';
+  // Para revisar repetidos, lo que hay en ESTE documento no cuenta si se va a reemplazar
+  const otrosArchivos = (reemplaza) => (reemplaza ? { ...sesion.archivos, [doc.id]: null } : sesion.archivos);
+
+  /** Fotos elegidas: se revisa cada una, se ajusta el peso y se muestra la vista previa. */
+  async function procesarFotos(elegidas) {
+    if (!elegidas.length) return;
+    setError(null);
+    const reemplazaPdf = listo && entrada.origen === 'pdf';
+    const anteriores = esFotos ? entrada.fotos : [];
+    if (anteriores.length + elegidas.length > CONFIG.paginasMaximas) {
+      setError(`Máximo ${CONFIG.paginasMaximas} páginas por documento.`); return;
+    }
+    setRevisando('Revisando las fotos…');
+    const errores = []; // se juntan los problemas de todas las fotos elegidas
+    try {
+      const nuevas = [];
+      const actuales = { ...otrosArchivos(reemplazaPdf) };
+      for (const archivo of elegidas) {
+        const r = await prepararFoto(archivo, actuales);
+        if (r.error) { errores.push(`${archivo.name}: ${r.error}`); continue; }
+        nuevas.push(r.foto);
+        actuales[doc.id] = { origen: 'fotos', fotos: [...anteriores, ...nuevas] }; // detecta repetidas en el mismo lote
+      }
+      if (!nuevas.length) return;
+      setRevisando('Ajustando el peso…');
+      const ajuste = await ajustarFotosAlLimite([...anteriores, ...nuevas]);
+      if (ajuste.error) { setError(ajuste.error); return; }
+      setPendiente({
+        entrada: { origen: 'fotos', fotos: ajuste.fotos },
+        paginas: ajuste.fotos.slice(anteriores.length),
+        titulo: `${plural(nuevas.length, 'foto nueva', 'fotos nuevas')} en "${doc.nombre}"`,
+        aviso: reemplazaPdf ? 'Estas fotos reemplazan el PDF que habías subido.' : null,
+      });
+    } catch {
+      errores.push('No pudimos leer la foto. Vuelve a tomarla.');
+    } finally {
+      setRevisando(null);
+      if (errores.length) setError(errores.join(' '));
+    }
+  }
+
+  /**
+   * PDF elegido: se revisa; si tiene contraseña se la quita (o la pide) y si
+   * pesa mucho lo comprime. En esos dos casos muestra la vista previa.
+   * claveEscrita: la contraseña que escribió el colaborador (si se la pidieron).
+   */
+  async function procesarPdf(archivo, claveEscrita) {
+    if (!archivo) return;
+    setError(null);
+    setRevisando(claveEscrita ? 'Quitando la contraseña…'
+      : archivo.size > CONFIG.tamanoMaximoMB * 1024 * 1024 ? 'Comprimiendo el PDF… puede tardar un poco' : 'Revisando…');
+    try {
+      const r = await prepararPdf(archivo, sesion.datos.cedula, otrosArchivos(true), claveEscrita);
+      if (r.error) { setError(`${archivo.name}: ${r.error}`); setPidiendoClave(null); return; }
+      if (r.necesitaClave) { setPidiendoClave({ archivo, clave: claveEscrita || '', claveMala: r.claveMala }); return; }
+      setPidiendoClave(null);
+      const nueva = { origen: 'pdf', pdf: r.pdf };
+      if (r.vistaPrevia) {
+        const hechos = [r.pdf.claveQuitada && 'le quitamos la contraseña',
+                        r.pdf.comprimido && `lo comprimimos de ${pesoLegible(r.pdf.pesoOriginal)} a ${pesoLegible(r.pdf.tamano)}`].filter(Boolean);
+        setPendiente({
+          entrada: nueva, paginas: r.vistaPrevia,
+          titulo: `A "${archivo.name}" ${hechos.join(' y ')}`,
+          aviso: esFotos ? 'Este PDF reemplaza las fotos que habías subido.' : null,
+        });
+      } else {
+        alGuardar(doc.id, nueva);
+      }
+    } catch {
+      setError('No pudimos leer el archivo. Vuelve a elegirlo.');
+    } finally { setRevisando(null); }
+  }
+
+  /** Lee los archivos del selector y lo limpia (para poder volver a elegir el mismo). */
+  const alElegirFotos = (e) => { const a = Array.from(e.target.files || []); e.target.value = ''; procesarFotos(a); };
+  const alElegirPdf = (e) => { const a = (e.target.files || [])[0]; e.target.value = ''; procesarPdf(a); };
+
+  /** Quita una foto (página) del documento. */
+  function quitarFoto(indice) {
+    const fotos = entrada.fotos.filter((_, i) => i !== indice);
+    if (fotos.length) alGuardar(doc.id, { origen: 'fotos', fotos });
+    else alQuitarTodo(doc.id);
+  }
+
+  /** Abre el documento completo como quedará en el ZIP (si son fotos, arma el PDF). */
+  async function ver() {
+    try { verArchivo(await pdfDelDocumento(entrada)); } catch { setError('No pudimos abrir el documento.'); }
+  }
+
+  const peso = pesoDelDocumento(entrada);
+
+  return (
+    <div className="fila fila-con-icono">
+      <div className={`circulo ${listo ? 'hecho' : ''}`} aria-hidden="true">
+        {listo ? <Palomita tamano={16} /> : posicion}
+      </div>
+      <div className="fila-cuerpo">
+        <div className="fila-titulo fuerte">{doc.nombre}</div>
+        <div className="fila-sub">
+          {doc.ayuda}{' '}
+          {doc.tutorial && (
+            <button type="button" className="boton-como" onClick={() => alAbrirTutorial(doc)}>{doc.tutorial.boton || '¿Cómo lo saco?'}</button>
+          )}
+        </div>
+
+        {doc.plantilla && (
+          <div className="doc-acciones">
+            <button type="button" className="boton boton-tintado boton-chico"
+                    onClick={() => descargarArchivo(formatoDescuentoPdf(sesion.datos, sesion.solicitud), `formato_descuento_carnet_${sesion.datos.cedula}.pdf`)}>
+              Descargar formato para firmar
+            </button>
+          </div>
+        )}
+
+        {listo && entrada.origen === 'pdf' && (
+          <div className="archivo">
+            <span className="archivo-nombre">
+              {entrada.pdf.nombre} <span className="archivo-peso">· {pesoLegible(entrada.pdf.tamano)}</span>
+              {entrada.pdf.comprimido && <span className="archivo-peso"> · comprimido</span>}
+              {entrada.pdf.claveQuitada && <span className="archivo-peso"> · sin contraseña</span>}
+            </span>
+            <span className="archivo-acciones">
+              <button type="button" className="boton-texto" onClick={ver}>Ver</button>
+              <button type="button" className="boton-texto peligro" onClick={() => alQuitarTodo(doc.id)}>Quitar</button>
+            </span>
+          </div>
+        )}
+
+        {esFotos && (
+          <>
+            <Miniaturas fotos={entrada.fotos} alQuitar={quitarFoto} />
+            <div className="archivo">
+              <span className="archivo-nombre">
+                {plural(entrada.fotos.length, 'página', 'páginas')} <span className="archivo-peso">· {pesoLegible(peso)} de {CONFIG.tamanoMaximoMB} MB</span>
+              </span>
+              <span className="archivo-acciones">
+                <button type="button" className="boton-texto" onClick={ver}>Ver PDF</button>
+                <button type="button" className="boton-texto peligro" onClick={() => alQuitarTodo(doc.id)}>Quitar todo</button>
+              </span>
+            </div>
+          </>
+        )}
+
+        {error && <p className="doc-error" role="alert">{error}</p>}
+
+        {/* El PDF tiene contraseña y no es la cédula: se le pide al colaborador para quitársela */}
+        {pidiendoClave && !revisando && (
+          <div className="caja-clave">
+            <p className="fila-sub">
+              <strong>"{pidiendoClave.archivo.name}" tiene contraseña.</strong> Escríbela y se la quitamos, para que
+              Gestión Humana lo pueda abrir.
+            </p>
+            <input type="text" autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false}
+                   aria-label="Contraseña del PDF" placeholder="Contraseña del PDF" value={pidiendoClave.clave}
+                   onChange={(e) => setPidiendoClave({ ...pidiendoClave, clave: e.target.value, claveMala: false })}
+                   onKeyDown={(e) => e.key === 'Enter' && pidiendoClave.clave && procesarPdf(pidiendoClave.archivo, pidiendoClave.clave)} />
+            {pidiendoClave.claveMala && <p className="doc-error" role="alert">Esa contraseña no abre el PDF. Revísala e intenta de nuevo.</p>}
+            <p className="fila-sub">Suele ser tu número de cédula, una fecha o un código que te llegó en el mismo correo. Si no la sabes, tómale fotos a las páginas.</p>
+            <div className="doc-acciones" style={{ marginTop: 0 }}>
+              <button type="button" className="boton boton-tintado boton-chico" disabled={!pidiendoClave.clave}
+                      onClick={() => procesarPdf(pidiendoClave.archivo, pidiendoClave.clave)}>Quitar contraseña</button>
+              <button type="button" className="boton-texto" style={{ fontSize: 15 }} onClick={() => setPidiendoClave(null)}>Cancelar</button>
+            </div>
+          </div>
+        )}
+
+        <div className="doc-acciones">
+          {/* Selectores de archivo ocultos: los abren los botones de abajo */}
+          <input ref={selectorCamara} className="oculto" type="file" tabIndex={-1} aria-hidden="true"
+                 accept="image/*" capture="environment" onChange={alElegirFotos} />
+          <input ref={selectorFotos} className="oculto" type="file" tabIndex={-1} aria-hidden="true"
+                 accept="image/*" multiple onChange={alElegirFotos} />
+          <input ref={selectorPdf} className="oculto" type="file" tabIndex={-1} aria-hidden="true"
+                 accept="application/pdf,.pdf" onChange={alElegirPdf} />
+          {revisando ? (
+            <span className="fila-sub revisando">{revisando}</span>
+          ) : (
+            <>
+              <button type="button" className="boton boton-tintado boton-chico" onClick={() => selectorCamara.current.click()}>
+                {esFotos ? 'Tomar otra página' : 'Tomar foto'}
+              </button>
+              <button type="button" className="boton-texto" style={{ fontSize: 15 }} onClick={() => selectorFotos.current.click()}>
+                {esFotos ? 'Agregar de la galería' : 'Elegir fotos'}
+              </button>
+              <button type="button" className="boton-texto" style={{ fontSize: 15 }} onClick={() => selectorPdf.current.click()}>
+                {listo && entrada.origen === 'pdf' ? 'Cambiar PDF' : 'Subir PDF'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {pendiente && (
+        <HojaVistaPrevia titulo={pendiente.titulo} paginas={pendiente.paginas} aviso={pendiente.aviso}
+                         alAceptar={() => { alGuardar(doc.id, pendiente.entrada); setPendiente(null); }}
+                         alCancelar={() => setPendiente(null)} />
+      )}
+    </div>
+  );
+}
+
+/** Pantalla 4: lista de documentos según el motivo. */
+function PantallaDocumentos({ sesion, alGuardarDocumento, alQuitarDocumento, alEditarDatos, alEditarMotivo,
+                              alContinuar, alBorrarTodo, alAbrirTutorial }) {
+  const docs = documentosQueAplican(sesion.solicitud);
+  const faltan = docs.filter((d) => !documentoListo(sesion.archivos[d.id])).length;
+  const motivo = motivoPorId(sesion.solicitud.motivo);
+
+  return (
+    <>
+      <main className="contenido pantalla-documentos">
+        <h1>Tus documentos</h1>
+        <p className="bajada">Sube cada uno en PDF o tómale fotos (una por página). Puedes salir y volver después.</p>
+
+        {/* En computador estos dos bloques quedan lado a lado */}
+        <div className="docs-cabecera">
+        <section className="grupo">
+          <div className="lista">
+            <div className="fila">
+              <div className="fila-cuerpo">
+                <div className="fila-titulo fuerte fila-nombre">{sesion.datos.nombre}</div>
+                <div className="fila-sub">Documento {sesion.datos.cedula} · RH {sesion.datos.rh} · {sesion.datos.sede}</div>
+                <div className="fila-sub fila-correo">{sesion.datos.correo}</div>
+              </div>
+              <button type="button" className="boton-texto" onClick={alEditarDatos}>Editar</button>
+            </div>
+            <div className="fila">
+              <div className="fila-cuerpo">
+                <div className="fila-titulo fuerte">Reposición por {motivo.nombre.toLowerCase()}</div>
+                {sesion.solicitud.descripcion && <div className="fila-sub">{sesion.solicitud.descripcion}</div>}
+              </div>
+              <button type="button" className="boton-texto" onClick={alEditarMotivo}>Cambiar</button>
+            </div>
+          </div>
+          <p className="grupo-pie">
+            {sesion.dispositivoPersonal
+              ? `Tu avance se guarda en este dispositivo hasta el ${fechaLegible(sesion.expira)}. Vuelve desde este mismo navegador para continuar.`
+              : 'No guardamos nada en este dispositivo: si cierras la página, tendrás que empezar de nuevo.'}
+          </p>
+        </section>
+
+        <section className="grupo">
+          <div className="lista">
+            <div className="fila fila-tocable" role="button" tabIndex={0} onClick={() => alAbrirTutorial('foto')}
+                 onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && alAbrirTutorial('foto')}>
+              <div className="fila-cuerpo">
+                <div className="fila-titulo" style={{ color: 'var(--tinte)' }}>Cómo tomar una buena foto</div>
+                <div className="fila-sub">Para que Gestión Humana pueda ver bien tus documentos</div>
+              </div>
+              <span className="chevron" aria-hidden="true" />
+            </div>
+          </div>
+        </section>
+        </div>
+
+        <section className="grupo">
+          <h2 className="grupo-titulo">Documentos · máximo {CONFIG.tamanoMaximoMB} MB cada uno (comprimimos por ti)</h2>
+          {/* En celular es una lista; en computador cada documento es una tarjeta (dos por fila) */}
+          <div className="lista lista-docs">
+            {docs.map((doc, i) => (
+              <TarjetaDocumento key={doc.id} doc={doc} posicion={i + 1} entrada={sesion.archivos[doc.id]} sesion={sesion}
+                                alGuardar={alGuardarDocumento} alQuitarTodo={alQuitarDocumento}
+                                alAbrirTutorial={alAbrirTutorial} />
+            ))}
+          </div>
+        </section>
+
+        <div className="boton-centrado">
+          <button type="button" className="boton-texto peligro" onClick={alBorrarTodo}>Borrar todo y empezar de nuevo</button>
+        </div>
+      </main>
+
+      <div className="barra-accion">
+        <div className="barra-accion-interna">
+          <button type="button" className="boton boton-principal" disabled={faltan > 0} onClick={alContinuar}>Revisar y enviar</button>
+          {faltan > 0 && <p className="nota">Te {faltan === 1 ? 'falta' : 'faltan'} {plural(faltan, 'documento', 'documentos')} para poder enviar.</p>}
+        </div>
+      </div>
+    </>
+  );
+}
+
+
+/** Pantalla 5: descargar el ZIP y subirlo a OneDrive. */
+function PantallaEnvio({ sesion, alVolver, alTerminar }) {
+  const [zip, setZip] = useState(null);
+  const [armando, setArmando] = useState(false);
+  const [error, setError] = useState(null);
+  const [abrioEnvio, setAbrioEnvio] = useState(false);
+  const nombreZip = nombreDelZip(sesion);
+  const hayLink = !!CONFIG.linkSubida;
+
+  /** Arma el ZIP y lo descarga. */
+  async function descargar() {
+    setArmando(true);
+    setError(null);
+    try {
+      const blob = zip || await armarZip(sesion);
+      setZip(blob);
+      descargarArchivo(blob, nombreZip);
+    } catch (e) {
+      setError('No pudimos armar el archivo. Intenta de nuevo; si sigue fallando, prueba desde otro navegador.');
+    }
+    setArmando(false);
+  }
+
+  /** Evita usar el paso 2 antes de descargar; si ya descargó, lo marca como hecho. */
+  const alAbrirEnvio = (e) => { if (!zip || !hayLink) e.preventDefault(); else setAbrioEnvio(true); };
+
+  return (
+    <>
+      <main className="contenido pantalla-angosta">
+        <h1>Revisa y envía</h1>
+        <p className="bajada">Tienes todo lo que se necesita. Solo faltan dos pasos.</p>
+        {error && <div className="aviso aviso-error" role="alert">{error}</div>}
+
+        <section className="grupo">
+          <div className="lista">
+            <div className="fila fila-con-icono">
+              <div className={`circulo ${zip ? 'hecho' : 'activo'}`} aria-hidden="true">{zip ? <Palomita tamano={16} /> : 1}</div>
+              <div className="fila-cuerpo">
+                <div className="fila-titulo fuerte">Descarga tu paquete</div>
+                <div className="fila-sub">Se guarda en tu carpeta de Descargas con este nombre:</div>
+                <div className="archivo"><span className="archivo-nombre">{nombreZip}</span>
+                  {zip && <span className="archivo-peso">{pesoLegible(zip.size)}</span>}</div>
+                <div className="doc-acciones">
+                  <button type="button" className="boton boton-tintado boton-chico" onClick={descargar} disabled={armando}>
+                    {armando ? 'Armando el paquete…' : zip ? 'Descargar otra vez' : 'Descargar paquete'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="fila fila-con-icono" style={{ opacity: zip ? 1 : 0.5 }}>
+              <div className={`circulo ${abrioEnvio ? 'hecho' : zip ? 'activo' : ''}`} aria-hidden="true">{abrioEnvio ? <Palomita tamano={16} /> : 2}</div>
+              <div className="fila-cuerpo">
+                <div className="fila-titulo fuerte">Sube el paquete</div>
+                <div className="fila-sub">
+                  Se abre la página de Cañaveral para recibir archivos. Toca para elegir archivos,
+                  selecciona el ZIP que acabas de descargar (está en Descargas) y escribe tu nombre
+                  y apellido cuando te lo pida.
+                </div>
+                <div className="doc-acciones">
+                  <a className="boton boton-tintado boton-chico" href={zip && hayLink ? CONFIG.linkSubida : undefined}
+                     target="_blank" rel="noopener noreferrer" aria-disabled={!zip || !hayLink} onClick={alAbrirEnvio}>
+                    Abrir página de subida
+                  </a>
+                </div>
+                {!hayLink && <p className="doc-error">Falta configurar el link de subida (Gestión Humana: campo linkSubida).</p>}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div className="boton-centrado">
+          <button type="button" className="boton-texto" onClick={alVolver}>Volver a mis documentos</button>
+        </div>
+      </main>
+
+      <div className="barra-accion">
+        <div className="barra-accion-interna">
+          <button type="button" className="boton boton-principal" disabled={!abrioEnvio} onClick={alTerminar}>
+            Ya lo subí, borrar mis datos
+          </button>
+          {!abrioEnvio && <p className="nota">Completa los dos pasos para terminar.</p>}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ============================================================================
+   TUTORIALES ("¿Cómo la tomo?", "¿Cómo la saco?", "Cómo tomar una buena foto")
+   ----------------------------------------------------------------------------
+   Hoja que sale desde abajo con el paso a paso. El contenido de los documentos
+   está en la CONFIGURACIÓN (campo "tutorial"); el de fotos está aquí abajo.
+   Las ilustraciones son dibujos genéricos, no copias de documentos reales.
+   ============================================================================ */
+
+/** Tutorial de cómo tomar una buena foto de un documento. */
+const TUTORIAL_FOTO = {
+  titulo: 'Cómo tomar una buena foto',
+  intro: 'Si la foto no se ve bien, Gestión Humana te la va a pedir de nuevo y el carnet se demora más.',
+  pasos: [
+    { ilustracion: 'foto', texto: 'Pon el papel (o el carnet) sobre una mesa, estirado, con buena luz. Sin flash si brilla mucho.' },
+    { ilustracion: 'encuadre', texto: 'Toma la foto de frente, desde arriba, que se vea completo y sin dedos ni sombras encima.' },
+    { ilustracion: 'paginas', texto: 'Si tiene varias páginas, toma una foto por cada una con "Tomar otra página". Nosotros las unimos en un solo PDF.' },
+  ],
+  nota: 'Antes de guardarla te mostramos cómo quedó: revisa que se lea bien.',
+};
+
+
+/** Marco de celular pequeño donde se dibuja cada ilustración. */
+function MarcoCelular({ children }) {
+  return (
+    <svg className="ilustracion" viewBox="0 0 120 150" role="img" aria-hidden="true">
+      <rect x="10" y="4" width="100" height="142" rx="14" fill="var(--tinta-ilus)" />
+      <rect x="15" y="12" width="90" height="126" rx="8" fill="var(--celda)" />
+      {children}
+    </svg>
+  );
+}
+
+
+/** Carta firmada con esfero. */
+function IlustracionFirma() {
+  return (
+    <MarcoCelular>
+      <rect x="24" y="22" width="72" height="96" rx="3" fill="var(--relleno)" />
+      {[32, 40, 48, 56, 64].map((y) => <rect key={y} x="30" y={y} width={y === 64 ? 40 : 60} height="4" rx="2" fill="var(--separador)" />)}
+      <path d="M32 92 q6 -12 12 -2 t10 -4 t12 2" stroke="var(--tinte)" strokeWidth="1.8" fill="none" strokeLinecap="round" />
+      <path d="M30 100 h44" stroke="var(--texto-2)" strokeWidth="1" />
+      <path d="M78 74 l14 -14 l4 4 l-14 14 z" fill="var(--tinte)" />
+    </MarcoCelular>
+  );
+}
+
+/** Celular tomando foto a una hoja sobre la mesa. */
+function IlustracionFoto() {
+  return (
+    <MarcoCelular>
+      <rect x="20" y="20" width="80" height="110" rx="2" fill="var(--relleno)" />
+      <circle cx="88" cy="30" r="6" fill="var(--lima)" />
+      <path d="M88 20 v-4 M88 44 v-4 M78 30 h-4 M102 30 h-4" stroke="var(--lima)" strokeWidth="1.5" />
+      <rect x="34" y="44" width="52" height="70" rx="2" fill="var(--celda)" stroke="var(--separador)" />
+      {[54, 62, 70, 78, 86].map((y) => <rect key={y} x="40" y={y} width="40" height="3.5" rx="1.5" fill="var(--separador)" />)}
+    </MarcoCelular>
+  );
+}
+
+/** Encuadre: la hoja completa dentro de las esquinas de la cámara. */
+function IlustracionEncuadre() {
+  const esquina = (x, y, dx, dy) => <path d={`M${x} ${y + dy * 10} v${-dy * 10} h${dx * 10}`} stroke="var(--tinte)" strokeWidth="2.4" fill="none" />;
+  return (
+    <MarcoCelular>
+      <rect x="15" y="12" width="90" height="126" rx="8" fill="var(--tinta-ilus)" opacity="0.85" />
+      <rect x="32" y="32" width="56" height="78" rx="2" fill="#FFFFFF" />
+      {[42, 50, 58, 66, 74].map((y) => <rect key={y} x="38" y={y} width="44" height="3.5" rx="1.5" fill="#C9D2C6" />)}
+      {esquina(26, 26, 1, 1)}{esquina(94, 26, -1, 1)}{esquina(26, 116, 1, -1)}{esquina(94, 116, -1, -1)}
+      <circle cx="60" cy="128" r="5" fill="#FFFFFF" />
+    </MarcoCelular>
+  );
+}
+
+/** Varias páginas que se unen en un PDF. */
+function IlustracionPaginas() {
+  return (
+    <MarcoCelular>
+      {[0, 1, 2].map((i) => (
+        <rect key={i} x={28 + i * 8} y={26 + i * 8} width="44" height="58" rx="2" fill="var(--celda)" stroke="var(--separador)" />
+      ))}
+      <text x="72" y="72" fontSize="9" fill="var(--texto-2)" textAnchor="middle" fontWeight="700">3</text>
+      <path d="M60 98 v10 M55 103 l5 5 5 -5" stroke="var(--tinte)" strokeWidth="2" fill="none" strokeLinecap="round" />
+      <rect x="44" y="112" width="32" height="14" rx="3" fill="var(--rojo)" />
+      <text x="60" y="122" fontSize="7" fill="#FFFFFF" textAnchor="middle" fontWeight="700">1 PDF</text>
+    </MarcoCelular>
+  );
+}
+
+/** Carnet de la empresa con una esquina partida (deterioro). */
+function IlustracionCarnet() {
+  return (
+    <MarcoCelular>
+      <rect x="22" y="40" width="76" height="50" rx="5" fill="var(--relleno)" stroke="var(--separador)" />
+      <rect x="22" y="40" width="76" height="11" rx="5" fill="var(--tinte)" />
+      <rect x="28" y="56" width="20" height="26" rx="2" fill="var(--celda)" stroke="var(--separador)" />
+      <circle cx="38" cy="65" r="4.5" fill="var(--separador)" />
+      <rect x="53" y="58" width="38" height="4" rx="2" fill="var(--separador)" />
+      <rect x="53" y="66" width="28" height="4" rx="2" fill="var(--separador)" />
+      <text x="53" y="80" fontSize="6.5" fill="var(--rojo)" fontWeight="800">RH O+</text>
+      {/* Grieta en la esquina */}
+      <path d="M84 90 l6 -9 l-4 -4 l8 -7" stroke="var(--rojo)" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+      <text x="60" y="116" fontSize="6.5" fill="var(--texto-2)" textAnchor="middle">Que se vea completo</text>
+    </MarcoCelular>
+  );
+}
+
+/** Denuncia por internet (formulario en la pantalla). */
+function IlustracionDenuncia() {
+  return (
+    <MarcoCelular>
+      <rect x="22" y="22" width="76" height="12" rx="3" fill="var(--tinte)" />
+      <text x="60" y="30.5" fontSize="6.2" fill="#FFFFFF" textAnchor="middle" fontWeight="700">DENUNCIA</text>
+      {[42, 56, 70].map((y) => (
+        <g key={y}>
+          <rect x="24" y={y} width="30" height="3.5" rx="1.5" fill="var(--texto-2)" opacity="0.5" />
+          <rect x="24" y={y + 5} width="72" height="6" rx="2" fill="var(--relleno)" stroke="var(--separador)" />
+        </g>
+      ))}
+      <rect x="36" y="96" width="48" height="13" rx="6.5" fill="var(--tinte)" />
+      <text x="60" y="104.8" fontSize="6.5" fill="#FFFFFF" textAnchor="middle" fontWeight="700">Enviar</text>
+      <text x="60" y="124" fontSize="6.5" fill="var(--texto-2)" textAnchor="middle">Guarda el PDF que te dan</text>
+    </MarcoCelular>
+  );
+}
+
+/** Une el nombre de cada ilustración (usado en la configuración) con su dibujo. */
+const ILUSTRACIONES = {
+  carnet: IlustracionCarnet, denuncia: IlustracionDenuncia, firma: IlustracionFirma,
+  foto: IlustracionFoto, encuadre: IlustracionEncuadre, paginas: IlustracionPaginas,
+};
+
+
+/**
+ * Hoja del tutorial: título, pasos numerados con su ilustración y enlaces.
+ * Se cierra tocando fuera, con "Entendido" o con la tecla Escape.
+ */
+function HojaTutorial({ tutorial, alCerrar }) {
+  const hoja = useRef(null);
+  useEffect(() => {
+    if (hoja.current) hoja.current.focus();
+    const alTeclear = (e) => { if (e.key === 'Escape') alCerrar(); };
+    window.addEventListener('keydown', alTeclear);
+    return () => window.removeEventListener('keydown', alTeclear);
+  }, []);
+
+  return (
+    <div className="hoja-fondo" onClick={alCerrar}>
+      <div className="hoja tutorial" role="dialog" aria-modal="true" aria-label={tutorial.titulo}
+           ref={hoja} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+        <div className="tutorial-agarre" aria-hidden="true" />
+        <div className="tutorial-cabecera">
+          <h2 className="tutorial-titulo">{tutorial.titulo}</h2>
+          <button type="button" className="tutorial-cerrar" aria-label="Cerrar" onClick={alCerrar}>✕</button>
+        </div>
+        <div className="tutorial-cuerpo">
+          {tutorial.intro && <p className="tutorial-intro">{tutorial.intro}</p>}
+          <ol className="tutorial-pasos">
+            {tutorial.pasos.map((paso, i) => {
+              const Dibujo = ILUSTRACIONES[paso.ilustracion];
+              return (
+                <li key={i} className="tutorial-paso">
+                  {Dibujo && <Dibujo />}
+                  <div className="tutorial-paso-texto">
+                    <span className="tutorial-numero">Paso {i + 1}</span>
+                    <p>{paso.texto}</p>
+                    {paso.enlace && (
+                      <a className="boton boton-tintado boton-chico" href={paso.enlace.url} target="_blank" rel="noopener noreferrer">{paso.enlace.texto}</a>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+          {tutorial.nota && <p className="tutorial-nota">{tutorial.nota}</p>}
+        </div>
+        <div className="tutorial-pie">
+          <button type="button" className="boton boton-principal" onClick={alCerrar}>Entendido</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Ventana de confirmación estilo iPhone (hoja que sale desde abajo).
+ * Reemplaza confirm()/alert() del navegador, que algunas vistas previas bloquean.
+ */
+function HojaConfirmacion({ mensaje, textoAccion, peligro, soloAviso, alConfirmar, alCerrar }) {
+  return (
+    <div className="hoja-fondo" onClick={alCerrar}>
+      <div className="hoja" role="alertdialog" aria-modal="true" aria-label={mensaje} onClick={(e) => e.stopPropagation()}>
+        <div className="hoja-grupo">
+          <p className="hoja-mensaje">{mensaje}</p>
+          <button type="button" className={`hoja-boton ${peligro ? 'peligro' : ''}`} onClick={() => { alCerrar(); alConfirmar(); }}>
+            {textoAccion}
+          </button>
+        </div>
+        {!soloAviso && <button type="button" className="hoja-boton hoja-cancelar" onClick={alCerrar}>Cancelar</button>}
+      </div>
+    </div>
+  );
+}
+
+/** Pantalla final. */
+function PantallaFinal({ nombreZip, alReiniciar }) {
+  return (
+    <main className="contenido final">
+      <div className="final-icono"><Palomita tamano={44} /></div>
+      <h1>¡Listo!</h1>
+      <p className="bajada">
+        Borramos tus documentos de esta página. Gestión Humana revisará tu solicitud y te avisará por correo
+        si la aprueban y cuando envíen el carnet a tu sede.
+      </p>
+      <div className="aviso aviso-alerta">
+        El archivo <strong style={{ overflowWrap: 'anywhere' }}>{nombreZip}</strong> sigue en tu carpeta de
+        Descargas. Si este dispositivo no es tuyo, bórralo.
+      </div>
+      <button type="button" className="boton-texto" onClick={alReiniciar}>Hacer otra solicitud</button>
+    </main>
+  );
+}
+
+/* ============================================================================
+   6. APP PRINCIPAL: decide qué pantalla mostrar y guarda los cambios
+   ============================================================================ */
+function App() {
+  const [cargando, setCargando] = useState(true);
+  const [sesion, setSesion] = useState(null);
+  const [pantalla, setPantalla] = useState('inicio'); // inicio | datos | motivo | documentos | envio | final
+  const [guardadoDisponible, setGuardadoDisponible] = useState(true);
+  const [avisoInicial, setAvisoInicial] = useState(null);
+  const [zipFinal, setZipFinal] = useState('');
+  const [modoPrueba, setModoPrueba] = useState('normal');
+  const [confirmacion, setConfirmacion] = useState(null);
+  const [tutorial, setTutorial] = useState(null);       // tutorial abierto (o null)
+
+  // --- Al abrir: recupera el avance guardado (si existe y no ha vencido) ---
+  useEffect(() => {
+    (async () => {
+      try {
+        const guardada = await BD.leer();
+        if (guardada) {
+          if (Date.now() > guardada.expira) {
+            await BD.borrar();
+            setAvisoInicial(`Tu avance anterior se borró porque pasaron más de ${CONFIG.diasConservacion} días. Empieza de nuevo.`);
+          } else {
+            setSesion(guardada);
+            // Si la sede guardada ya no está en la lista, o falta algo, se vuelve a esa pantalla
+            const datosValidos = guardada.datos && SEDES.includes(guardada.datos.sede);
+            const motivoValido = guardada.solicitud && motivoPorId(guardada.solicitud.motivo);
+            setPantalla(!datosValidos ? 'datos' : !motivoValido ? 'motivo' : 'documentos');
+          }
+        }
+      } catch {
+        setGuardadoDisponible(false);
+      }
+      setCargando(false);
+    })();
+  }, []);
+
+  // --- Cada cambio se guarda en el dispositivo (solo si es propio y no es prueba) ---
+  useEffect(() => {
+    if (!sesion || !sesion.dispositivoPersonal || sesion.esPrueba) return;
+    BD.guardar(sesion).catch(() => {
+      setGuardadoDisponible(false);
+      setSesion((s) => (s ? { ...s, dispositivoPersonal: false } : s));
+      setConfirmacion({
+        mensaje: 'No pudimos guardar tu avance en este dispositivo. Puedes seguir, pero termina antes de cerrar la página.',
+        textoAccion: 'Entendido', alConfirmar: () => {}, soloAviso: true,
+      });
+    });
+  }, [sesion]);
+
+  // --- Al cambiar de pantalla, vuelve arriba ---
+  useEffect(() => { window.scrollTo(0, 0); }, [pantalla]);
+
+  /** Borra todo: memoria y dispositivo. */
+  async function borrarTodo() {
+    try { await BD.borrar(); } catch { /* sin base de datos no hay nada que borrar */ }
+    setSesion(null);
+  }
+
+  // --- Limpieza automática en dispositivos prestados ---
+  const segundosRestantes = useInactividad(
+    !!sesion && !sesion.dispositivoPersonal && !sesion.esPrueba && pantalla !== 'final',
+    CONFIG.minutosInactividad,
+    async () => {
+      await borrarTodo();
+      setPantalla('inicio');
+      setAvisoInicial('Borramos tus documentos porque la página estuvo sin uso. Empieza de nuevo cuando quieras.');
+    }
+  );
+
+  // --- Acciones que usan las pantallas ---
+  function comenzar(dispositivoPersonal) {
+    setAvisoInicial(null);
+    setSesion(sesionNueva(dispositivoPersonal));
+    setPantalla('datos');
+  }
+  function guardarDatos(datos) {
+    setSesion((s) => ({ ...s, datos }));
+    setPantalla(sesion && sesion.solicitud ? 'documentos' : 'motivo');
+  }
+  /**
+   * Guarda el motivo. Si cambió (ej. de robo a pérdida), se quitan los documentos
+   * que el nuevo motivo ya no pide, para que no viajen en el ZIP.
+   */
+  function guardarMotivo(solicitud) {
+    setSesion((s) => {
+      const piden = new Set(documentosQueAplican(solicitud).map((d) => d.id));
+      const archivos = Object.fromEntries(Object.entries(s.archivos).filter(([id]) => piden.has(id)));
+      return { ...s, solicitud, archivos };
+    });
+    setPantalla('documentos');
+  }
+  /** Guarda (o reemplaza) lo subido en un documento. */
+  function guardarDocumento(idDoc, entrada) {
+    setSesion((s) => ({ ...s, archivos: { ...s.archivos, [idDoc]: entrada } }));
+  }
+  /** Quita todo lo subido en un documento. */
+  function quitarDocumento(idDoc) {
+    setSesion((s) => { const archivos = { ...s.archivos }; delete archivos[idDoc]; return { ...s, archivos }; });
+  }
+  /** Abre un tutorial: el de un documento o el de las fotos. */
+  function abrirTutorial(cual) {
+    if (cual === 'foto') setTutorial(TUTORIAL_FOTO);
+    else if (cual && cual.tutorial) setTutorial(cual.tutorial);
+  }
+  function confirmarBorrado() {
+    setConfirmacion({
+      mensaje: '¿Borrar todos tus datos y documentos de este dispositivo?', textoAccion: 'Borrar todo', peligro: true,
+      alConfirmar: async () => { await borrarTodo(); setPantalla('inicio'); },
+    });
+  }
+  function terminar() {
+    setConfirmacion({
+      mensaje: '¿Ya subiste el paquete? Vamos a borrar tus documentos de este dispositivo.', textoAccion: 'Sí, ya lo subí',
+      alConfirmar: async () => { setZipFinal(nombreDelZip(sesion)); await borrarTodo(); setPantalla('final'); },
+    });
+  }
+  /** Solo modo prueba: cambia entre datos normales y casos de prueba. */
+  async function cambiarModoPrueba(modo) {
+    setModoPrueba(modo);
+    if (modo === 'normal') { setSesion(null); setPantalla('inicio'); return; }
+    setSesion(await sesionDePrueba(modo));
+    setPantalla('documentos');
+  }
+
+  // --- Avance para la barra de caña ---
+  const docsAplicables = sesion?.solicitud ? documentosQueAplican(sesion.solicitud) : [];
+  const completos = docsAplicables.filter((d) => documentoListo(sesion.archivos[d.id])).length;
+  const mostrarAvance = ['documentos', 'envio'].includes(pantalla);
+
+  if (cargando) return null;
+
+  return (
+    <div className="app">
+      <Encabezado paso={{ inicio: 1, datos: 2, motivo: 3, documentos: 4, envio: 5 }[pantalla]}
+                  completos={completos} total={mostrarAvance ? docsAplicables.length : 0} />
+
+      {/* En computador: tres columnas (Tu avance · pantalla · Ayuda). En celular, solo la pantalla. */}
+      <div className="cuerpo">
+      <ColumnaAvance pantalla={pantalla} />
+      <div className="principal">
+
+      {pantalla === 'inicio' && <PantallaInicio alComenzar={comenzar} guardadoDisponible={guardadoDisponible} avisoInicial={avisoInicial} />}
+      {pantalla === 'datos' && sesion && <PantallaDatos datosIniciales={sesion.datos} alGuardar={guardarDatos} />}
+      {pantalla === 'motivo' && sesion?.datos && (
+        <PantallaMotivo solicitudInicial={sesion.solicitud} alGuardar={guardarMotivo} alVolver={() => setPantalla('datos')} />
+      )}
+      {pantalla === 'documentos' && sesion?.datos && sesion?.solicitud && (
+        <PantallaDocumentos sesion={sesion} alGuardarDocumento={guardarDocumento} alQuitarDocumento={quitarDocumento}
+                            alEditarDatos={() => setPantalla('datos')} alEditarMotivo={() => setPantalla('motivo')}
+                            alContinuar={() => setPantalla('envio')} alBorrarTodo={confirmarBorrado} alAbrirTutorial={abrirTutorial} />
+      )}
+      {pantalla === 'envio' && sesion?.datos && sesion?.solicitud && (
+        <PantallaEnvio sesion={sesion} alVolver={() => setPantalla('documentos')} alTerminar={terminar} />
+      )}
+      {pantalla === 'final' && <PantallaFinal nombreZip={zipFinal} alReiniciar={() => { setAvisoInicial(null); setPantalla('inicio'); }} />}
+      </div>
+      <ColumnaAyuda />
+      </div>
+
+      {tutorial && <HojaTutorial tutorial={tutorial} alCerrar={() => setTutorial(null)} />}
+      {confirmacion && <HojaConfirmacion {...confirmacion} alCerrar={() => setConfirmacion(null)} />}
+
+      {segundosRestantes !== null && (
+        <div className="aviso-flotante" role="alert">
+          <p>Por seguridad, borraremos todo en {segundosRestantes} s si no usas la página.</p>
+          <button type="button" className="boton boton-tintado boton-chico">Sigo aquí</button>
+        </div>
+      )}
+
+      {MODO_PRUEBA && (
+        <div className="selector-prueba" aria-label="Datos de prueba">
+          {[['normal', 'Normal'], ['robo', 'Robo (extremo)'], ['deterioro', 'Deterioro'], ['perdida', 'Pérdida']].map(([valor, texto]) => (
+            <button key={valor} type="button" className={modoPrueba === valor ? 'activo' : ''} onClick={() => cambiarModoPrueba(valor)}>{texto}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('raiz')).render(<App />);
+</script>
+</body>
+</html>
