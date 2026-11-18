@@ -450,6 +450,10 @@
   .alerta.error { background: var(--alerta-fondo); color: var(--rojo); }
   .alerta.aviso { background: var(--alerta-fondo); color: var(--alerta-texto); }
   .alerta.info { background: var(--tinte-suave); color: var(--texto); }
+  /* Carnets */
+  .chip-carnet { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 10px; margin-right: 8px;
+    font-size: 12px; font-weight: 700; background: var(--azul-suave); color: var(--azul); vertical-align: 2px; }
+  .icono-caja.carnet { background: var(--azul-suave); color: var(--azul); }
   /* Citación */
   .citacion { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 24px; align-items: start; }
   @media (max-width: 1100px) { .citacion { grid-template-columns: 1fr; } }
@@ -1084,6 +1088,10 @@ async function prepararEstructura(raiz) {
     await subcarpeta(raiz, nombre);
   }
   await subcarpeta(await subcarpeta(raiz, C.recibidos), C.procesados);
+  // Carnets: solicitudes y las 3 carpetas de correos para Power Automate (sección 6E)
+  if (!(await existe(raiz, CARPETAS_CARNET.raiz))) creadas.push(CARPETAS_CARNET.raiz);
+  await carpetaCarnet(raiz, 'solicitudes');
+  for (const x of ['pendientes', 'enviados', 'errores']) await carpetaCarnet(raiz, 'correos', x);
   return creadas;
 }
 
@@ -1594,6 +1602,9 @@ async function analizarArchivo(item, raiz) {
     return r;
   }
 
+  // Solicitud de carnet (carnets.html): tiene su propia revisión (sección 6E)
+  if (r.zip.file('datos_carnet.json') || /_CARNET_/i.test(item.nombre)) return analizarCarnet(r, item, raiz);
+
   const json = r.zip.file('datos_candidato.json');
   if (!json) {
     r.errores.push('El ZIP no tiene "datos_candidato.json": no lo armó la página de documentos.');
@@ -1845,6 +1856,210 @@ async function revisarCitacionDelZip(r, raiz, item) {
   if (limite && ((generado && generado > limite) || (subido && subido > limite))) {
     r.avisos.push(`Llegó después del plazo de la citación (${partesDeCita(registrada.limite).fecha}, ${partesDeCita(registrada.limite).hora}).`);
   }
+}
+
+/* ==========================================================================
+   6E. CARNETS (reposición de carnet) — datos
+   --------------------------------------------------------------------------
+   El colaborador pide el carnet con carnets.html y sube el ZIP por el MISMO link de
+   "Solicitar archivos": llega a Recibidos, como las hojas de vida. La bandeja lo
+   reconoce por "datos_carnet.json" (o por "_CARNET_" en el nombre).
+
+   CONTRATO del ZIP (no cambiarlo sin cambiar carnets.html, función armarZip):
+     <cedula>_CARNET_<MOTIVO>_<AAAA-MM-DD>.zip   (OneDrive puede anteponer "Nombre_")
+     ├─ <cedula>_CARNET_<codigo>_<ID>.pdf        un PDF por documento
+     └─ datos_carnet.json  { version, tipo: "carnet", cedula, nombre, rh, celular, correo, sede,
+                             motivo, nombreMotivo, descripcion, autorizacionDatos, generado,
+                             archivos: [{ documento, archivo, origen, paginas, ... }] }
+
+   Cada solicitud (el "tiquete") vive en su carpeta:
+     Carnets/Solicitudes/<AAAA-MM-DD>_<cedula>_<MOTIVO>/
+       ├─ los PDF, solicitud.json (ver solicitudNueva) y _anteriores/ si se le unió otro envío
+     Carnets/Correos/Pendientes | Enviados | Errores  → correos que envía Power Automate (6F)
+   Estados: recibida → aprobada → enviada (cerrada) · recibida/aprobada → rechazada (cerrada).
+   ========================================================================== */
+const CARPETAS_CARNET = { raiz: 'Carnets', solicitudes: 'Solicitudes', correos: 'Correos',
+  pendientes: 'Pendientes', enviados: 'Enviados', errores: 'Errores' };
+const ARCHIVO_SOLICITUD = 'solicitud.json';
+
+/** Motivos y documentos (los mismos ids que carnets.html: son parte del contrato). */
+const CARNET = {
+  motivos: {
+    deterioro: { nombre: 'Deterioro', documentos: ['foto_carnet'] },
+    robo: { nombre: 'Robo', documentos: ['denuncia', 'descuento'] },
+    perdida: { nombre: 'Pérdida', documentos: ['descuento'] },
+  },
+  documentos: {
+    foto_carnet: 'Foto del carnet dañado',
+    denuncia: 'Denuncia del robo',
+    descuento: 'Formato de descuento por responsabilidad',
+  },
+  rh: ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'],
+  estados: {
+    recibida: 'Por revisar', aprobada: 'Aprobada · por enviar', enviada: 'Enviada', rechazada: 'Rechazada',
+  },
+};
+const ESTADOS_CARNET_ABIERTOS = ['recibida', 'aprobada'];
+const nombreDocCarnet = (id) => CARNET.documentos[id] || id;
+const nombreMotivoCarnet = (id) => (CARNET.motivos[id] || {}).nombre || id;
+
+/** Carpeta Carnets/<sub> (la crea si no existe). */
+async function carpetaCarnet(raiz, ...ruta) {
+  let c = await subcarpeta(raiz, CARPETAS_CARNET.raiz);
+  for (const parte of ruta) c = await subcarpeta(c, CARPETAS_CARNET[parte] || parte);
+  return c;
+}
+
+/** Lee el solicitud.json de una carpeta (null si no tiene; error si está dañado). */
+async function leerSolicitud(carpeta) {
+  if (!(await existe(carpeta, ARCHIVO_SOLICITUD))) return null;
+  return JSON.parse(await (await (await carpeta.getFileHandle(ARCHIVO_SOLICITUD)).getFile()).text());
+}
+
+/** Guarda la solicitud con el mismo control de choques que expediente.json ("rev"). */
+async function guardarSolicitud(carpeta, solicitud, usuario) {
+  let actual = null;
+  try { actual = await leerSolicitud(carpeta); } catch (e) { actual = null; }
+  if (actual && (actual.rev || 0) !== (solicitud.rev || 0)) {
+    throw new ErrorChoque(`${actual.actualizadoPor || 'Otra persona'} cambió esta solicitud hace un momento. Recarga para ver sus cambios.`);
+  }
+  const nueva = { ...solicitud, rev: (solicitud.rev || 0) + 1, actualizado: new Date().toISOString(), actualizadoPor: usuario };
+  await escribir(carpeta, ARCHIVO_SOLICITUD, JSON.stringify(nueva, null, 2));
+  return nueva;
+}
+
+/** Anota en la bitácora de la solicitud. */
+function anotarCarnet(sol, usuario, accion) {
+  sol.bitacora = [...(sol.bitacora || []), { fecha: new Date().toISOString(), usuario, accion }];
+}
+
+/** Todas las solicitudes: [{ carpeta, nombreCarpeta, solicitud, enUso, problema }] (las más nuevas primero). */
+async function leerSolicitudesCarnet(raiz) {
+  const base = await carpetaCarnet(raiz, 'solicitudes');
+  const lista = [];
+  for (const x of await listar(base)) {
+    if (x.tipo !== 'directory') continue;
+    let solicitud = null; let problema = '';
+    try { solicitud = await leerSolicitud(x.handle); if (!solicitud) problema = 'La carpeta no tiene solicitud.json.'; }
+    catch (e) { problema = 'El archivo solicitud.json está dañado.'; }
+    lista.push({ carpeta: x.handle, nombreCarpeta: x.nombre, solicitud, problema, enUso: await leerEnUso(x.handle) });
+  }
+  return lista.sort((a, b) => String((b.solicitud || {}).fechas && b.solicitud.fechas.recibida || '').localeCompare(String((a.solicitud || {}).fechas && a.solicitud.fechas.recibida || '')));
+}
+
+/** ¿La cédula ya tiene una solicitud abierta (por revisar o por enviar)? Devuelve { carpeta, solicitud } o null. */
+async function solicitudCarnetAbierta(raiz, cedula) {
+  const abiertas = (await leerSolicitudesCarnet(raiz))
+    .filter((x) => x.solicitud && x.solicitud.datos && x.solicitud.datos.cedula === cedula && ESTADOS_CARNET_ABIERTOS.includes(x.solicitud.estado));
+  return abiertas[0] || null;
+}
+
+/**
+ * Revisa un ZIP de carnet (lo llama analizarArchivo). Igual que con los candidatos:
+ * "errores" impiden procesarlo y "avisos" solo informan.
+ */
+async function analizarCarnet(r, item, raiz) {
+  r.esCarnet = true;
+  const json = r.zip.file('datos_carnet.json');
+  if (!json) { r.errores.push('El ZIP dice CARNET pero no trae "datos_carnet.json": no lo armó la página de carnets.'); return r; }
+  try { r.datos = JSON.parse(await json.async('string')); }
+  catch (e) { r.errores.push('El archivo de datos de la solicitud de carnet está dañado.'); return r; }
+  const d = r.datos || {};
+  if (d.tipo !== 'carnet') r.errores.push('El archivo de datos no es de una solicitud de carnet.');
+  if (!/^[A-Z0-9]{3,15}$/i.test(String(d.cedula || ''))) r.errores.push('El número de documento no es válido.');
+  if (String(d.nombre || '').trim().length < 2) r.errores.push('La solicitud no trae el nombre del colaborador.');
+  if (!CARNET.rh.includes(d.rh)) r.errores.push(`El RH "${d.rh || '—'}" no es uno de los 8 grupos sanguíneos.`);
+  if (!correoLimpio(d.correo)) r.errores.push('El correo del colaborador no es válido: no se le podrían enviar los avisos.');
+  const motivo = CARNET.motivos[d.motivo];
+  if (!motivo) r.errores.push(`El motivo "${d.motivo || '—'}" no es válido (deterioro, robo o pérdida).`);
+
+  // Documentos: cada archivo listado debe existir en el ZIP, y deben venir todos los que pide el motivo
+  const listados = Array.isArray(d.archivos) ? d.archivos : [];
+  for (const a of listados) {
+    if (!a || !a.archivo || !r.zip.file(a.archivo)) r.errores.push(`Falta en el ZIP: ${nombreDocCarnet(a && a.documento)} (${(a && a.archivo) || 'sin nombre'}).`);
+    else if (!CARNET.documentos[a.documento]) r.avisos.push(`Se ignora "${a.archivo}": no es un documento de carnet.`);
+    else r.archivos.push(a);
+  }
+  if (motivo) {
+    const faltan = motivo.documentos.filter((id) => !listados.some((a) => a && a.documento === id));
+    if (faltan.length) r.errores.push(`Para ${motivo.nombre.toLowerCase()} falta: ${faltan.map(nombreDocCarnet).join(', ')}.`);
+  }
+  if (!r.errores.length) {
+    r.cedula = String(d.cedula).toUpperCase();
+    const abierta = await solicitudCarnetAbierta(raiz, r.cedula);
+    if (abierta) {
+      r.solicitudAbierta = { id: abierta.solicitud.id, recibida: abierta.solicitud.fechas.recibida, estado: abierta.solicitud.estado };
+      r.avisos.push(`${nombreBonito(d.nombre).split(' ')[0]} ya tiene una solicitud abierta del ${fechaCorta(abierta.solicitud.fechas.recibida)} (${CARNET.estados[abierta.solicitud.estado]}). Elige si la unes a esa o creas una nueva.`);
+    }
+  }
+  r.tipo = r.errores.length ? 'invalido' : 'carnet';
+  return r;
+}
+
+/** Solicitud nueva (el "tiquete") a partir de datos_carnet.json. */
+function solicitudNueva(id, datos, archivos, usuario) {
+  const ahora = new Date().toISOString();
+  const documentos = {};
+  archivos.forEach((a) => { documentos[a.documento] = { estado: 'pendiente', motivoRechazo: '', archivo: a.archivo }; });
+  const sol = {
+    version: 1, id, estado: 'recibida', rev: 0, creado: ahora,
+    datos: { ...datos, cedula: String(datos.cedula).toUpperCase(), correo: correoLimpio(datos.correo) },
+    documentos,
+    fechas: { recibida: ahora, aprobada: null, rechazada: null, enviada: null },
+    rechazo: { motivo: '', detalle: '' },
+    envio: { guia: '', observacion: '' },
+    correos: [],
+    bitacora: [],
+  };
+  anotarCarnet(sol, usuario, `Recibida desde la Bandeja (${nombreMotivoCarnet(datos.motivo)}, ${plural(archivos.length, 'documento', 'documentos')})`);
+  return sol;
+}
+
+/**
+ * Procesa un ZIP de carnet: crea la carpeta del tiquete (o lo une a la solicitud abierta
+ * de la misma cédula, si así se eligió) y mueve el ZIP a Recibidos/Procesados.
+ * modo: 'nueva' | 'unir'. Si hay una abierta y no se dijo qué hacer, no procesa.
+ */
+async function procesarCarnet(raiz, item, usuario, modo) {
+  const analisis = await analizarArchivo(item, raiz);
+  if (analisis.tipo !== 'carnet') throw new Error(analisis.errores[0] || 'No es una solicitud de carnet válida.');
+  if (analisis.solicitudAbierta && !modo) throw new Error('Ya tiene una solicitud abierta: elige "Unir" o "Crear nueva".');
+  const d = analisis.datos;
+  let carpeta; let sol;
+
+  if (analisis.solicitudAbierta && modo === 'unir') {
+    const abierta = await solicitudCarnetAbierta(raiz, analisis.cedula);
+    carpeta = abierta.carpeta; sol = abierta.solicitud;
+    // Lo que se reemplaza se guarda en _anteriores/<fecha>, igual que en las correcciones
+    const guardar = analisis.archivos.map((a) => a.archivo);
+    const existentes = (await listar(carpeta)).filter((x) => x.tipo === 'file' && guardar.includes(x.nombre));
+    if (existentes.length) {
+      const destino = await subcarpeta(await subcarpeta(carpeta, C.anteriores), new Date().toISOString().replace(/[:.]/g, '-'));
+      for (const x of existentes) await moverArchivo(x.handle, carpeta, destino);
+    }
+    for (const a of analisis.archivos) await escribir(carpeta, a.archivo, await analisis.zip.file(a.archivo).async('blob'));
+    const antes = sol.datos || {};
+    sol.datos = { ...antes, ...d, cedula: analisis.cedula, correo: correoLimpio(d.correo) };
+    analisis.archivos.forEach((a) => { sol.documentos[a.documento] = { estado: 'pendiente', motivoRechazo: '', archivo: a.archivo }; });
+    sol.estado = 'recibida'; sol.fechas.aprobada = null;
+    const cambios = ['motivo', 'rh', 'sede', 'correo', 'celular'].filter((k) => String(antes[k] || '') !== String(sol.datos[k] || ''))
+      .map((k) => `${k === 'rh' ? 'RH' : k}: ${k === 'motivo' ? nombreMotivoCarnet(antes[k]) : antes[k] || '—'} → ${k === 'motivo' ? nombreMotivoCarnet(sol.datos[k]) : sol.datos[k]}`);
+    anotarCarnet(sol, usuario, `Llegó otro envío y se unió (${plural(analisis.archivos.length, 'documento', 'documentos')})${cambios.length ? ` — ${cambios.join('; ')}` : ''}; vuelve a "Por revisar"`);
+    sol = await guardarSolicitud(carpeta, sol, usuario);
+  } else {
+    const fecha = String(d.generado || new Date().toISOString()).slice(0, 10);
+    const base = `${fecha}_${analisis.cedula}_${textoParaArchivo(d.motivo)}`;
+    const solicitudes = await carpetaCarnet(raiz, 'solicitudes');
+    let id = base;
+    for (let n = 2; await existe(solicitudes, id); n++) id = `${base}_${n}`;
+    carpeta = await subcarpeta(solicitudes, id);
+    for (const a of analisis.archivos) await escribir(carpeta, a.archivo, await analisis.zip.file(a.archivo).async('blob'));
+    sol = await guardarSolicitud(carpeta, solicitudNueva(id, d, analisis.archivos, usuario), usuario);
+  }
+
+  const procesados = await subcarpeta(await subcarpeta(raiz, C.recibidos), C.procesados);
+  await moverArchivo(item.handle, item.carpeta, procesados);
+  return { id: sol.id, nombre: d.nombre, unida: modo === 'unir' && !!analisis.solicitudAbierta };
 }
 
 /* ==========================================================================
@@ -2786,6 +3001,7 @@ const Icono = ({ nombre, tamano = 20 }) => {
     listo: <><path d="M5 12.5l4.5 4.5L19 7" /></>,
     subir: <><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" /></>,
     cargando: <><path d="M12 3a9 9 0 1 0 9 9" /></>,
+    carnet: <><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="9" cy="11" r="2" /><path d="M6 16c.6-1.4 1.7-2 3-2s2.4.6 3 2M14 10h4M14 13h4" /></>,
     papelera: <><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /><path d="M10 11v6M14 11v6" /></>,
   };
   return (
@@ -2912,7 +3128,8 @@ function BarraLateral({ vista, setVista, pendientes, totalCandidatos, enPapelera
 
 /* ---------- Bandeja de entrada ---------- */
 function Bandeja({ items, cargando, onRecargar, onProcesar, onProcesarTodos, procesando, lote, onAgregar }) {
-  const listos = items.filter((x) => x.analisis && ['envio', 'correccion', 'aprendiz'].includes(x.analisis.tipo));
+  const listos = items.filter((x) => x.analisis && (['envio', 'correccion', 'aprendiz'].includes(x.analisis.tipo)
+    || (x.analisis.tipo === 'carnet' && !x.analisis.solicitudAbierta)));
   const selector = useRef(null);          // campo oculto para elegir ZIP del computador
   const [encima, setEncima] = useState(false); // ¿están arrastrando un archivo encima?
 
@@ -2969,6 +3186,7 @@ function FilaBandeja({ item, onProcesar, procesando }) {
   const a = item.analisis;
   const d = a && a.datos;
   const tipo = !a ? 'cargando' : a.tipo;
+  if (a && a.esCarnet) return <FilaBandejaCarnet item={item} onProcesar={onProcesar} procesando={procesando} />;
   const icono = { envio: ['paquete', ''], correccion: ['corregir', 'info'], aprendiz: ['personas', 'info'], invalido: ['alerta', 'malo'], cargando: ['cargando', ''] }[tipo];
   // En una corrección el nombre no viene en el ZIP: sale del expediente (a.nombreCandidato)
   const nombre = d && (d.nombre || (a && a.nombreCandidato));
@@ -3001,6 +3219,50 @@ function FilaBandeja({ item, onProcesar, procesando }) {
             {tipo === 'correccion' ? 'Procesar corrección' : tipo === 'aprendiz' ? 'Procesar aprendiz' : 'Procesar'}
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Fila de la bandeja para una solicitud de carnet: etiqueta "Carnet · Robo", nombre,
+ * cédula, sede y errores. Si la cédula ya tiene una solicitud abierta, deja elegir
+ * entre unirla a esa o crear una nueva (sección 6E).
+ */
+function FilaBandejaCarnet({ item, onProcesar, procesando }) {
+  const a = item.analisis;
+  const d = a.datos || {};
+  const valido = a.tipo === 'carnet';
+  return (
+    <div className="fila">
+      <div className={`icono-caja ${valido ? 'carnet' : 'malo'}`}><Icono nombre={valido ? 'carnet' : 'alerta'} /></div>
+      <div className="fila-texto">
+        <span className="fila-titulo">
+          <span className="chip-carnet">Carnet{CARNET.motivos[d.motivo] ? ` · ${nombreMotivoCarnet(d.motivo)}` : ''}</span>
+          {d.nombre ? nombreBonito(d.nombre) : item.nombre}
+        </span>
+        {(d.cedula || d.sede) && (
+          <span className="fila-sub"><span className="numeros">C.C. {d.cedula || '—'}</span>{d.sede ? ` — ${d.sede}` : ''}</span>
+        )}
+        <span className="fila-pista">
+          {item.nombre} — {a.archivos.length ? `${plural(a.archivos.length, 'documento', 'documentos')}, ` : ''}
+          {tamanoLegible(item.tamano)}, llegó {fechaCorta(item.fecha)}
+        </span>
+        {(a.errores.length > 0 || a.avisos.length > 0) && (
+          <div className="mensajes">
+            {a.errores.map((m, i) => <div key={'e' + i} className="mensaje error">{m}</div>)}
+            {a.avisos.map((m, i) => <div key={'a' + i} className="mensaje aviso">{m}</div>)}
+          </div>
+        )}
+      </div>
+      <div className="fila-lado">
+        {valido && !a.solicitudAbierta && (
+          <button className="boton boton-suave" disabled={procesando} onClick={() => onProcesar(item, 'nueva')}>Procesar carnet</button>
+        )}
+        {valido && a.solicitudAbierta && <>
+          <button className="boton boton-suave" disabled={procesando} onClick={() => onProcesar(item, 'unir')}>Unir a la abierta</button>
+          <button className="boton boton-secundario" disabled={procesando} onClick={() => onProcesar(item, 'nueva')}>Crear nueva</button>
+        </>}
       </div>
     </div>
   );
@@ -4827,9 +5089,14 @@ function App() {
   }
 
   /** Procesa un paquete de la bandeja (envío normal o corrección). */
-  async function procesar(item, silencioso = false) {
+  async function procesar(item, silencioso = false, modoCarnet = null) {
     setProcesando(true);
     try {
+      if (item.analisis && item.analisis.tipo === 'carnet') {
+        const r = await procesarCarnet(raiz, item, usuario, modoCarnet || 'nueva');
+        if (!silencioso) avisar(r.unida ? `Se unió a la solicitud abierta de ${nombreBonito(r.nombre)}` : `Nueva solicitud de carnet de ${nombreBonito(r.nombre)}`);
+        return true;
+      }
       if (item.analisis && item.analisis.tipo === 'aprendiz') {
         const r = await procesarAprendiz(raiz, item, usuario);
         if (!silencioso) avisar(`Se recibieron los documentos de ${nombreBonito(r.nombre)}${r.cambios ? ' (actualizó su contacto)' : ''}`);
@@ -4854,7 +5121,9 @@ function App() {
   }
 
   async function procesarTodos() {
-    const listos = bandeja.filter((x) => x.analisis && ['envio', 'correccion', 'aprendiz'].includes(x.analisis.tipo));
+    // Los carnets con una solicitud abierta se saltan: hay que elegir "Unir" o "Crear nueva" en su fila
+    const listos = bandeja.filter((x) => x.analisis && (['envio', 'correccion', 'aprendiz'].includes(x.analisis.tipo)
+      || (x.analisis.tipo === 'carnet' && !x.analisis.solicitudAbierta)));
     let bien = 0;
     for (let i = 0; i < listos.length; i++) {
       setLote({ hechos: i, total: listos.length });
@@ -5061,7 +5330,7 @@ function App() {
                     onCambiarUsuario={() => setEditarNombre(true)} onSalir={salir} />
       <main className="trabajo">
         {vista === 'bandeja' && (
-          <Bandeja items={bandeja} cargando={cargando} onRecargar={() => recargar()} onProcesar={(i) => procesar(i)}
+          <Bandeja items={bandeja} cargando={cargando} onRecargar={() => recargar()} onProcesar={(i, modo) => procesar(i, false, modo)}
                    onProcesarTodos={procesarTodos} procesando={procesando} lote={lote} onAgregar={agregarArchivos} />
         )}
         {vista === 'ajustes' && (
