@@ -139,6 +139,16 @@ El ZIP se sube con el **mismo link** de "Solicitar archivos" y llega a `Recibido
 `<cedula>_CARNET_<MOTIVO>_<AAAA-MM-DD>.zip` con un PDF por documento (`<cedula>_CARNET_<codigo>_<ID>.pdf`) y
 `datos_carnet.json` = `{ version, tipo: "carnet", cedula, nombre, rh, celular, correo, sede, motivo, nombreMotivo,
 descripcion, autorizacionDatos, generado, archivos: [{ documento, archivo, origen, paginas, ... }] }`.
+En `foto_carnet` el archivo trae además `pareceCarnet` (true / false / null).
+
+**¿Es de verdad un carnet de Cañaveral?** (`pareceCarnetCanaveral` en `carnets.html`, `CONFIG.revisarCarnet`):
+- Busca el verde de la marca. El verde debe estar en las puntas del carnet (franja de arriba y de abajo; también si la
+  foto está girada), con un cuerpo claro en el medio.
+- Se calibró con fotos del carnet real: acepta el carnet completo, recortado, girado, roto o con poca luz, y rechaza
+  fotos de personas, fondos de otro color y carnets de otros colores.
+- No bloquea: si no lo parece, le avisa al colaborador ("No reconocemos el carnet de Cañaveral…"). La bandeja y la
+  ficha del panel lo muestran marcado para revisarlo bien.
+- No es infalible: una hoja impresa con esos colores pasaría. La revisión de la gestora es la que decide.
 
 **En el panel** (secciones 6E, 6F y 6G de `panel-gh.html`):
 - La bandeja lo reconoce por `datos_carnet.json` (o `_CARNET_` en el nombre) y valida tipo, cédula, nombre, RH

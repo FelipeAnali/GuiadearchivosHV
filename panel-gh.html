@@ -2025,7 +2025,11 @@ async function analizarCarnet(r, item, raiz) {
   for (const a of listados) {
     if (!a || !a.archivo || !r.zip.file(a.archivo)) r.errores.push(`Falta en el ZIP: ${nombreDocCarnet(a && a.documento)} (${(a && a.archivo) || 'sin nombre'}).`);
     else if (!CARNET.documentos[a.documento]) r.avisos.push(`Se ignora "${a.archivo}": no es un documento de carnet.`);
-    else r.archivos.push(a);
+    else {
+      r.archivos.push(a);
+      // carnets.html revisa si la foto parece el carnet de Cañaveral (franja verde y cuerpo blanco)
+      if (a.documento === 'foto_carnet' && a.pareceCarnet === false) r.avisos.push('La foto no parece un carnet de Cañaveral: revísala bien antes de aprobar.');
+    }
   }
   if (motivo) {
     const faltan = motivo.documentos.filter((id) => !listados.some((a) => a && a.documento === id));
@@ -2047,7 +2051,7 @@ async function analizarCarnet(r, item, raiz) {
 function solicitudNueva(id, datos, archivos, usuario) {
   const ahora = new Date().toISOString();
   const documentos = {};
-  archivos.forEach((a) => { documentos[a.documento] = { estado: 'pendiente', motivoRechazo: '', archivo: a.archivo }; });
+  archivos.forEach((a) => { documentos[a.documento] = { estado: 'pendiente', motivoRechazo: '', archivo: a.archivo, ...(a.pareceCarnet === false ? { noPareceCarnet: true } : {}) }; });
   const sol = {
     version: 1, id, estado: 'recibida', rev: 0, creado: ahora,
     datos: { ...datos, cedula: String(datos.cedula).toUpperCase(), correo: correoLimpio(datos.correo) },
@@ -2087,7 +2091,7 @@ async function procesarCarnet(raiz, item, usuario, modo) {
     for (const a of analisis.archivos) await escribir(carpeta, a.archivo, await analisis.zip.file(a.archivo).async('blob'));
     const antes = sol.datos || {};
     sol.datos = { ...antes, ...d, cedula: analisis.cedula, correo: correoLimpio(d.correo) };
-    analisis.archivos.forEach((a) => { sol.documentos[a.documento] = { estado: 'pendiente', motivoRechazo: '', archivo: a.archivo }; });
+    analisis.archivos.forEach((a) => { sol.documentos[a.documento] = { estado: 'pendiente', motivoRechazo: '', archivo: a.archivo, ...(a.pareceCarnet === false ? { noPareceCarnet: true } : {}) }; });
     sol.estado = 'recibida'; sol.fechas.aprobada = null;
     const cambios = ['motivo', 'rh', 'sede', 'correo', 'celular'].filter((k) => String(antes[k] || '') !== String(sol.datos[k] || ''))
       .map((k) => `${k === 'rh' ? 'RH' : k}: ${k === 'motivo' ? nombreMotivoCarnet(antes[k]) : antes[k] || '—'} → ${k === 'motivo' ? nombreMotivoCarnet(sol.datos[k]) : sol.datos[k]}`);
@@ -4104,6 +4108,7 @@ function FichaCarnet({ c, raiz, usuario, avisar, onCambio, onCerrar, estadosCorr
                       <button className="enlace-archivo" disabled={!archivos[doc.archivo]} onClick={() => abrirArchivo(archivos[doc.archivo])}>Ver</button>
                       {!archivos[doc.archivo] ? ' — no se encontró el archivo en la carpeta' : ''}
                     </span>
+                    {doc.noPareceCarnet && <span className="motivo-texto">Ojo: la revisión automática no reconoció un carnet de Cañaveral en la foto (franja verde arriba y abajo). Revísala bien.</span>}
                     {doc.estado === 'rechazado' && doc.motivoRechazo && <span className="motivo-texto">Motivo: {doc.motivoRechazo}</span>}
                     {rechazandoDoc && rechazandoDoc.id === id && (
                       <div className="caja-motivo">
@@ -5616,7 +5621,7 @@ function DialogoNombre({ actual, onGuardar, onCancelar }) {
  * Versión del panel. CÁMBIALA cada vez que subas un cambio a este archivo (fecha y un número).
  * El panel abierto compara su versión con la publicada y, si hay una más nueva, avisa que hay que recargar.
  */
-const VERSION_PANEL = '2026-11-18.1';
+const VERSION_PANEL = '2026-11-18.2';
 
 /** Revisa cada 5 minutos (y al volver a la pestaña) si se publicó una versión más nueva del panel. */
 function useVersionNueva() {

@@ -641,6 +641,9 @@ window.CONFIG = {
   //   nitidezMinima  → por debajo de esto la foto se marca como "borrosa".
   //   brilloMinimo   → por debajo de esto la foto se marca como "oscura" (0 = negro, 255 = blanco).
   foto: { ladoMinimo: 700, ladoGuardado: 1800, nitidezMinima: 40, brilloMinimo: 90 },
+  // ¿Revisar que la foto del carnet dañado sea un carnet de Cañaveral? (franja verde arriba y abajo,
+  // cuerpo blanco). Si no lo parece, se le avisa al colaborador y Gestión Humana lo ve marcado.
+  revisarCarnet: true,
 
   // Texto de la autorización de tratamiento de datos (Ley 1581 de 2012).
   // El grupo sanguíneo (RH) es un dato de salud, es decir, un DATO SENSIBLE.
@@ -737,7 +740,7 @@ SEDE ADMINISTRATIVA
         intro: 'Con la foto, Gestión Humana confirma el daño y que el carnet es tuyo.',
         pasos: [
           { ilustracion: 'carnet', texto: 'Pon el carnet sobre una mesa de color oscuro o liso, con buena luz y sin flash (el plástico brilla).' },
-          { ilustracion: 'encuadre', texto: 'Tómalo de frente, que se vea completo: tu foto, tu nombre y el daño.' },
+          { ilustracion: 'encuadre', texto: 'Tómalo de frente y que llene la foto: que se vean la franja verde de arriba y la de abajo, tu nombre, tu cédula, el RH y el daño.' },
         ],
         nota: 'Guarda el carnet dañado: te lo pueden pedir cuando recibas el nuevo.',
       } },
@@ -1054,6 +1057,61 @@ function medirLegibilidad(imagen) {
 }
 
 /**
+ * ¿La foto parece el CARNET DE CAÑAVERAL? (vertical, franja verde de la marca arriba y abajo,
+ * cuerpo blanco en el medio con el nombre, la C.C. y el RH). Se calibró con fotos del carnet real.
+ *   1. Busca los píxeles del verde de la marca (tono 70°–130°, bien saturado).
+ *   2. Toma el recuadro donde están (sin contar puntos sueltos) = el carnet.
+ *   3. El verde debe estar en las puntas del recuadro (arriba y abajo, o a los lados si la foto
+ *      está girada) y casi nada en el medio; y el medio debe ser claro (el cuerpo blanco).
+ * Acepta el carnet completo, recortado, girado, roto o con poca luz; rechaza fotos que no son
+ * carnets y carnets de otro color. NO es infalible (una hoja impresa con esos colores pasaría):
+ * por eso no bloquea, avisa, y Gestión Humana ve la foto marcada.
+ */
+function pareceCarnetCanaveral(imagen) {
+  const escala = Math.min(1, 240 / Math.max(imagen.width, imagen.height));
+  const w = Math.max(3, Math.round(imagen.width * escala));
+  const h = Math.max(3, Math.round(imagen.height * escala));
+  const lienzo = document.createElement('canvas');
+  lienzo.width = w; lienzo.height = h;
+  const ctx = lienzo.getContext('2d');
+  ctx.drawImage(imagen, 0, 0, w, h);
+  const datos = ctx.getImageData(0, 0, w, h).data;
+  const hsv = (i) => {
+    const r = datos[i] / 255, g = datos[i + 1] / 255, b = datos[i + 2] / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    let tono = 0;
+    if (d) tono = max === r ? 60 * (((g - b) / d) % 6) : max === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4);
+    return [(tono + 360) % 360, max ? d / max : 0, max];
+  };
+  const verdes = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const [t, s, v] = hsv((y * w + x) * 4);
+    if (t >= 70 && t <= 130 && s >= 0.35 && v >= 0.3) verdes.push([x, y]);
+  }
+  if (verdes.length / (w * h) < 0.015) return false;            // casi no hay verde de la marca
+  const xs = verdes.map((p) => p[0]).sort((a, b) => a - b);
+  const ys = verdes.map((p) => p[1]).sort((a, b) => a - b);
+  const pct = (l, q) => l[Math.min(l.length - 1, Math.floor(l.length * q))];
+  const x0 = pct(xs, 0.02), x1 = pct(xs, 0.98), y0 = pct(ys, 0.02), y1 = pct(ys, 0.98);
+  if (x1 - x0 < 5 || y1 - y0 < 5) return false;
+  // Lo claro dentro del recuadro (relativo a lo más claro de la foto, por si hay poca luz)
+  const brillos = []; const grises = [];
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const [, s, v] = hsv((y * w + x) * 4); brillos.push(v); grises.push(s < 0.2 ? v : -1); }
+  const claro = Math.max(0.4, pct([...brillos].sort((a, b) => a - b), 0.95) * 0.8);
+  const blanco = grises.filter((v) => v >= claro).length / grises.length;
+  if (blanco < 0.15 || blanco > 0.85) return false;
+  // Verde en las puntas y poco en el medio (vertical u horizontal)
+  const enPuntas = (k, lo, hi) => {
+    const L = hi - lo, n = verdes.length;
+    const a = verdes.filter((p) => p[k] <= lo + L * 0.3).length / n;
+    const c = verdes.filter((p) => p[k] >= hi - L * 0.3).length / n;
+    const m = verdes.filter((p) => p[k] >= lo + L * 0.4 && p[k] <= hi - L * 0.4).length / n;
+    return m < 0.35 && ((a > 0.15 && c > 0.08) || (c > 0.15 && a > 0.08));
+  };
+  return enPuntas(1, y0, y1) || enPuntas(0, x0, x1);
+}
+
+/**
  * Revisa y comprime UNA foto de una página:
  *   - que sea una imagen que el navegador pueda abrir,
  *   - que no sea muy pequeña (tomada muy de lejos),
@@ -1061,7 +1119,7 @@ function medirLegibilidad(imagen) {
  *   - la achica y la guarda en JPG.
  * Devuelve { error } o { foto }.
  */
-async function prepararFoto(archivo, archivosActuales) {
+async function prepararFoto(archivo, archivosActuales, docId) {
   if (!archivo || archivo.size === 0) return { error: 'El archivo está vacío. Vuelve a tomar la foto.' };
   if (archivo.size > CONFIG.tamanoMaximoEntradaMB * 1024 * 1024) {
     return { error: `La foto pesa ${pesoLegible(archivo.size)}. Elige una más liviana.` };
@@ -1083,10 +1141,16 @@ async function prepararFoto(archivo, archivosActuales) {
   const advertencias = [];
   if (nitidez < CONFIG.foto.nitidezMinima) advertencias.push('Se ve borrosa');
   if (brillo < CONFIG.foto.brilloMinimo) advertencias.push('Se ve oscura');
+  // Foto del carnet dañado: ¿es de verdad un carnet de Cañaveral?
+  let pareceCarnet;
+  if (docId === 'foto_carnet' && CONFIG.revisarCarnet) {
+    pareceCarnet = pareceCarnetCanaveral(imagen);
+    if (!pareceCarnet) advertencias.push('No parece el carnet de Cañaveral');
+  }
 
   const { blob, ancho, alto } = await comprimirImagen(imagen, CONFIG.foto.ladoGuardado, 0.75);
   if (imagen.close) imagen.close();
-  return { foto: { blob, ancho, alto, tamano: blob.size, huella, nombre: archivo.name, advertencias } };
+  return { foto: { blob, ancho, alto, tamano: blob.size, huella, nombre: archivo.name, advertencias, pareceCarnet } };
 }
 
 /** Vuelve a comprimir una foto ya guardada (más pequeña y con menos calidad). */
@@ -1358,6 +1422,10 @@ async function armarZip(sesion) {
       comprimido: entrada.origen === 'pdf' ? !!entrada.pdf.comprimido : true,
       claveQuitada: entrada.origen === 'pdf' && !!entrada.pdf.claveQuitada,
       fotosConAdvertencia: entrada.origen === 'fotos' ? entrada.fotos.filter((f) => f.advertencias.length).length : 0,
+      // Solo en la foto del carnet: true si al menos una foto parece el carnet de Cañaveral, false si
+      // ninguna (Gestión Humana la ve marcada), null si se subió en PDF o no se revisó.
+      ...(doc.id === 'foto_carnet' ? { pareceCarnet: entrada.origen === 'fotos' && entrada.fotos.some((f) => f.pareceCarnet !== undefined)
+        ? entrada.fotos.some((f) => f.pareceCarnet) : null } : {}),
     });
   }
 
@@ -1916,6 +1984,7 @@ function HojaVistaPrevia({ titulo, paginas, aviso, alAceptar, alCancelar }) {
   const urls = useMemo(() => paginas.map((p) => URL.createObjectURL(p.blob)), [paginas]);
   useEffect(() => () => urls.forEach((u) => URL.revokeObjectURL(u)), [urls]);
   const conAdvertencia = paginas.some((p) => (p.advertencias || []).length);
+  const noEsCarnet = paginas.length > 0 && paginas.every((p) => p.pareceCarnet === false);
 
   return (
     <div className="hoja-fondo" onClick={alCancelar}>
@@ -1926,9 +1995,15 @@ function HojaVistaPrevia({ titulo, paginas, aviso, alAceptar, alCancelar }) {
           <button type="button" className="tutorial-cerrar" aria-label="Cerrar" onClick={alCancelar}>✕</button>
         </div>
         <div className="tutorial-cuerpo">
-          <p className="tutorial-intro">{titulo}. Acerca la vista y revisa que se lean las fechas, los días y el diagnóstico.</p>
+          <p className="tutorial-intro">{titulo}. Acerca la vista y revisa que se lea bien todo: nombres, números y firmas.</p>
           {aviso && <div className="aviso aviso-info">{aviso}</div>}
-          {conAdvertencia && (
+          {noEsCarnet && (
+            <div className="aviso aviso-error">
+              No reconocemos el carnet de Cañaveral en la foto. Toma la foto del carnet de frente y que llene la pantalla:
+              que se vean la franja verde de arriba y la de abajo. Si la usas igual, Gestión Humana la revisará con cuidado.
+            </div>
+          )}
+          {conAdvertencia && !noEsCarnet && (
             <div className="aviso aviso-error">
               Algunas fotos se ven mal. Si no se leen, tómalas de nuevo: sobre una mesa, con buena luz y el celular quieto.
             </div>
@@ -1938,7 +2013,7 @@ function HojaVistaPrevia({ titulo, paginas, aviso, alAceptar, alCancelar }) {
               <figure key={i} className={(p.advertencias || []).length ? 'con-advertencia' : ''}>
                 <img src={urls[i]} alt={`Página ${i + 1}`} />
                 <figcaption>
-                  Página {i + 1}{(p.advertencias || []).length ? ` · ${p.advertencias.join(' y ').toLowerCase()}` : ''}
+                  Página {i + 1}{(p.advertencias || []).length ? ` · ${p.advertencias.join(' · ')}` : ''}
                 </figcaption>
               </figure>
             ))}
@@ -2004,7 +2079,7 @@ function TarjetaDocumento({ doc, posicion, entrada, sesion, alGuardar, alQuitarT
       const nuevas = [];
       const actuales = { ...otrosArchivos(reemplazaPdf) };
       for (const archivo of elegidas) {
-        const r = await prepararFoto(archivo, actuales);
+        const r = await prepararFoto(archivo, actuales, doc.id);
         if (r.error) { errores.push(`${archivo.name}: ${r.error}`); continue; }
         nuevas.push(r.foto);
         actuales[doc.id] = { origen: 'fotos', fotos: [...anteriores, ...nuevas] }; // detecta repetidas en el mismo lote
@@ -2447,18 +2522,21 @@ function IlustracionPaginas() {
 
 /** Carnet de la empresa con una esquina partida (deterioro). */
 function IlustracionCarnet() {
+  // Como el carnet real: vertical, franja verde con el logo, nombre, C.C. y RH, y el área abajo
   return (
     <MarcoCelular>
-      <rect x="22" y="40" width="76" height="50" rx="5" fill="var(--relleno)" stroke="var(--separador)" />
-      <rect x="22" y="40" width="76" height="11" rx="5" fill="var(--tinte)" />
-      <rect x="28" y="56" width="20" height="26" rx="2" fill="var(--celda)" stroke="var(--separador)" />
-      <circle cx="38" cy="65" r="4.5" fill="var(--separador)" />
-      <rect x="53" y="58" width="38" height="4" rx="2" fill="var(--separador)" />
-      <rect x="53" y="66" width="28" height="4" rx="2" fill="var(--separador)" />
-      <text x="53" y="80" fontSize="6.5" fill="var(--rojo)" fontWeight="800">RH O+</text>
+      <rect x="40" y="22" width="40" height="64" rx="4" fill="#FFFFFF" stroke="var(--separador)" />
+      <path d="M40 26 a4 4 0 0 1 4 -4 h32 a4 4 0 0 1 4 4 v12 q-20 6 -40 0 z" fill="#5BB33A" />
+      <text x="60" y="32" fontSize="5" fill="#FFFFFF" textAnchor="middle" fontWeight="800">Cañaveral</text>
+      <rect x="46" y="46" width="28" height="4" rx="1" fill="#1F2A24" />
+      <rect x="49" y="53" width="22" height="4" rx="1" fill="#1F2A24" />
+      <text x="60" y="64" fontSize="4" fill="#3A4A40" textAnchor="middle">C.C. 1.144.123</text>
+      <text x="60" y="70" fontSize="4" fill="#3A4A40" textAnchor="middle">RH: O+</text>
+      <path d="M40 78 h40 v4 a4 4 0 0 1 -4 4 h-32 a4 4 0 0 1 -4 -4 z" fill="#5BB33A" />
       {/* Grieta en la esquina */}
-      <path d="M84 90 l6 -9 l-4 -4 l8 -7" stroke="var(--rojo)" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-      <text x="60" y="116" fontSize="6.5" fill="var(--texto-2)" textAnchor="middle">Que se vea completo</text>
+      <path d="M74 86 l4 -7 l-3 -3 l5 -6" stroke="var(--rojo)" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+      <text x="60" y="104" fontSize="6.5" fill="var(--texto-2)" textAnchor="middle">De frente y completo:</text>
+      <text x="60" y="113" fontSize="6.5" fill="var(--texto-2)" textAnchor="middle">franja verde arriba y abajo</text>
     </MarcoCelular>
   );
 }

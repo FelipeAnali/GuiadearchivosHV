@@ -197,7 +197,8 @@ el paquete con el mismo link de OneDrive de las hojas de vida. En el panel:
    Si esa cédula ya tiene una solicitud abierta, elige **Unir a la abierta** o **Crear nueva**.
 2. En el menú **Carnets** (el número verde son las que faltan por revisar), pestañas **Por revisar**, **Por enviar** y
    **Cerradas**. Abre la solicitud: arriba ves el **RH** en grande y la sede a donde va el carnet.
-3. Abre cada documento con **Ver** y márcalo con **Aprobar** o **Rechazar**.
+3. Abre cada documento con **Ver** y márcalo con **Aprobar** o **Rechazar**. Si dice "Ojo: la revisión automática no
+   reconoció un carnet de Cañaveral", mírala con más cuidado: puede ser una foto que no es el carnet.
 4. **Aprobar solicitud** (cuando todos están aprobados) → le llega el correo "aprobada".
    **Rechazar** → eliges el motivo (y un detalle si quieres); la solicitud se cierra y le llega el correo con el motivo.
 5. Cuando lo despachas: **Ya lo envié** (con guía u observación opcional). Se cierra y le llega el correo "enviada".
