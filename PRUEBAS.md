@@ -61,6 +61,16 @@ Marca cada punto con ✅ o ❌. Si algo sale ❌, toma pantallazo y anota en qu�
 | T3 | Envía los documentos y procesa el paquete en el panel | La ficha muestra "Examen médico: …" | | |
 | T4 | Arma otra citación con fecha límite de hoy dentro de 2 minutos, ábrela y espera | Al pasar la hora sale "¡Gracias por tu interés! Este link ya no funciona…" | | |
 
+## 4D. Carnets
+| # | Qué hacer | Qué debe pasar | Android | iPhone |
+|---|---|---|---|---|
+| K1 | Abre `carnets.html`, pide un carnet por **robo** (denuncia y formato firmado con fotos) y descarga el paquete | Se descarga `CEDULA_CARNET_ROBO_FECHA.zip` | | |
+| K2 | Súbelo con el link y procésalo en el panel | En la bandeja sale "Carnet · Robo"; al procesarlo aparece en **Carnets → Por revisar** | | |
+| K3 | Aprueba los dos documentos y la solicitud | Pasa a **Por enviar** y en uno o dos minutos llega el correo "aprobada" (si el flujo de Power Automate está creado) | | |
+| K4 | Toca **Ya lo envié** | Pasa a **Cerradas** y llega el correo "enviada" | | |
+| K5 | Manda otra solicitud con la misma cédula | La bandeja ofrece **Unir a la abierta** o **Crear nueva** | | |
+| K6 | **Descargar Excel** | Se descarga el registro con todas las solicitudes | | |
+
 ## 5. Revisión en Gestión Humana
 | # | Qué hacer | Qué debe pasar |
 |---|---|---|

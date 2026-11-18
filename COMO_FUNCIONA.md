@@ -17,6 +17,7 @@ Para cambios de configuración (links, cargos, textos) ver [GUIA.md](GUIA.md).
 |---|---|
 | `index.html` | La página publicada: estilos, **CONFIGURACIÓN**, logo, pantalla de carga, librerías y el código de la app **ya compilado**. |
 | `documentos.js` | **Lista de documentos** que se piden (con sus reglas de revisión). La usan la app y el panel. |
+| `carnets.html` | **App de reposición de carnet** del colaborador (ver "Carnets" abajo). |
 | `examen.js` | **Examen médico**: recomendaciones y cargos con coprológico (tarjeta de la citación y mensaje del panel). |
 | `cargos.js` | **Lista de cargos** (CARGO;SECCIÓN;MANIPULACIÓN), en `window.CARGOS_TEXTO`. La usan la app y el panel. |
 | `src/app.jsx` | **Fuente** del código de la app (React con JSX). Se edita aquí. |
@@ -120,6 +121,78 @@ Panel: Inscribir ──► link por WhatsApp ──► App: verifica documento +
   `diasManipulacionAprendiz` días para `fechaPracticas`, el panel avisa para pedir el certificado con otro link.
   No hay servidor: el aviso sale cuando alguien abre el panel.
 - Avance guardado con clave `aprendiz_<huella>_<n>`. Manual: `manualDelCandidato()` usa `enlaceManualAprendiz` si existe.
+
+## Carnets (reposición de carnet)
+
+La app del colaborador es **`carnets.html`** (misma familia que `index.html`, pero con Babel en el navegador).
+El colaborador llena sus datos (con RH, celular, correo y sede), elige el motivo y sube los documentos:
+
+| Motivo | Documentos (id, código) |
+|---|---|
+| `deterioro` | `foto_carnet` (01) |
+| `robo` | `denuncia` (02) + `descuento` (03) |
+| `perdida` | `descuento` (03) |
+
+El ZIP se sube con el **mismo link** de "Solicitar archivos" y llega a `Recibidos`.
+
+**Contrato del ZIP** (no cambiar sin cambiar `carnets.html` → `armarZip` y `panel-gh.html` → sección 6E):
+`<cedula>_CARNET_<MOTIVO>_<AAAA-MM-DD>.zip` con un PDF por documento (`<cedula>_CARNET_<codigo>_<ID>.pdf`) y
+`datos_carnet.json` = `{ version, tipo: "carnet", cedula, nombre, rh, celular, correo, sede, motivo, nombreMotivo,
+descripcion, autorizacionDatos, generado, archivos: [{ documento, archivo, origen, paginas, ... }] }`.
+
+**En el panel** (secciones 6E, 6F y 6G de `panel-gh.html`):
+- La bandeja lo reconoce por `datos_carnet.json` (o `_CARNET_` en el nombre) y valida tipo, cédula, nombre, RH
+  (8 grupos), correo, motivo, que vengan los documentos del motivo y que cada archivo exista en el ZIP.
+- Procesar crea `Carnets/Solicitudes/<AAAA-MM-DD>_<cedula>_<MOTIVO>/` con los PDF y **`solicitud.json`**
+  (`id, estado, rev, datos, documentos {estado, motivoRechazo, archivo}, fechas, rechazo, envio, correos, bitacora`)
+  y mueve el ZIP a `Recibidos/Procesados`. Mismo control de choques (`rev`) y marca `en_uso.json` que los candidatos.
+- Si la cédula ya tiene una solicitud **abierta** (recibida o aprobada), la bandeja deja elegir **Unir a la abierta**
+  (lo reemplazado va a `_anteriores/<fecha>`) o **Crear nueva**. "Procesar todos" se salta esos.
+- Estados: `recibida` → `aprobada` → `enviada` (cerrada); `recibida` → `rechazada` (cerrada). Aprobar exige todos
+  los documentos aprobados.
+- **Excel:** botón "Descargar Excel" (SheetJS 0.18.5, se carga solo al pedirlo, con respaldo en jsDelivr).
+
+### Correos con Power Automate
+
+El panel **no envía correos**: al aprobar, rechazar o enviar deja `Carnets/Correos/Pendientes/<id>.json`
+(`id = <idSolicitud>_<tipo>_<n>`):
+
+```json
+{ "version": 1, "id": "2026-11-18_1144123456_ROBO_aprobada_1", "solicitud": "2026-11-18_1144123456_ROBO",
+  "tipo": "aprobada", "para": "maria.pena@gmail.com", "asunto": "…", "cuerpoHtml": "<p>…</p>",
+  "creado": "2026-11-18T18:00:00.000Z", "creadoPor": "Natalia" }
+```
+
+- El archivo se escribe **después** de guardar la solicitud (nunca sale un correo de un cambio que no quedó).
+- El estado lo da la carpeta: `Pendientes` = esperando, `Enviados` = enviado (Power Automate agrega `estado` y `enviado`),
+  `Errores` = falló (agrega `error`). **Reintentar** deja un JSON nuevo (`_n+1`) en `Pendientes`.
+- Los textos (asunto y cuerpo de `aprobada`, `rechazada`, `enviada`) se editan en **Ajustes**, con `{nombre}`, `{sede}`,
+  `{motivo}`, `{motivoRechazo}`, `{guia}`. El cuerpo se convierte a HTML escapando el texto. **Nunca** llevan el RH ni adjuntos.
+- En la carpeta de ejemplo, el panel simula a Power Automate (a los 2,5 s pasa el correo a Enviados; si el correo
+  del destinatario contiene "error", a Errores).
+
+**Cómo armar el flujo** (lo puede hacer cualquier persona con Power Automate en su cuenta de Microsoft 365; no hace
+falta ser administrador). En https://make.powerautomate.com:
+
+1. **Crear → Flujo de nube automatizado.** Nombre: "Correos de carnets". Disparador:
+   **OneDrive para la Empresa → "Cuando se crea un archivo"**. Carpeta: `…/Hojas de vida/Carnets/Correos/Pendientes`
+   (la misma carpeta de OneDrive que abre el panel). Si la carpeta es compartida por otra persona, usa el disparador
+   **SharePoint → "Cuando se crea un archivo en una carpeta"** sobre la biblioteca donde está.
+2. **Obtener contenido de archivo** (OneDrive para la Empresa) con el *Identificador de archivo* del disparador.
+3. **Analizar JSON**: Contenido = `json(string(body('Obtener_contenido_de_archivo')))` (en "Expresión") y como
+   esquema, toca "Generar a partir de ejemplo" y pega el JSON de arriba.
+4. **Office 365 Outlook → "Enviar un correo electrónico (V2)"**: Para = `para`, Asunto = `asunto`,
+   Cuerpo = `cuerpoHtml` (en el editor del cuerpo, cámbialo a modo código `</>` y pon la variable). Se envía desde el
+   buzón de quien creó el flujo; para enviarlo desde un buzón compartido de Gestión Humana usa
+   **"Enviar un correo electrónico desde un buzón compartido (V2)"** (eso sí lo habilita Sistemas).
+5. Si salió bien → **Crear archivo** en `…/Carnets/Correos/Enviados`, Nombre = el del disparador, Contenido =
+   `setProperty(setProperty(body('Analizar_JSON'), 'estado', 'enviado'), 'enviado', utcNow())` → **Eliminar archivo**
+   del disparador.
+6. Si falló: agrega otra rama **Crear archivo** en `…/Carnets/Correos/Errores` con Contenido =
+   `setProperty(body('Analizar_JSON'), 'error', 'No se pudo enviar el correo')` y **Eliminar archivo**; en los
+   tres puntos de "Crear archivo" → **Configurar ejecución después de** → marca solo **"tiene errores"** (y que
+   dependa del paso de enviar correo).
+7. Guarda y prueba: aprueba una solicitud en el panel; en uno o dos minutos la ficha debe decir "Correo enviado".
 
 ## Dónde se guarda el avance
 

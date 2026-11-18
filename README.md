@@ -8,6 +8,7 @@ Página para que los candidatos de **Supertiendas Cañaveral S.A.S.** preparen y
 |---|---|
 | [`index.html`](index.html) | La página de documentos de ingreso (todo en un solo archivo). |
 | [`documentos.js`](documentos.js) | Lista de documentos que se piden. La usan **las dos** apps: se cambia en un solo lugar. |
+| [`carnets.html`](carnets.html) | **Reposición de carnet**: el colaborador pide su carnet nuevo (deterioro, robo o pérdida) y sube el paquete con el mismo link de OneDrive. https://felipeanali.github.io/GuiadearchivosHV/carnets.html |
 | [`examen.js`](examen.js) | Recomendaciones del examen médico de ingreso (las muestra la app con el link de citación). |
 | [`cargos.js`](cargos.js) | Lista de cargos y secciones (se pega desde Excel). La usan **las dos** apps. |
 | [`panel-gh.html`](panel-gh.html) | **Panel de Gestión Humana**: recibe los ZIP de los candidatos desde la carpeta de OneDrive, los revisa y lleva el avance de cada uno. Se abre en Chrome o Edge de computador: https://felipeanali.github.io/GuiadearchivosHV/panel-gh.html |
@@ -52,6 +53,12 @@ Gestión Humana inscribe al aprendiz en el panel (**Aprendices**) y le manda un 
 su número de documento, escribe su celular y correo, y sube solo sus documentos en un ZIP `DOCUMENTO_APRENDIZ_N.zip`.
 El panel avisa cuándo pedir el certificado de manipulación de alimentos según la sección y la fecha de prácticas.
 Sedes, días y secciones se cambian en **Ajustes** del panel. Ver [GUIA.md](GUIA.md) punto 7B.
+
+## Carnets
+
+Con [`carnets.html`](carnets.html) el colaborador pide un carnet nuevo. El paquete llega a la misma bandeja del panel,
+que lo convierte en una solicitud (menú **Carnets**): se aprueba o rechaza, se marca como enviada y se descarga el
+registro en Excel. Los correos al colaborador los envía un flujo de Power Automate. Ver [GUIA.md](GUIA.md) punto 7E.
 
 ## Revisión automática de documentos
 

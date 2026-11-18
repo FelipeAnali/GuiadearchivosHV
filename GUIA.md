@@ -188,6 +188,30 @@ Cuando llega un paquete de una citación, la bandeja avisa si el link **no está
 | Recomendaciones del examen y cargos con coprológico | Archivo **`examen.js`** (se edita igual que `documentos.js`). En `cargosCoprologico` cada línea es un cargo, o `CARGO \| SECCIÓN` para pedirlo solo en esa sección (ej. `ASESOR DE EXPERIENCIA \| POLLO CAÑAVERAL`). |
 | Contacto de GH en la pantalla de link vencido | `contactoGestionHumana` (texto) y `whatsappGestionHumana` (10 números, para el botón "Escribir por WhatsApp") en la CONFIGURACIÓN de `index.html`. Hoy: 310 748 9664. |
 
+## 7E. Carnets (reposición de carnet)
+
+El colaborador pide el carnet en **`carnets.html`** (https://felipeanali.github.io/GuiadearchivosHV/carnets.html) y sube
+el paquete con el mismo link de OneDrive de las hojas de vida. En el panel:
+
+1. Llega a la **Bandeja** con la etiqueta azul **"Carnet · Robo"** (o Deterioro, Pérdida). Toca **Procesar carnet**.
+   Si esa cédula ya tiene una solicitud abierta, elige **Unir a la abierta** o **Crear nueva**.
+2. En el menú **Carnets** (el número verde son las que faltan por revisar), pestañas **Por revisar**, **Por enviar** y
+   **Cerradas**. Abre la solicitud: arriba ves el **RH** en grande y la sede a donde va el carnet.
+3. Abre cada documento con **Ver** y márcalo con **Aprobar** o **Rechazar**.
+4. **Aprobar solicitud** (cuando todos están aprobados) → le llega el correo "aprobada".
+   **Rechazar** → eliges el motivo (y un detalle si quieres); la solicitud se cierra y le llega el correo con el motivo.
+5. Cuando lo despachas: **Ya lo envié** (con guía u observación opcional). Se cierra y le llega el correo "enviada".
+6. **Descargar Excel**: el registro de todas las solicitudes (reemplaza el que se llevaba a mano).
+
+Cada correo muestra su estado en la ficha: "Esperando a Power Automate", "Correo enviado" o "No se pudo enviar"
+(con **Reintentar**). Para que salgan los correos hay que crear **una vez** el flujo de Power Automate
+(paso a paso en [COMO_FUNCIONA.md](COMO_FUNCIONA.md), "Correos con Power Automate").
+
+| Qué quieres cambiar | Dónde |
+|---|---|
+| Motivos para rechazar y textos de los 3 correos | Panel → **Ajustes** → Carnets. |
+| Sedes, motivos, documentos, textos y formato de descuento de la app del colaborador | Bloque **CONFIGURACIÓN** de `carnets.html`. |
+
 ## 7C. El panel no muestra un cambio nuevo
 
 El panel suele quedar abierto todo el día y el navegador sigue usando la versión con la que se abrió.

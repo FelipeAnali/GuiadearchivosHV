@@ -3024,6 +3024,89 @@ const DOCS_COMPLETOS = ['foto', 'cedula', 'diplomas', 'referencia', 'adres', 'pe
 const DOCS_PRIMER = ['foto', 'cedula', 'diplomas', 'referencia_personal', 'adres'];
 
 /** Crea la carpeta de ejemplo según el modo: normal, peor, vacio, uno. */
+/** ZIP de carnet como el que arma carnets.html (para la carpeta de ejemplo). */
+async function zipCarnetDeEjemplo(d, docs, { jsonRoto = false, sinArchivo = null } = {}) {
+  const COD = { foto_carnet: '01', denuncia: '02', descuento: '03' };
+  const zip = new JSZip();
+  const archivos = docs.map((id) => {
+    const archivo = `${d.cedula}_CARNET_${COD[id]}_${textoParaArchivo(id)}.pdf`;
+    if (id !== sinArchivo) zip.file(archivo, pdfDeEjemplo(nombreDocCarnet(id)));
+    return { documento: id, archivo, origen: 'fotos', paginas: 1, comprimido: true, claveQuitada: false, fotosConAdvertencia: 0 };
+  });
+  zip.file('datos_carnet.json', jsonRoto ? '{"tipo": "carnet", "cedula": "1' : JSON.stringify({
+    version: 1, tipo: 'carnet', celular: '3001234567', sede: 'SC TULUA', descripcion: '',
+    nombreMotivo: nombreMotivoCarnet(d.motivo), autorizacionDatos: { aceptada: true, fecha: new Date().toISOString() },
+    generado: new Date().toISOString(), archivos, ...d }, null, 2));
+  return zip.generateAsync({ type: 'blob' });
+}
+
+/**
+ * Carnets de ejemplo: solicitudes ya gestionadas (una en cada estado) y ZIP en Recibidos
+ * (uno de cada motivo, uno con un documento faltante, uno con el JSON dañado, uno con correo
+ * y nombre larguísimos, y uno de una cédula que ya tiene una solicitud abierta).
+ * peor = true: además, una solicitud aprobada cuyo correo quedó en "Errores".
+ */
+async function sembrarCarnetsDeEjemplo(raiz, recibidos, hace, peor = false) {
+  const quien = 'Analista de ejemplo';
+  async function gestionada(d, docs, dias, estado, { correoFalla = false } = {}) {
+    const nombreZip = `${d.cedula}_CARNET_${textoParaArchivo(d.motivo)}_EJEMPLO.zip`;
+    recibidos.poner(nombreZip, await zipCarnetDeEjemplo(d, docs), hace(dias));
+    const item = (await buscarEnRecibidos(raiz)).find((x) => x.nombre === nombreZip);
+    const r = await procesarCarnet(raiz, item, quien, 'nueva');
+    const carpeta = await (await carpetaCarnet(raiz, 'solicitudes')).getDirectoryHandle(r.id);
+    const sol = await leerSolicitud(carpeta);
+    const fecha = (dd) => new Date(hace(dd)).toISOString();
+    sol.fechas.recibida = fecha(dias); sol.bitacora[0].fecha = fecha(dias);
+    const correos = [];
+    if (estado !== 'recibida') {
+      Object.values(sol.documentos).forEach((doc) => { doc.estado = estado === 'rechazada' ? 'rechazado' : 'aprobado'; if (estado === 'rechazada') doc.motivoRechazo = 'La foto no se ve'; });
+      if (estado === 'rechazada') {
+        sol.estado = 'rechazada'; sol.fechas.rechazada = fecha(dias - 1);
+        sol.rechazo = { motivo: 'La foto no se ve', detalle: 'La foto está muy oscura: tómala con luz de día.' };
+        correos.push(registrarCorreoCarnet(sol, 'rechazada', quien));
+        anotarCarnet(sol, quien, 'Rechazó la solicitud: La foto no se ve');
+      } else {
+        sol.estado = 'aprobada'; sol.fechas.aprobada = fecha(dias - 1);
+        correos.push(registrarCorreoCarnet(sol, 'aprobada', quien));
+        anotarCarnet(sol, quien, 'Aprobó la solicitud');
+        if (estado === 'enviada') {
+          sol.estado = 'enviada'; sol.fechas.enviada = fecha(Math.max(0, dias - 3));
+          sol.envio = { guia: 'Va con el mensajero de la ruta norte', observacion: '' };
+          correos.push(registrarCorreoCarnet(sol, 'enviada', quien));
+          anotarCarnet(sol, quien, `Marcó el carnet como enviado a ${sol.datos.sede}`);
+        }
+      }
+    }
+    await guardarSolicitud(carpeta, sol, quien);
+    for (const correo of correos) {
+      const destino = await carpetaCarnet(raiz, 'correos', correoFalla ? 'errores' : 'enviados');
+      const info = correoFalla ? { error: 'Remitente no autorizado para enviar desde el buzón de Gestión Humana (ejemplo).' } : { estado: 'enviado', enviado: correo.creado };
+      await escribir(destino, `${correo.id}.json`, JSON.stringify({ ...correo, ...info }, null, 2));
+    }
+  }
+  await gestionada({ cedula: '1130456789', nombre: 'Natalia Ruiz Ospina', rh: 'B+', correo: 'natalia.ruiz@gmail.com', sede: 'SC PANCE', motivo: 'deterioro' }, ['foto_carnet'], 6, 'recibida');
+  await gestionada({ cedula: '1112987654', nombre: 'Andrea Rincón', rh: 'O-', correo: 'andrea.rincon@hotmail.com', sede: 'SC BUGA MERINO', motivo: 'robo' }, ['denuncia', 'descuento'], 3, 'aprobada');
+  await gestionada({ cedula: '94321765', nombre: 'Jorge Iván Lozano', rh: 'A+', correo: 'jorge.lozano@gmail.com', sede: 'SC CAVASA', motivo: 'perdida' }, ['descuento'], 12, 'enviada');
+  await gestionada({ cedula: '1006778899', nombre: 'Carolina Mejía', rh: 'AB+', correo: 'caro.mejia@yahoo.com', sede: 'SC LA 34', motivo: 'deterioro' }, ['foto_carnet'], 4, 'rechazada');
+  if (peor) await gestionada({ cedula: '1144000999', nombre: 'Wilmer Andrés Quintero', rh: 'O+', correo: 'wilmer.quintero@gmail.com', sede: 'SC ZARZAL', motivo: 'perdida' }, ['descuento'], 2, 'aprobada', { correoFalla: true });
+
+  // Lo que llega hoy a Recibidos
+  recibidos.poner('Luz Gomez_31987654_CARNET_DETERIORO_2026-11-18.zip',
+    await zipCarnetDeEjemplo({ cedula: '31987654', nombre: 'Luz Dary Gómez', rh: 'O+', correo: 'luzdary.gomez@hotmail.com', sede: 'SC TULUA', motivo: 'deterioro' }, ['foto_carnet']), hace(0, 3));
+  recibidos.poner('1144123456_CARNET_ROBO_2026-11-18.zip',
+    await zipCarnetDeEjemplo({ cedula: '1144123456', nombre: 'María José Peña', rh: 'A-', correo: 'maria.pena@gmail.com', sede: 'SC VILLAGORGONA', motivo: 'robo', descripcion: 'Me robaron la billetera en el bus.' }, ['denuncia', 'descuento']), hace(0, 2));
+  recibidos.poner('1098765432_CARNET_PERDIDA_2026-11-18.zip',
+    await zipCarnetDeEjemplo({ cedula: '1098765432', nombre: 'Pedro Pablo Ramírez', rh: 'B-', correo: 'pedro.ramirez@gmail.com', sede: 'SC CENTENARIO', motivo: 'perdida' }, ['descuento']), hace(0, 1.5));
+  recibidos.poner('1076543210_CARNET_ROBO_2026-11-18.zip',
+    await zipCarnetDeEjemplo({ cedula: '1076543210', nombre: 'Sandra Milena Torres', rh: 'O+', correo: 'sandra.torres@gmail.com', sede: 'SC TULUA', motivo: 'robo' }, ['denuncia']), hace(0, 1.2));
+  recibidos.poner('1000000001_CARNET_ROBO_2026-11-18.zip',
+    await zipCarnetDeEjemplo({ cedula: '1000000001' }, ['descuento'], { jsonRoto: true }), hace(0, 1));
+  recibidos.poner('1143876543_CARNET_DETERIORO_2026-11-18.zip',
+    await zipCarnetDeEjemplo({ cedula: '1143876543', nombre: 'Jhon Alexander Villegas Restrepo de Ossa', rh: 'AB-', correo: 'jhon.alexander.villegas.restrepo@northwind-industries-holdings.example.com', sede: 'SC VILLAGORGONA 20 DE JULIO', motivo: 'deterioro' }, ['foto_carnet']), hace(0, 0.8));
+  recibidos.poner('Natalia Ruiz_1130456789_CARNET_ROBO_2026-11-18.zip',
+    await zipCarnetDeEjemplo({ cedula: '1130456789', nombre: 'Natalia Ruiz Ospina', rh: 'B+', correo: 'natalia.ruiz@gmail.com', sede: 'SC PANCE', motivo: 'robo' }, ['denuncia', 'descuento']), hace(0, 0.5));
+}
+
 async function crearCarpetaDeEjemplo(modo) {
   const raiz = new CarpetaMemoria('Hojas de vida (ejemplo)');
   await prepararEstructura(raiz);
@@ -3137,6 +3220,7 @@ async function crearCarpetaDeEjemplo(modo) {
     // Corrección 1 de Camilo (tiene la cédula rechazada): lo que mandaría la app del candidato
     recibidos.poner('1006223344_CORRECCION_1.zip',
       await zipDeEjemplo({ cedula: '1006223344', tipo: 'correccion', n: 1, docs: ['cedula'] }, foto), hace(0, 0.5));
+    await sembrarCarnetsDeEjemplo(raiz, recibidos, hace);
     return raiz;
   }
 
@@ -3177,6 +3261,7 @@ async function crearCarpetaDeEjemplo(modo) {
   const sub = await subcarpeta(recibidos, 'Archivos de Bartholomew Fitzgerald Northwind');
   sub.poner('1400000002_BARTHOLOMEW_FITZGERALD.zip',
     await zipDeEjemplo({ cedula: '1400000002', nombre: 'Bartholomew Fitzgerald Northwind-Holdings', cargo: 'AUXILIAR DE SERVICIO AL CLIENTE Y DOMICILIOS', seccion: 'SERVICIO AL CLIENTE', docs: DOCS_COMPLETOS }, foto), hace(0, 6));
+  await sembrarCarnetsDeEjemplo(raiz, recibidos, hace, true);
   return raiz;
 }
 
