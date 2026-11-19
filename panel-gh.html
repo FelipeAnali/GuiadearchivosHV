@@ -2295,16 +2295,26 @@ function saludoSegunHora(fecha = new Date()) {
  * Arma el correo completo. partes: { titulo, saludo, introHtml, cuerpoHtml, recuadroHtml }.
  * cuerpoHtml y recuadroHtml ya deben venir escapados (los arman las funciones de abajo).
  */
+/**
+ * Texto con color y tamaño que Outlook SÍ respeta al pegar: Outlook borra el color y el tamaño puestos en
+ * la celda (<td>) o en un <div>, pero conserva los de <font> y <span> sobre el propio texto. Se usan los dos.
+ */
+function textoColor(texto, color, tamano, negrita = false) {
+  const estilo = `color:${color};font-size:${tamano}px;${negrita ? 'font-weight:700;' : ''}font-family:Segoe UI,Arial,Helvetica,sans-serif;`;
+  const t = negrita ? `<b style="${estilo}">${texto}</b>` : texto;
+  return `<font color="${color}" face="Segoe UI, Arial, sans-serif"><span style="${estilo}">${t}</span></font>`;
+}
+
 function correoCanaveralHtml({ titulo, saludo, introHtml = '', cuerpoHtml = '', recuadroHtml = '' }) {
   const f = "font-family:Segoe UI,Arial,Helvetica,sans-serif;";
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f6f1;${f}">
 <tr><td align="center" style="padding:16px 8px;">
 <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:640px;background:#ffffff;border:1px solid #d5e3d1;${f}">
-<tr><td style="background:#05200b;border-bottom:5px solid #7dd105;padding:18px 22px;">
+<tr><td bgcolor="#05200b" style="background:#05200b;border-bottom:5px solid #7dd105;padding:18px 22px;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
     <td style="${f}vertical-align:middle;">
-      <div style="${f}color:#7dd105;font-size:13px;font-weight:600;">Supertiendas Cañaveral · Gestión Humana</div>
-      <div style="${f}color:#ffffff;font-size:22px;font-weight:700;margin-top:4px;">${escaparHtml(titulo)}</div>
+      <div style="${f}color:#7dd105;font-size:13px;font-weight:600;">${textoColor('Supertiendas Cañaveral · Gestión Humana', '#7dd105', 13, true)}</div>
+      <div style="${f}color:#ffffff;font-size:22px;font-weight:700;margin-top:4px;">${textoColor(escaparHtml(titulo), '#ffffff', 22, true)}</div>
     </td>
     <td align="right" style="vertical-align:middle;"><img src="${LOGO_CORREO}" width="130" alt="Supertiendas Cañaveral" style="display:block;width:130px;height:auto;border:0;"></td>
   </tr></table>
@@ -2315,7 +2325,7 @@ function correoCanaveralHtml({ titulo, saludo, introHtml = '', cuerpoHtml = '', 
 <tr><td style="padding:4px 22px 6px;${f}">${cuerpoHtml}</td></tr>
 ${recuadroHtml ? `<tr><td style="padding:8px 22px 4px;">${recuadroHtml}</td></tr>` : ''}
 <tr><td style="padding:16px 22px 20px;${f}color:#1f2a24;font-size:14px;line-height:1.5;">Cordialmente,<br><strong>Departamento de Gestión Humana</strong><br>Supertiendas Cañaveral</td></tr>
-<tr><td style="background:#1C5A2A;padding:10px 22px;${f}color:#ffffff;font-size:12px;">Supertiendas Cañaveral S.A.S. · Este correo se armó en el panel de Gestión Humana.</td></tr>
+<tr><td bgcolor="#1C5A2A" style="background:#1C5A2A;padding:10px 22px;${f}color:#ffffff;font-size:12px;">${textoColor('Supertiendas Cañaveral S.A.S. · Gestión Humana', '#ffffff', 12)}</td></tr>
 </table></td></tr></table>`;
 }
 
@@ -2334,7 +2344,7 @@ function tablaGrupoHtml(g) {
   const cabeza = g.columnas.map((c) => `<th style="${celda}background:#eef4ea;font-weight:700;">${escaparHtml(c)}</th>`).join('');
   const filas = g.filas.map((fila, i) => `<tr style="background:${i % 2 ? '#f7faf5' : '#ffffff'};">${fila.map((v) => `<td style="${celda}">${escaparHtml(v)}</td>`).join('')}</tr>`).join('');
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 4px;border-collapse:collapse;">
-<tr><td style="background:${g.franja};color:${g.textoFranja};${f}font-size:15px;font-weight:700;padding:8px 10px;">${escaparHtml(g.titulo)} (${g.filas.length})</td></tr>
+<tr><td bgcolor="${g.franja}" style="background:${g.franja};color:${g.textoFranja};${f}font-size:15px;font-weight:700;padding:8px 10px;">${textoColor(`${escaparHtml(g.titulo)} (${g.filas.length})`, g.textoFranja, 15, true)}</td></tr>
 <tr><td style="background:${g.fondo || '#ffffff'};padding:0;"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr>${cabeza}</tr>${filas}</table></td></tr>
 ${g.nota ? `<tr><td style="${f}font-size:13px;color:#4a5a50;padding:6px 2px 0;">${escaparHtml(g.nota)}</td></tr>` : ''}
 </table>`;
@@ -6115,7 +6125,7 @@ function DialogoNombre({ actual, onGuardar, onCancelar }) {
  * Versión del panel. CÁMBIALA cada vez que subas un cambio a este archivo (fecha y un número).
  * El panel abierto compara su versión con la publicada y, si hay una más nueva, avisa que hay que recargar.
  */
-const VERSION_PANEL = '2026-11-19.1';
+const VERSION_PANEL = '2026-11-19.2';
 
 /** Revisa cada 5 minutos (y al volver a la pestaña) si se publicó una versión más nueva del panel. */
 function useVersionNueva() {
