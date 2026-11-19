@@ -186,7 +186,10 @@ El panel **no envía correos**: al aprobar, rechazar o enviar deja `Carnets/Corr
 El panel nunca envía correos: los arma con el diseño de Cañaveral (tablas y estilos en línea, fondo claro, logo
 `https://felipeanali.github.io/logo-canaveral.png/logo-canaveral.png`) y la gestora los pega en Outlook.
 Se copian con `navigator.clipboard.write` + `ClipboardItem` (`text/html` y `text/plain`); si el navegador no lo deja,
-se selecciona la vista previa y se usa `execCommand('copy')`. Funciones: `correoCanaveralHtml`, `tablaGrupoHtml`,
+se selecciona la vista previa y se usa `execCommand('copy')`.
+**Diseño a prueba de Outlook:** el nuevo Outlook / Outlook web, al pegar, puede quitar el color y el tamaño de todas
+las letras (deja los fondos, los bordes y los enlaces). Por eso el texto va siempre sobre fondos claros, y el verde
+oscuro de la marca va en franjas, bordes y el bloque del logo: aunque Outlook ponga todo el texto negro, se lee bien. Funciones: `correoCanaveralHtml`, `tablaGrupoHtml`,
 `recuadroCorreoHtml`, `correoIndividualHtml`, `copiarHtml` (sección 6F) y `HojaCorreoSupervisores`.
 
 - **Correo a supervisores** (botón en Carnets): grupos Aprobadas / Enviadas / Rechazadas (una tabla por grupo), las

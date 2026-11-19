@@ -2310,14 +2310,19 @@ function correoCanaveralHtml({ titulo, saludo, introHtml = '', cuerpoHtml = '', 
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f6f1;${f}">
 <tr><td align="center" style="padding:16px 8px;">
 <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:640px;background:#ffffff;border:1px solid #d5e3d1;${f}">
-<tr><td bgcolor="#05200b" style="background:#05200b;border-bottom:5px solid #7dd105;padding:18px 22px;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-    <td style="${f}vertical-align:middle;">
-      <div style="${f}color:#7dd105;font-size:13px;font-weight:600;">${textoColor('Supertiendas Cañaveral · Gestión Humana', '#7dd105', 13, true)}</div>
-      <div style="${f}color:#ffffff;font-size:22px;font-weight:700;margin-top:4px;">${textoColor(escaparHtml(titulo), '#ffffff', 22, true)}</div>
-    </td>
-    <td align="right" style="vertical-align:middle;"><img src="${LOGO_CORREO}" width="130" alt="Supertiendas Cañaveral" style="display:block;width:130px;height:auto;border:0;"></td>
-  </tr></table>
+<tr><td style="border-bottom:5px solid #7dd105;padding:0;">
+  <!-- Encabezado "a prueba de Outlook": el texto va sobre fondo CLARO (si Outlook lo pone negro al pegar, igual se lee)
+       y el verde oscuro de la marca va en la franja de arriba y en el bloque del logo (Outlook sí respeta los fondos). -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr><td colspan="2" bgcolor="#05200b" height="8" style="background:#05200b;height:8px;line-height:8px;font-size:1px;">&nbsp;</td></tr>
+    <tr>
+      <td bgcolor="#f3f9ea" style="background:#f3f9ea;${f}vertical-align:middle;padding:16px 22px;">
+        <div style="${f}color:#1C5A2A;font-size:13px;font-weight:600;">${textoColor('Supertiendas Cañaveral · Gestión Humana', '#1C5A2A', 13, true)}</div>
+        <div style="${f}color:#05200b;font-size:22px;font-weight:700;margin-top:4px;">${textoColor(escaparHtml(titulo), '#05200b', 22, true)}</div>
+      </td>
+      <td bgcolor="#05200b" width="170" align="center" style="background:#05200b;width:170px;vertical-align:middle;padding:14px 18px;"><img src="${LOGO_CORREO}" width="130" alt="Supertiendas Cañaveral" style="display:block;width:130px;height:auto;border:0;"></td>
+    </tr>
+  </table>
 </td></tr>
 <tr><td style="padding:22px 22px 6px;${f}color:#1f2a24;font-size:15px;line-height:1.5;">
   <p style="margin:0 0 10px;">${escaparHtml(saludo)}</p>${introHtml}
@@ -2325,7 +2330,7 @@ function correoCanaveralHtml({ titulo, saludo, introHtml = '', cuerpoHtml = '', 
 <tr><td style="padding:4px 22px 6px;${f}">${cuerpoHtml}</td></tr>
 ${recuadroHtml ? `<tr><td style="padding:8px 22px 4px;">${recuadroHtml}</td></tr>` : ''}
 <tr><td style="padding:16px 22px 20px;${f}color:#1f2a24;font-size:14px;line-height:1.5;">Cordialmente,<br><strong>Departamento de Gestión Humana</strong><br>Supertiendas Cañaveral</td></tr>
-<tr><td bgcolor="#1C5A2A" style="background:#1C5A2A;padding:10px 22px;${f}color:#ffffff;font-size:12px;">${textoColor('Supertiendas Cañaveral S.A.S. · Gestión Humana', '#ffffff', 12)}</td></tr>
+<tr><td bgcolor="#eef4ea" style="background:#eef4ea;border-top:4px solid #1C5A2A;padding:10px 22px;${f}color:#1C5A2A;font-size:12px;">${textoColor('Supertiendas Cañaveral S.A.S. · Gestión Humana', '#1C5A2A', 12)}</td></tr>
 </table></td></tr></table>`;
 }
 
@@ -2344,7 +2349,7 @@ function tablaGrupoHtml(g) {
   const cabeza = g.columnas.map((c) => `<th style="${celda}background:#eef4ea;font-weight:700;">${escaparHtml(c)}</th>`).join('');
   const filas = g.filas.map((fila, i) => `<tr style="background:${i % 2 ? '#f7faf5' : '#ffffff'};">${fila.map((v) => `<td style="${celda}">${escaparHtml(v)}</td>`).join('')}</tr>`).join('');
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 4px;border-collapse:collapse;">
-<tr><td bgcolor="${g.franja}" style="background:${g.franja};color:${g.textoFranja};${f}font-size:15px;font-weight:700;padding:8px 10px;">${textoColor(`${escaparHtml(g.titulo)} (${g.filas.length})`, g.textoFranja, 15, true)}</td></tr>
+<tr><td bgcolor="${g.fondoFranja}" style="background:${g.fondoFranja};border-left:6px solid ${g.franja};color:${g.textoFranja};${f}font-size:15px;font-weight:700;padding:8px 10px;">${textoColor(`${escaparHtml(g.titulo)} (${g.filas.length})`, g.textoFranja, 15, true)}</td></tr>
 <tr><td style="background:${g.fondo || '#ffffff'};padding:0;"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr>${cabeza}</tr>${filas}</table></td></tr>
 ${g.nota ? `<tr><td style="${f}font-size:13px;color:#4a5a50;padding:6px 2px 0;">${escaparHtml(g.nota)}</td></tr>` : ''}
 </table>`;
@@ -4454,19 +4459,19 @@ function FichaCarnet({ c, raiz, usuario, avisar, onCambio, onCerrar, estadosCorr
 /** Los 3 grupos del correo: qué estado, qué fecha cuenta, columnas y colores. */
 const GRUPOS_SUPERVISORES = {
   aprobada: {
-    titulo: 'Aprobadas', plural: 'aprobadas', fecha: (s) => s.fechas.aprobada, franja: '#1C5A2A', textoFranja: '#ffffff',
+    titulo: 'Aprobadas', plural: 'aprobadas', fecha: (s) => s.fechas.aprobada, franja: '#1C5A2A', fondoFranja: '#dcebd3', textoFranja: '#05200b',
     columnas: ['Nombre', 'Cédula', 'Sede', 'Motivo'],
     fila: (s) => [nombreBonito(s.datos.nombre), s.datos.cedula, s.datos.sede, nombreMotivoCarnet(s.datos.motivo)],
     nota: 'El carnet se enviará a la sede.',
   },
   enviada: {
-    titulo: 'Enviadas', plural: 'enviadas', fecha: (s) => s.fechas.enviada, franja: '#1C5A2A', textoFranja: '#ffffff',
+    titulo: 'Enviadas', plural: 'enviadas', fecha: (s) => s.fechas.enviada, franja: '#1C5A2A', fondoFranja: '#dcebd3', textoFranja: '#05200b',
     columnas: ['Nombre', 'Cédula', 'Sede', 'Fecha de envío', 'Guía / observación'],
     fila: (s) => [nombreBonito(s.datos.nombre), s.datos.cedula, s.datos.sede, new Date(s.fechas.enviada).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }), (s.envio && (s.envio.guia || s.envio.observacion)) || '—'],
     nota: '',
   },
   rechazada: {
-    titulo: 'Rechazadas', plural: 'rechazadas', fecha: (s) => s.fechas.rechazada, franja: '#e8a317', textoFranja: '#2b1d00', fondo: '#fff6e5',
+    titulo: 'Rechazadas', plural: 'rechazadas', fecha: (s) => s.fechas.rechazada, franja: '#e8a317', fondoFranja: '#fbe7b8', textoFranja: '#2b1d00', fondo: '#fff6e5',
     columnas: ['Nombre', 'Cédula', 'Sede', 'Motivo del rechazo'],
     fila: (s) => [nombreBonito(s.datos.nombre), s.datos.cedula, s.datos.sede, [s.rechazo && s.rechazo.motivo, s.rechazo && s.rechazo.detalle].filter(Boolean).join(' — ')],
     nota: 'La persona debe enviar una nueva solicitud desde el link de carnets.',
@@ -6125,7 +6130,7 @@ function DialogoNombre({ actual, onGuardar, onCancelar }) {
  * Versión del panel. CÁMBIALA cada vez que subas un cambio a este archivo (fecha y un número).
  * El panel abierto compara su versión con la publicada y, si hay una más nueva, avisa que hay que recargar.
  */
-const VERSION_PANEL = '2026-11-19.2';
+const VERSION_PANEL = '2026-11-19.3';
 
 /** Revisa cada 5 minutos (y al volver a la pestaña) si se publicó una versión más nueva del panel. */
 function useVersionNueva() {
